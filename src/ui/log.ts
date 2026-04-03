@@ -78,6 +78,9 @@ export function renderLog(store: LogStore): void {
       } else {
         expandedEntries.add(ts);
       }
+      // Disable auto-scroll so the user can inspect the entry
+      autoScroll = false;
+      ($('log-autoscroll') as HTMLInputElement).checked = false;
       renderLog(store);
     });
   });

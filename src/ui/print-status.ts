@@ -1,7 +1,7 @@
 import type { PrinterState } from '../printer-state';
 import type { CC2MqttClient } from '../mqtt-client';
-import { STATUS_NAMES, SUB_STATUS_NAMES } from '../types';
-import { $, formatTime, fanPct } from './helpers';
+import { STATUS_NAMES, SUB_STATUS_NAMES, EXCEPTION_NAMES, CRITICAL_EXCEPTIONS } from '../types';
+import { $, formatTime, fanPct, escapeHtml } from './helpers';
 
 let lastThumbnailFile = '';
 
@@ -160,6 +160,9 @@ export function renderDashboard(state: PrinterState, client: CC2MqttClient): voi
 
   // Camera
   updateCamera(s.external_device?.camera ?? false, client.printerIp);
+
+  // Exception banner
+  renderExceptions(machineStatus?.exception_status ?? []);
 }
 
 export function renderHeader(state: PrinterState): void {
@@ -167,4 +170,31 @@ export function renderHeader(state: PrinterState): void {
   if (attrs) {
     $('printer-name').textContent = `${attrs.hostname} (${attrs.machine_model}) — FW ${attrs.software_version?.ota_version}`;
   }
+}
+
+let lastExceptionKey = '';
+
+function renderExceptions(codes: number[]): void {
+  const banner = $('exception-banner');
+  if (!codes.length) {
+    banner.classList.add('hidden');
+    banner.innerHTML = '';
+    lastExceptionKey = '';
+    return;
+  }
+
+  const key = codes.join(',');
+  if (key === lastExceptionKey) return;
+  lastExceptionKey = key;
+
+  const items = codes.map(code => {
+    const name = EXCEPTION_NAMES[code] ?? `Unknown Error (${code})`;
+    const isCritical = CRITICAL_EXCEPTIONS.has(code);
+    const cls = isCritical ? 'exception-item critical' : 'exception-item warning';
+    const icon = isCritical ? '🔴' : '🟡';
+    return `<div class="${cls}">${icon} <strong>${escapeHtml(String(code))}</strong> — ${escapeHtml(name)}</div>`;
+  });
+
+  banner.innerHTML = items.join('');
+  banner.classList.remove('hidden');
 }

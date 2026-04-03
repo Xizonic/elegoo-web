@@ -9,7 +9,7 @@
 <body>
   <header id="app-header">
     <div class="header-left">
-      <h1>Elegoo Web</h1>
+      <h1>Elegoo CC2 web frontend</h1>
       <span id="printer-name" class="subtitle"></span>
     </div>
     <div class="header-right">
@@ -35,6 +35,9 @@
 
     <!-- Dashboard (hidden until connected) -->
     <div id="dashboard" class="dashboard hidden">
+      <!-- Exception/error banner -->
+      <div id="exception-banner" class="exception-banner hidden"></div>
+
       <!-- Top bar: printer info + print progress -->
       <div id="print-status-bar" class="card print-status-card">
         <div class="print-thumbnail-wrap">
@@ -103,6 +106,9 @@
                 <span id="temp-chamber">--</span>°C
               </div>
             </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="chart-temps" class="live-chart"></canvas>
           </div>
         </div>
 
@@ -231,6 +237,43 @@
         <div class="card log-card" id="log-card">
           <div class="log-header">
             <h3>📋 MQTT Log</h3>
+            <div class="log-tabs">
+              <button class="log-tab active" data-tab="structured">Structured</button>
+              <button class="log-tab" data-tab="raw">Raw</button>
+            </div>
+          </div>
+
+          <!-- Structured tab -->
+          <div id="log-tab-structured" class="log-tab-content">
+            <div class="log-controls">
+              <input type="text" id="slog-search" placeholder="Search..." class="log-filter-input">
+              <select id="slog-direction-filter" class="log-select">
+                <option value="all">All</option>
+                <option value="sent">Sent →</option>
+                <option value="received">Received ←</option>
+              </select>
+              <select id="slog-type-filter" class="log-select">
+                <option value="all">All types</option>
+                <option value="status">Status (6000)</option>
+                <option value="command">Commands</option>
+                <option value="response">Responses</option>
+                <option value="heartbeat">Heartbeat</option>
+              </select>
+              <label class="log-autoscroll-label">
+                <input type="checkbox" id="slog-autoscroll" checked> Auto-scroll
+              </label>
+              <button class="btn btn-sm btn-ghost" id="slog-pause" title="Pause updates">⏸</button>
+              <button class="btn btn-sm btn-ghost" id="slog-clear">Clear</button>
+            </div>
+            <div id="slog-entries" class="log-entries"></div>
+            <div class="log-status-bar">
+              <span id="slog-count">0 messages</span>
+              <span id="slog-paused-badge" class="log-paused-badge hidden">PAUSED</span>
+            </div>
+          </div>
+
+          <!-- Raw tab -->
+          <div id="log-tab-raw" class="log-tab-content hidden">
             <div class="log-controls">
               <input type="text" id="log-filter" placeholder="Filter..." class="log-filter-input">
               <label class="log-autoscroll-label">
@@ -238,8 +281,8 @@
               </label>
               <button class="btn btn-sm btn-ghost" id="log-clear">Clear</button>
             </div>
+            <div id="log-entries" class="log-entries"></div>
           </div>
-          <div id="log-entries" class="log-entries"></div>
         </div>
       </div>
     </div>

@@ -6,4 +6,6 @@ export { renderDashboard, renderHeader } from './print-status';
 export { renderCanvas } from './canvas';
 export { renderFiles } from './files';
 export { bindControls } from './controls';
+export { registerChart, initCharts } from './charts';
+export { renderStructuredLog, bindStructuredLogControls } from './structured-log';
 

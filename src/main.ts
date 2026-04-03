@@ -1,13 +1,35 @@
 import { CC2MqttClient } from './mqtt-client';
 import { PrinterState } from './printer-state';
 import { LogStore } from './log-store';
-import { renderDashboard, renderCanvas, renderFiles, renderHeader, bindControls } from './ui/dashboard';
+import { ChartStore } from './chart-store';
+import {
+  renderDashboard, renderCanvas, renderFiles, renderHeader, bindControls,
+  registerChart, initCharts,
+  renderStructuredLog, bindStructuredLogControls,
+} from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
 
 const state = new PrinterState();
 const logStore = new LogStore();
+const chartStore = new ChartStore();
 let client: CC2MqttClient | null = null;
 let renderScheduled = false;
+
+// Define chart series
+chartStore.defineSeries('nozzle',     'Nozzle',     '#ef5350');
+chartStore.defineSeries('nozzle_tgt', 'Nozzle Tgt', '#ef535080');
+chartStore.defineSeries('bed',        'Bed',        '#ffa726');
+chartStore.defineSeries('bed_tgt',    'Bed Tgt',    '#ffa72680');
+chartStore.defineSeries('chamber',    'Chamber',    '#66bb6a');
+
+// Register charts
+registerChart({
+  canvasId: 'chart-temps',
+  seriesKeys: ['nozzle', 'nozzle_tgt', 'bed', 'bed_tgt', 'chamber'],
+  yMin: 0,
+  yMax: 300,
+  unit: '°',
+});
 
 function scheduleRender(): void {
   if (renderScheduled) return;
@@ -19,6 +41,19 @@ function scheduleRender(): void {
       renderDashboard(state, client);
       renderCanvas(state);
       renderLog(logStore);
+      renderStructuredLog(logStore);
+
+      // Feed chart data from current state
+      const s = state.status;
+      if (s) {
+        chartStore.push({
+          nozzle: s.extruder?.temperature ?? 0,
+          nozzle_tgt: s.extruder?.target ?? 0,
+          bed: s.heater_bed?.temperature ?? 0,
+          bed_tgt: s.heater_bed?.target ?? 0,
+          chamber: s.ztemperature_sensor?.temperature ?? 0,
+        });
+      }
     }
   });
 }
@@ -74,6 +109,9 @@ $('connect-btn').addEventListener('click', () => {
       // Bind control handlers
       bindControls(client!);
       bindLogControls(logStore);
+      bindStructuredLogControls(logStore);
+      // Init live charts
+      initCharts(chartStore);
       // Request file list
       client!.sendCommand(1044, { storage_media: 'local', path: '/', page: 1, page_size: 50 });
     },
