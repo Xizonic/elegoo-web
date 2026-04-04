@@ -17,6 +17,9 @@ export interface ServiceConfig {
   telegramToken: string;
   telegramChatId: string;
   progressInterval: number;
+
+  // Data persistence
+  dataDir: string;
 }
 
 function env(key: string, fallback = ''): string {
@@ -38,5 +41,6 @@ export function loadConfig(): ServiceConfig {
     telegramToken,
     telegramChatId,
     progressInterval: parseInt(env('PROGRESS_INTERVAL', '25'), 10) || 25,
+    dataDir: env('DATA_DIR') || './data',
   };
 }

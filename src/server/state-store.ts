@@ -148,6 +148,29 @@ export class StateStore extends EventEmitter {
     return this.chartData;
   }
 
+  /** Restore chart data from persistence */
+  restoreChartData(data: ChartPoint[]): void {
+    if (data && data.length > 0) {
+      this.chartData = data;
+    }
+  }
+
+  /** Restore layer data from persistence */
+  restoreLayerData(
+    layerTimes: Array<{ layer: number; duration: number; timestamp: number }>,
+    lastLayer: number,
+    lastLayerTime: number,
+  ): void {
+    if (layerTimes && layerTimes.length > 0) {
+      this.layerTimes = layerTimes;
+      this._lastLayer = lastLayer;
+      this._lastLayerTime = lastLayerTime;
+    }
+  }
+
+  getLastLayer(): number { return this._lastLayer; }
+  getLastLayerTime(): number { return this._lastLayerTime; }
+
   /** Clean up timers */
   destroy(): void {
     if (this.chartTimer) clearInterval(this.chartTimer);

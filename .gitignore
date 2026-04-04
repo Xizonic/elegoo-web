@@ -4,4 +4,5 @@ config/
 node_modules
 raw/
 dist/
+data/
 .env

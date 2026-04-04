@@ -16,6 +16,7 @@ import { StateStore } from './state-store.js';
 import { WebSocketTransport } from './ws-transport.js';
 import { createRestRouter } from './rest-api.js';
 import { TelegramIntegration } from './telegram.js';
+import { StatePersistence } from './state-persistence.js';
 
 const config = loadConfig();
 
@@ -23,6 +24,7 @@ console.log('🖨  Elegoo CC2 Service');
 console.log(`   Printer: ${config.printerIp}`);
 console.log(`   Service: http://0.0.0.0:${config.servicePort}`);
 console.log(`   Camera:  ${config.cameraEnabled ? config.cameraUrl : 'disabled'}`);
+console.log(`   Data:    ${config.dataDir}`);
 if (config.telegramEnabled) {
   console.log(`   Telegram: enabled (progress every ${config.progressInterval}%)`);
 }
@@ -33,6 +35,9 @@ const bridge = new MqttBridge(config.printerIp, config.printerPassword);
 
 // --- State Store (shared state for all consumers) ---
 const store = new StateStore(bridge, config.progressInterval);
+
+// --- State Persistence ---
+const persistence = new StatePersistence(store, config.dataDir);
 
 // --- HTTP Server ---
 const httpServer = createServer(createRestRouter(store, config));
@@ -51,6 +56,10 @@ wsTransport.setServices({ telegram });
 
 // --- Startup ---
 async function start(): Promise<void> {
+  // Restore persisted state before connecting
+  await persistence.load();
+  persistence.start();
+
   // Start MQTT connection
   bridge.connect();
 
@@ -68,6 +77,7 @@ async function start(): Promise<void> {
 // Graceful shutdown
 function shutdown(): void {
   console.log('\nShutting down...');
+  persistence.stop();
   wsTransport.close();
   telegram?.stop();
   bridge.disconnect();
