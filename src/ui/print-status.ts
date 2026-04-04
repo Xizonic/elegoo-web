@@ -1,5 +1,5 @@
 import type { PrinterState } from '../printer-state';
-import type { CC2MqttClient } from '../mqtt-client';
+import type { CommandSender } from '../ws-client';
 import { STATUS_NAMES, SUB_STATUS_NAMES, EXCEPTION_NAMES, CRITICAL_EXCEPTIONS } from '../types';
 import { $, formatTime, fanPct, escapeHtml } from './helpers';
 
@@ -30,7 +30,7 @@ function updateCamera(hasCamera: boolean, printerIp: string): void {
   }
 }
 
-export function renderDashboard(state: PrinterState, client: CC2MqttClient): void {
+export function renderDashboard(state: PrinterState, client: CommandSender): void {
   const s = state.status;
   if (!s) return;
 

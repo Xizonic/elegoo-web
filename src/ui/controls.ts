@@ -1,10 +1,10 @@
-import type { CC2MqttClient } from '../mqtt-client';
+import type { CommandSender } from '../ws-client';
 import { $ } from './helpers';
 
 let controlsBound = false;
 
 /** Bind all control event handlers */
-export function bindControls(client: CC2MqttClient): void {
+export function bindControls(client: CommandSender): void {
   if (controlsBound) return;
   controlsBound = true;
   let currentMoveDistance = 10;

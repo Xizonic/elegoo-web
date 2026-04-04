@@ -10,8 +10,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022"]
   },
-  "include": ["src"],
-  "exclude": ["src/server", "src/telegram"]
+  "include": ["src/server/**/*", "src/telegram/**/*", "src/types.ts"]
 }

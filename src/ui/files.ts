@@ -1,10 +1,10 @@
 import type { PrinterState } from '../printer-state';
-import type { CC2MqttClient } from '../mqtt-client';
+import type { CommandSender } from '../ws-client';
 import { $, escapeHtml, escapeAttr, formatTime } from './helpers';
 
 let currentSource: 'local' | 'u_disk' = 'local';
 
-export function renderFiles(state: PrinterState, client: CC2MqttClient): void {
+export function renderFiles(state: PrinterState, client: CommandSender): void {
   const container = $('file-list');
   const files = state.files;
 
@@ -56,7 +56,7 @@ export function renderFiles(state: PrinterState, client: CC2MqttClient): void {
 
 let fileControlsBound = false;
 
-export function bindFileControls(client: CC2MqttClient): void {
+export function bindFileControls(client: CommandSender): void {
   if (fileControlsBound) return;
   fileControlsBound = true;
 

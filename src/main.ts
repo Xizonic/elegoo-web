@@ -1,4 +1,5 @@
-import { CC2MqttClient } from './mqtt-client';
+import { WsClient } from './ws-client';
+import type { CommandSender } from './ws-client';
 import { PrinterState } from './printer-state';
 import { LogStore } from './log-store';
 import { ChartStore } from './chart-store';
@@ -12,16 +13,15 @@ import {
   renderBedMesh,
   renderGcodePreview,
   renderLayerTimeChart,
+  updateServiceStatus,
 } from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
-import { startPersistence, restoreIfMatch } from './persistence';
 
 const state = new PrinterState();
 const logStore = new LogStore();
 const chartStore = new ChartStore();
-let client: CC2MqttClient | null = null;
+let client: WsClient | null = null;
 let renderScheduled = false;
-let dataRestored = false;
 
 // Define chart series
 chartStore.defineSeries('nozzle',     'Nozzle',     '#ef5350');
@@ -68,22 +68,6 @@ function scheduleRender(): void {
       renderLayerTimeChart(state);
       renderLog(logStore);
       renderStructuredLog(logStore);
-
-      // Feed chart data from current state
-      const s = state.status;
-      if (s) {
-        const fanPct = (v: number) => Math.round((v / 255) * 100);
-        chartStore.push({
-          nozzle: s.extruder?.temperature ?? 0,
-          nozzle_tgt: s.extruder?.target ?? 0,
-          bed: s.heater_bed?.temperature ?? 0,
-          bed_tgt: s.heater_bed?.target ?? 0,
-          chamber: s.ztemperature_sensor?.temperature ?? 0,
-          fan_model: fanPct(s.fans?.fan?.speed ?? 0),
-          fan_aux: fanPct(s.fans?.aux_fan?.speed ?? 0),
-          fan_case: fanPct(s.fans?.box_fan?.speed ?? 0),
-        });
-      }
     }
   });
 }
@@ -102,23 +86,48 @@ function updateConnectionBadge(status: string): void {
 state.subscribe(scheduleRender);
 logStore.subscribe(scheduleRender);
 
-// Connect button handler
-$('connect-btn').addEventListener('click', () => {
-  const ip = ($('printer-ip') as HTMLInputElement).value.trim();
-  const password = ($('printer-password') as HTMLInputElement).value || '123456';
+let controlsBound = false;
 
-  if (!ip) {
-    $('connect-error').textContent = 'Please enter a printer IP address';
-    return;
+function onConnected(sn: string): void {
+  console.log(`Connected to printer SN: ${sn}`);
+  toast(`Connected to printer ${sn}`, 'success');
+  $('connect-dialog').classList.add('hidden');
+  $('dashboard').classList.remove('hidden');
+
+  if (!controlsBound) {
+    controlsBound = true;
+    bindControls(client!);
+    bindLogControls(logStore);
+    bindStructuredLogControls(logStore);
+    bindFileControls(client!);
+    setCanvasClient(client!);
+    setTimelapseClient(client!);
+    $('timelapse-refresh').addEventListener('click', () => requestTimelapseList());
+    $('timelapse-close').addEventListener('click', () => {
+      const player = $('timelapse-player') as HTMLVideoElement;
+      player.pause();
+      player.src = '';
+      $('timelapse-player-wrap').classList.add('hidden');
+    });
+    initCharts(chartStore);
   }
+
+  // Request data that the service may not have cached yet
+  client!.sendCommand(1044, { storage_media: 'local', dir: '/', offset: 0, limit: 50 });
+  client!.sendCommand(1062, {});
+}
+
+function connectToService(): void {
+  // Build WS URL relative to current page (works with Vite proxy and production)
+  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const serviceUrl = `${wsProtocol}//${location.host}/ws`;
 
   $('connect-error').textContent = '';
   ($('connect-btn') as HTMLButtonElement).disabled = true;
   ($('connect-btn') as HTMLButtonElement).textContent = 'Connecting...';
 
-  client = new CC2MqttClient({
-    printerIp: ip,
-    password,
+  client = new WsClient({
+    serviceUrl,
     onStateChange(connState) {
       updateConnectionBadge(connState);
 
@@ -129,58 +138,63 @@ $('connect-btn').addEventListener('click', () => {
       if (connState === 'error') {
         ($('connect-btn') as HTMLButtonElement).disabled = false;
         ($('connect-btn') as HTMLButtonElement).textContent = 'Connect';
-        $('connect-error').textContent = 'Connection failed. Check IP and ensure printer is in LAN-only mode.';
-        toast('Connection failed', 'error');
+        $('connect-error').textContent = 'Cannot reach service. Ensure the elegoo-web service is running.';
+        toast('Service connection failed', 'error');
       }
     },
-    onRegistered(sn) {
-      console.log(`Registered with printer SN: ${sn}`);
-      toast(`Connected to printer ${sn}`, 'success');
-      // Show dashboard, hide connect dialog
-      $('connect-dialog').classList.add('hidden');
-      $('dashboard').classList.remove('hidden');
-      // Bind control handlers (idempotent — only binds once)
-      bindControls(client!);
-      bindLogControls(logStore);
-      bindStructuredLogControls(logStore);
-      bindFileControls(client!);
-      setCanvasClient(client!);
-      setTimelapseClient(client!);
-      // Timelapse buttons
-      $('timelapse-refresh').addEventListener('click', () => requestTimelapseList());
-      $('timelapse-close').addEventListener('click', () => {
-        const player = $('timelapse-player') as HTMLVideoElement;
-        player.pause();
-        player.src = '';
-        $('timelapse-player-wrap').classList.add('hidden');
-      });
-      // Init live charts
-      initCharts(chartStore);
-      // Start data persistence
-      startPersistence(state, chartStore);
-      // Request file list
-      client!.sendCommand(1044, { storage_media: 'local', dir: '/', offset: 0, limit: 50 });
-      // Request system info
-      client!.sendCommand(1062, {});
+    onRegistered(sn, _printerIp) {
+      onConnected(sn);
+    },
+    onInit(initData) {
+      // Hydrate state from service snapshot
+      if (initData.status) {
+        state.setFullStatus(initData.status as any);
+      }
+      if (initData.attributes) {
+        state.setAttributes(initData.attributes as any);
+      }
+      if (initData.canvas) {
+        state.setCanvas(initData.canvas as any);
+      }
+      if (initData.files && Array.isArray(initData.files)) {
+        state.setFiles(initData.files as any);
+      }
+      if (initData.thumbnail) {
+        state.thumbnail = initData.thumbnail as string;
+      }
+      if (initData.fileTotalLayers != null) {
+        state.fileTotalLayers = initData.fileTotalLayers as number;
+      }
+      if (initData.systemInfo) {
+        state.systemInfo = initData.systemInfo as Record<string, unknown>;
+      }
+      if (initData.bedMesh) {
+        state.bedMesh = initData.bedMesh as number[][];
+      }
+      if (initData.layerTimes && Array.isArray(initData.layerTimes)) {
+        const lt = initData.layerTimes as Array<{ layer: number; duration: number; timestamp: number }>;
+        if (lt.length > 0) {
+          const lastEntry = lt[lt.length - 1];
+          state.restoreLayerData(lt, lastEntry.layer, lastEntry.timestamp);
+        }
+      }
+      if (initData.serviceStatus) {
+        updateServiceStatus(initData.serviceStatus as Record<string, unknown>);
+      }
+      // Load chart history from service (replaces localStorage persistence)
+      if (initData.chartHistory && Array.isArray(initData.chartHistory)) {
+        chartStore.loadHistory(initData.chartHistory as Array<{ t: number; values: Record<string, number> }>);
+      }
+      scheduleRender();
     },
     onMessage(method, data) {
       state.handleResponse(method, data as Record<string, unknown>);
-      // Restore persisted data after first full status
-      if (method === 1002 && !dataRestored) {
-        dataRestored = true;
-        if (restoreIfMatch(state, chartStore)) {
-          toast('Restored session data from previous page load', 'success');
-        }
-      }
-      // Render files when file list arrives
       if (method === 1044 && client) {
         requestAnimationFrame(() => renderFiles(state, client!));
       }
-      // Render timelapse list when it arrives
       if (method === 1051) {
         requestAnimationFrame(() => renderTimelapse(state));
       }
-      // Show video player when URL arrives
       if (method === 1050 && state.videoUrl) {
         showTimelapsePlayer(state.videoUrl);
       }
@@ -191,15 +205,24 @@ $('connect-btn').addEventListener('click', () => {
     onRawMessage(direction, topic, data) {
       logStore.add(direction, topic, data);
     },
+    onServiceStatus(data) {
+      updateServiceStatus(data);
+    },
+    onChartData(t, values) {
+      chartStore.pushPoint(t, values);
+    },
   });
 
   client.connect();
+}
+
+// Connect button handler — now connects to the local service
+$('connect-btn').addEventListener('click', () => {
+  connectToService();
 });
 
-// Allow Enter key in IP field
-$('printer-ip').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') $('connect-btn').click();
-});
+// Auto-connect on page load
+connectToService();
 
 // Register PWA service worker
 if ('serviceWorker' in navigator) {

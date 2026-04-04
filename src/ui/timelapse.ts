@@ -1,12 +1,12 @@
 /** Timelapse viewer — list and play timelapse videos from the printer */
 
-import type { CC2MqttClient } from '../mqtt-client';
+import type { CommandSender } from '../ws-client';
 import type { PrinterState } from '../printer-state';
 import { $, escapeHtml, escapeAttr, formatTime } from './helpers';
 
-let playerClient: CC2MqttClient | null = null;
+let playerClient: CommandSender | null = null;
 
-export function setTimelapseClient(client: CC2MqttClient): void {
+export function setTimelapseClient(client: CommandSender): void {
   playerClient = client;
 }
 

@@ -14,4 +14,5 @@ export { renderTimelapse, setTimelapseClient, requestTimelapseList, showTimelaps
 export { renderBedMesh } from './bed-mesh';
 export { renderGcodePreview } from './gcode-preview';
 export { renderLayerTimeChart } from './layer-chart';
+export { updateServiceStatus } from './service-status';
 

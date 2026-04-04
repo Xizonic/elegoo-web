@@ -76,4 +76,38 @@ export class ChartStore {
       series.data = data;
     }
   }
+
+  /**
+   * Load chart history from service.
+   * Each point has { t, values: { key: value } }.
+   */
+  loadHistory(points: Array<{ t: number; values: Record<string, number> }>): void {
+    // Clear existing data
+    for (const [, series] of this.series) {
+      series.data = [];
+    }
+    // Replay all points
+    for (const point of points) {
+      for (const [key, value] of Object.entries(point.values)) {
+        const series = this.series.get(key);
+        if (series) {
+          series.data.push({ t: point.t, v: value });
+        }
+      }
+    }
+    for (const fn of this.listeners) fn();
+  }
+
+  /** Push a single chart_data point from the service */
+  pushPoint(t: number, values: Record<string, number>): void {
+    for (const [key, value] of Object.entries(values)) {
+      const series = this.series.get(key);
+      if (!series) continue;
+      series.data.push({ t, v: value });
+      if (series.data.length > MAX_POINTS) {
+        series.data.shift();
+      }
+    }
+    for (const fn of this.listeners) fn();
+  }
 }

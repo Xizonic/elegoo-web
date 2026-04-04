@@ -1,11 +1,11 @@
 import type { PrinterState } from '../printer-state';
-import type { CC2MqttClient } from '../mqtt-client';
+import type { CommandSender } from '../ws-client';
 import { $, escapeHtml, escapeAttr } from './helpers';
 import { openFilamentEditor } from './filament-editor';
 
-let canvasClient: CC2MqttClient | null = null;
+let canvasClient: CommandSender | null = null;
 
-export function setCanvasClient(client: CC2MqttClient): void {
+export function setCanvasClient(client: CommandSender): void {
   canvasClient = client;
 }
 
@@ -30,7 +30,7 @@ export function renderCanvas(state: PrinterState): void {
     html += `<div class="canvas-hub-label">Canvas</div>`;
     html += `<div class="canvas-hub-tubes">`;
     for (const tray of unit.tray_list) {
-      const color = tray.filament_color || '#434343';
+      const color = `#${(tray.filament_color || '434343').replace(/^#/, '')}`;
       const isEmpty = tray.status === 0;
       html += `<div class="canvas-tube" style="background: ${isEmpty ? '#434343' : escapeAttr(color)}"></div>`;
     }
@@ -48,7 +48,7 @@ export function renderCanvas(state: PrinterState): void {
       const isActive = unit.canvas_id === canvas.active_canvas_id &&
         tray.tray_id === canvas.active_tray_id;
       const isEmpty = tray.status === 0;
-      const color = tray.filament_color || '#434343';
+      const color = `#${(tray.filament_color || '434343').replace(/^#/, '')}`;
       const statusClass = isActive ? 'spool-active' : isEmpty ? 'spool-empty' : 'spool-loaded';
       const typeLabel = tray.filament_type || (isEmpty ? '' : '?');
       const tempRange = (!isEmpty && tray.min_nozzle_temp) ?

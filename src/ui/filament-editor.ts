@@ -1,6 +1,6 @@
 /** Filament editing modal for Canvas/AMS tray info */
 
-import type { CC2MqttClient } from '../mqtt-client';
+import type { CommandSender } from '../ws-client';
 import { $, escapeHtml, escapeAttr } from './helpers';
 
 let modalEl: HTMLElement | null = null;
@@ -88,7 +88,7 @@ export function openFilamentEditor(
   canvasId: number,
   trayId: number,
   current: { type: string; color: string; name: string; minTemp: number; maxTemp: number },
-  client: CC2MqttClient,
+  client: CommandSender,
 ): void {
   const modal = ensureModal();
   currentCtx = { canvasId, trayId };
