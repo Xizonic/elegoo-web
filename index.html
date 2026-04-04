@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#2196f3">
+  <meta name="description" content="Browser-based web frontend for Elegoo Centauri Carbon 2 printers">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg">
   <title>Elegoo Web</title>
   <link rel="stylesheet" href="/src/styles/main.css">
 </head>
@@ -57,6 +64,7 @@
             <span id="print-layer">Layer Progress: --/--</span>
             <span id="print-remaining">--</span>
           </div>
+
         </div>
         <div class="print-actions">
           <button id="btn-pause" class="btn btn-warning btn-icon" title="Pause">⏸</button>
@@ -107,7 +115,21 @@
               </div>
             </div>
           </div>
+          <div class="temp-presets">
+            <span class="preset-label">Presets:</span>
+            <button class="btn btn-sm btn-ghost temp-preset-btn" data-nozzle="210" data-bed="60">PLA</button>
+            <button class="btn btn-sm btn-ghost temp-preset-btn" data-nozzle="240" data-bed="80">PETG</button>
+            <button class="btn btn-sm btn-ghost temp-preset-btn" data-nozzle="250" data-bed="100">ABS</button>
+            <button class="btn btn-sm btn-ghost temp-preset-btn" data-nozzle="230" data-bed="70">TPU</button>
+            <button class="btn btn-sm btn-ghost temp-preset-btn" data-nozzle="0" data-bed="0">Cool ❄️</button>
+          </div>
           <div class="chart-wrap">
+            <div class="chart-time-selector">
+              <button class="chart-time-btn" data-chart="chart-temps" data-window="60">1m</button>
+              <button class="chart-time-btn active" data-chart="chart-temps" data-window="300">5m</button>
+              <button class="chart-time-btn" data-chart="chart-temps" data-window="900">15m</button>
+              <button class="chart-time-btn" data-chart="chart-temps" data-window="3600">1h</button>
+            </div>
             <canvas id="chart-temps" class="live-chart"></canvas>
           </div>
         </div>
@@ -126,6 +148,29 @@
           <div class="camera-wrap">
             <img id="camera-feed" alt="Camera off" class="camera-img">
             <div class="camera-overlay" id="camera-overlay">Camera not available</div>
+          </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="card" id="system-info-card">
+          <h3>ℹ️ System Info</h3>
+          <div id="system-info" class="system-info">
+            <div class="info-placeholder">Connect to view system info</div>
+          </div>
+        </div>
+
+        <!-- Bed Mesh -->
+        <div class="card" id="bed-mesh-card">
+          <h3>🔲 Bed Mesh</h3>
+          <canvas id="bed-mesh-canvas" class="bed-mesh-canvas"></canvas>
+        </div>
+
+        <!-- Gcode Preview -->
+        <div class="card" id="gcode-preview-card">
+          <h3>📐 Layer Preview</h3>
+          <canvas id="gcode-preview-canvas" class="gcode-preview-canvas"></canvas>
+          <div class="chart-wrap">
+            <canvas id="chart-layer-time" class="live-chart"></canvas>
           </div>
         </div>
 
@@ -223,13 +268,43 @@
             <span>Overhead light</span>
             <label class="toggle"><input type="checkbox" id="led-toggle" checked><span class="toggle-slider"></span></label>
           </div>
+          <div class="chart-wrap">
+            <div class="chart-time-selector">
+              <button class="chart-time-btn" data-chart="chart-fans" data-window="60">1m</button>
+              <button class="chart-time-btn active" data-chart="chart-fans" data-window="300">5m</button>
+              <button class="chart-time-btn" data-chart="chart-fans" data-window="900">15m</button>
+              <button class="chart-time-btn" data-chart="chart-fans" data-window="3600">1h</button>
+            </div>
+            <canvas id="chart-fans" class="live-chart"></canvas>
+          </div>
         </div>
 
         <!-- Files -->
         <div class="card" id="files-card">
-          <h3>📁 Files</h3>
+          <div class="files-header">
+            <h3>📁 Files</h3>
+            <div class="file-source-tabs">
+              <button class="file-source-tab active" data-source="local">Local</button>
+              <button class="file-source-tab" data-source="u_disk">USB</button>
+            </div>
+          </div>
           <div id="file-list" class="file-list">
             <div class="loading">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Timelapse -->
+        <div class="card" id="timelapse-card">
+          <div class="files-header">
+            <h3>🎬 Timelapse</h3>
+            <button class="btn btn-sm btn-ghost" id="timelapse-refresh">⟳ Refresh</button>
+          </div>
+          <div id="timelapse-player-wrap" class="timelapse-player-wrap hidden">
+            <video id="timelapse-player" controls class="timelapse-video"></video>
+            <button class="btn btn-sm btn-ghost timelapse-close-btn" id="timelapse-close">✕ Close</button>
+          </div>
+          <div id="timelapse-list" class="file-list">
+            <div class="file-empty">Click refresh to load timelapse list</div>
           </div>
         </div>
 
@@ -259,10 +334,14 @@
                 <option value="response">Responses</option>
                 <option value="heartbeat">Heartbeat</option>
               </select>
+              <select id="slog-method-filter" class="log-select">
+                <option value="all">All methods</option>
+              </select>
               <label class="log-autoscroll-label">
                 <input type="checkbox" id="slog-autoscroll" checked> Auto-scroll
               </label>
               <button class="btn btn-sm btn-ghost" id="slog-pause" title="Pause updates">⏸</button>
+              <button class="btn btn-sm btn-ghost" id="slog-diff" title="Toggle diff view">Δ Diff</button>
               <button class="btn btn-sm btn-ghost" id="slog-clear">Clear</button>
             </div>
             <div id="slog-entries" class="log-entries"></div>

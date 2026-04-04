@@ -18,19 +18,113 @@ interface ChartConfig {
   unit?: string;
 }
 
+/** Per-chart zoom/pan state */
+interface ChartInteraction {
+  panOffset: number; // ms offset (negative = looking at past)
+  zoomFactor: number; // 1.0 = normal, >1 = zoomed in
+  isDragging: boolean;
+  dragStartX: number;
+  dragStartOffset: number;
+}
+
 const charts = new Map<string, ChartConfig>();
+const interactions = new Map<string, ChartInteraction>();
 let store: ChartStore | null = null;
 let animating = false;
+let interactionsBound = false;
 
 export function registerChart(config: ChartConfig): void {
   charts.set(config.canvasId, config);
+  interactions.set(config.canvasId, {
+    panOffset: 0,
+    zoomFactor: 1.0,
+    isDragging: false,
+    dragStartX: 0,
+    dragStartOffset: 0,
+  });
 }
 
 export function initCharts(chartStore: ChartStore): void {
   store = chartStore;
+  bindTimeWindowButtons();
+  if (!interactionsBound) {
+    interactionsBound = true;
+    bindChartInteractions();
+  }
   if (!animating) {
     animating = true;
     drawLoop();
+  }
+}
+
+function bindTimeWindowButtons(): void {
+  document.querySelectorAll('.chart-time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el = btn as HTMLElement;
+      const canvasId = el.dataset.chart!;
+      const seconds = parseInt(el.dataset.window!);
+      const config = charts.get(canvasId);
+      if (config) {
+        config.window = seconds;
+      }
+      // Update active state for this chart's buttons
+      const parent = el.parentElement;
+      parent?.querySelectorAll('.chart-time-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+    });
+  });
+}
+
+function bindChartInteractions(): void {
+  for (const [canvasId] of charts) {
+    const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
+    if (!canvas) continue;
+
+    const inter = interactions.get(canvasId)!;
+
+    // Wheel to zoom
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.8 : 1.25; // scroll down = zoom out, up = zoom in
+      inter.zoomFactor = Math.max(0.1, Math.min(10, inter.zoomFactor * delta));
+    }, { passive: false });
+
+    // Drag to pan
+    canvas.addEventListener('mousedown', (e) => {
+      inter.isDragging = true;
+      inter.dragStartX = e.clientX;
+      inter.dragStartOffset = inter.panOffset;
+      canvas.style.cursor = 'grabbing';
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!inter.isDragging) return;
+      const config = charts.get(canvasId)!;
+      const rect = canvas.getBoundingClientRect();
+      const plotW = rect.width - PADDING.left - PADDING.right;
+      const windowSec = (config.window ?? 300) / inter.zoomFactor;
+      const msPerPx = (windowSec * 1000) / plotW;
+      const dx = e.clientX - inter.dragStartX;
+      inter.panOffset = inter.dragStartOffset + dx * msPerPx;
+      // Prevent panning into the future
+      if (inter.panOffset > 0) inter.panOffset = 0;
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      inter.isDragging = false;
+      canvas.style.cursor = 'default';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      inter.isDragging = false;
+      canvas.style.cursor = 'default';
+    });
+
+    // Double-click to reset
+    canvas.addEventListener('dblclick', () => {
+      inter.panOffset = 0;
+      inter.zoomFactor = 1.0;
+    });
   }
 }
 
@@ -62,10 +156,13 @@ function drawChart(config: ChartConfig): void {
 
   const plotW = w - PADDING.left - PADDING.right;
   const plotH = h - PADDING.top - PADDING.bottom;
-  const windowSec = config.window ?? 300;
+  const inter = interactions.get(config.canvasId);
+  const zoomFactor = inter?.zoomFactor ?? 1.0;
+  const panOffset = inter?.panOffset ?? 0;
+  const windowSec = (config.window ?? 300) / zoomFactor;
   const now = Date.now();
-  const tMin = now - windowSec * 1000;
-  const tMax = now;
+  const tMax = now + panOffset;
+  const tMin = tMax - windowSec * 1000;
 
   // Collect all series
   const allSeries: Series[] = [];
@@ -166,5 +263,16 @@ function drawChart(config: ChartConfig): void {
         yMap(last.v)
       );
     }
+  }
+
+  // Show zoom/pan indicator if not at defaults
+  if (inter && (inter.zoomFactor !== 1.0 || inter.panOffset !== 0)) {
+    ctx.fillStyle = 'rgba(33, 150, 243, 0.3)';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const zoomLabel = `${inter.zoomFactor.toFixed(1)}x`;
+    const panLabel = inter.panOffset !== 0 ? ` pan:${(inter.panOffset / 1000).toFixed(0)}s` : '';
+    ctx.fillText(`🔍 ${zoomLabel}${panLabel} (dblclick to reset)`, PADDING.left + 4, PADDING.top + 2);
   }
 }

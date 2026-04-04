@@ -90,7 +90,11 @@ export function renderLog(store: LogStore): void {
   }
 }
 
+let logControlsBound = false;
+
 export function bindLogControls(store: LogStore): void {
+  if (logControlsBound) return;
+  logControlsBound = true;
   $('log-clear').addEventListener('click', () => {
     store.clear();
     expandedEntries.clear();

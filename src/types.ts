@@ -126,10 +126,13 @@ export interface PrinterStatus {
 }
 
 export interface FileEntry {
-  name: string;
+  filename: string;
+  type: string;
   size: number;
-  modified?: number;
-  type?: string;
+  create_time?: number;
+  print_time?: number;
+  layer?: number;
+  total_filament_used?: number;
 }
 
 // Machine status codes

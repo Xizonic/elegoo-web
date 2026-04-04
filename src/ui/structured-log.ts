@@ -9,7 +9,10 @@ let paused = false;
 let searchText = '';
 let directionFilter: 'all' | 'sent' | 'received' = 'all';
 let typeFilter: 'all' | 'status' | 'command' | 'response' | 'heartbeat' = 'all';
+let methodFilter: number | 'all' = 'all';
+let showDiff = false;
 let expandedEntries = new Set<number>();
+let pinnedEntries = new Set<number>();
 let pendingCount = 0;
 let lastRenderedTs = '';
 let lastRenderedCount = '';
@@ -39,6 +42,11 @@ function matchesFilters(entry: LogEntry): boolean {
     if (typeFilter === 'command' && cls !== 'command') return false;
     if (typeFilter === 'response' && cls !== 'response') return false;
     if (typeFilter === 'heartbeat' && cls !== 'heartbeat') return false;
+  }
+
+  // Method filter
+  if (methodFilter !== 'all') {
+    if (entry.method !== methodFilter) return false;
   }
 
   // Search text
@@ -89,6 +97,30 @@ function typeIcon(entry: LogEntry): string {
   }
 }
 
+function computeDiff(prev: unknown, curr: unknown, prefix = ''): string[] {
+  const changes: string[] = [];
+  if (typeof prev !== 'object' || typeof curr !== 'object' || !prev || !curr) {
+    if (prev !== curr) changes.push(`${prefix}: ${JSON.stringify(prev)} → ${JSON.stringify(curr)}`);
+    return changes;
+  }
+  const p = prev as Record<string, unknown>;
+  const c = curr as Record<string, unknown>;
+  const allKeys = new Set([...Object.keys(p), ...Object.keys(c)]);
+  for (const key of allKeys) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (!(key in p)) {
+      changes.push(`+ ${path}: ${JSON.stringify(c[key])}`);
+    } else if (!(key in c)) {
+      changes.push(`- ${path}: ${JSON.stringify(p[key])}`);
+    } else if (typeof p[key] === 'object' && typeof c[key] === 'object' && p[key] && c[key] && !Array.isArray(p[key])) {
+      changes.push(...computeDiff(p[key], c[key], path));
+    } else if (JSON.stringify(p[key]) !== JSON.stringify(c[key])) {
+      changes.push(`~ ${path}: ${JSON.stringify(p[key])} → ${JSON.stringify(c[key])}`);
+    }
+  }
+  return changes;
+}
+
 function compactPayload(entry: LogEntry): string {
   if (entry.type === 'PING' || entry.type === 'PONG') return entry.type;
   const raw = entry.raw as Record<string, unknown>;
@@ -114,6 +146,45 @@ function compactPayload(entry: LogEntry): string {
   return entry.payload.slice(0, 200);
 }
 
+function renderSlogRow(e: LogEntry, prevStatusRaw: unknown): string {
+  const dirClass = e.direction === 'sent' ? 'slog-sent' : 'slog-recv';
+  const typeClass = `slog-type-${classifyEntry(e)}`;
+  const isExpanded = expandedEntries.has(e.timestamp);
+  const isPinned = pinnedEntries.has(e.timestamp);
+  const icon = typeIcon(e);
+  const method = methodLabel(e);
+  const summary = compactPayload(e);
+
+  let row = '';
+  row += `<div class="slog-row ${dirClass} ${typeClass} ${isPinned ? 'slog-pinned' : ''}" data-ts="${e.timestamp}">`;
+  row += `<div class="slog-row-header">`;
+  row += `<span class="slog-icon">${icon}</span>`;
+  row += `<span class="slog-time">${formatTimestamp(e.timestamp)}</span>`;
+  row += `<span class="slog-dir">${e.direction === 'sent' ? '→' : '←'}</span>`;
+  row += `<span class="slog-method">${highlightMatch(method)}</span>`;
+  row += `<span class="slog-topic">${highlightMatch(shortTopic(e.topic))}</span>`;
+  row += `<span class="slog-summary">${highlightMatch(summary)}</span>`;
+  row += `<button class="slog-pin-btn ${isPinned ? 'pinned' : ''}" data-pin-ts="${e.timestamp}" title="${isPinned ? 'Unpin' : 'Pin'}">📌</button>`;
+  row += `<span class="slog-expand">${isExpanded ? '▾' : '▸'}</span>`;
+  row += `</div>`;
+
+  if (isExpanded) {
+    if (showDiff && classifyEntry(e) === 'status' && prevStatusRaw) {
+      const diffs = computeDiff(prevStatusRaw, e.raw);
+      if (diffs.length) {
+        row += `<pre class="slog-detail slog-diff">${diffs.map(d => escapeHtml(d)).join('\n')}</pre>`;
+      } else {
+        row += `<pre class="slog-detail slog-diff">No changes from previous status</pre>`;
+      }
+    } else {
+      row += `<pre class="slog-detail">${escapeHtml(JSON.stringify(e.raw, null, 2))}</pre>`;
+    }
+  }
+
+  row += `</div>`;
+  return row;
+}
+
 export function renderStructuredLog(store: LogStore): void {
   if (paused) {
     pendingCount++;
@@ -126,52 +197,61 @@ export function renderStructuredLog(store: LogStore): void {
 
   const lastEntry = entries[entries.length - 1];
   const tsKey = lastEntry ? String(lastEntry.timestamp) : '';
-  const countKey = String(entries.length);
+  const countKey = String(entries.length) + String(pinnedEntries.size) + String(showDiff);
   if (tsKey === lastRenderedTs && countKey === lastRenderedCount) return;
   lastRenderedTs = tsKey;
   lastRenderedCount = countKey;
 
+  // Render pinned entries first at the top
+  const pinned = pinnedEntries.size > 0
+    ? store.getEntries().filter(e => pinnedEntries.has(e.timestamp))
+    : [];
+
   let html = '';
+
+  if (pinned.length) {
+    html += `<div class="slog-pinned-section">`;
+    html += `<div class="slog-pinned-header">📌 Pinned (${pinned.length})</div>`;
+    for (const e of pinned) {
+      html += renderSlogRow(e, null);
+    }
+    html += `</div>`;
+  }
+
+  let prevStatusRaw: unknown = null;
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    const dirClass = e.direction === 'sent' ? 'slog-sent' : 'slog-recv';
-    const typeClass = `slog-type-${classifyEntry(e)}`;
-    const isExpanded = expandedEntries.has(e.timestamp);
-    const icon = typeIcon(e);
-    const method = methodLabel(e);
-    const summary = compactPayload(e);
-
-    html += `<div class="slog-row ${dirClass} ${typeClass}" data-ts="${e.timestamp}">`;
-    html += `<div class="slog-row-header">`;
-    html += `<span class="slog-icon">${icon}</span>`;
-    html += `<span class="slog-time">${formatTimestamp(e.timestamp)}</span>`;
-    html += `<span class="slog-dir">${e.direction === 'sent' ? '→' : '←'}</span>`;
-    html += `<span class="slog-method">${highlightMatch(method)}</span>`;
-    html += `<span class="slog-topic">${highlightMatch(shortTopic(e.topic))}</span>`;
-    html += `<span class="slog-summary">${highlightMatch(summary)}</span>`;
-    html += `<span class="slog-expand">${isExpanded ? '▾' : '▸'}</span>`;
-    html += `</div>`;
-
-    if (isExpanded) {
-      html += `<pre class="slog-detail">${escapeHtml(JSON.stringify(e.raw, null, 2))}</pre>`;
+    html += renderSlogRow(e, classifyEntry(e) === 'status' ? prevStatusRaw : null);
+    if (classifyEntry(e) === 'status') {
+      prevStatusRaw = e.raw;
     }
-
-    html += `</div>`;
   }
 
   container.innerHTML = html;
   $('slog-count').textContent = `${entries.length} messages`;
 
-  // Click to expand/collapse
+  // Click to expand/collapse (but not on pin button)
   container.querySelectorAll('.slog-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // Don't expand when clicking pin button
+      if ((e.target as HTMLElement).closest('.slog-pin-btn')) return;
       const ts = parseInt((row as HTMLElement).dataset.ts ?? '0');
       if (expandedEntries.has(ts)) expandedEntries.delete(ts);
       else expandedEntries.add(ts);
-      // Disable auto-scroll so the user can inspect the entry
       autoScroll = false;
       ($('slog-autoscroll') as HTMLInputElement).checked = false;
-      // Force re-render
+      lastRenderedTs = '';
+      renderStructuredLog(store);
+    });
+  });
+
+  // Pin button clicks
+  container.querySelectorAll('.slog-pin-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ts = parseInt((btn as HTMLElement).dataset.pinTs ?? '0');
+      if (pinnedEntries.has(ts)) pinnedEntries.delete(ts);
+      else pinnedEntries.add(ts);
       lastRenderedTs = '';
       renderStructuredLog(store);
     });
@@ -182,7 +262,22 @@ export function renderStructuredLog(store: LogStore): void {
   }
 }
 
+let slogControlsBound = false;
+
 export function bindStructuredLogControls(store: LogStore): void {
+  if (slogControlsBound) return;
+  slogControlsBound = true;
+
+  // Populate method filter dropdown
+  const methodSelect = $('slog-method-filter') as HTMLSelectElement;
+  const sortedMethods = Object.entries(METHOD_NAMES).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+  for (const [code, name] of sortedMethods) {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = `${code} ${name}`;
+    methodSelect.appendChild(opt);
+  }
+
   // Tab switching
   document.querySelectorAll('.log-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -215,6 +310,14 @@ export function bindStructuredLogControls(store: LogStore): void {
     renderStructuredLog(store);
   });
 
+  // Method filter
+  $('slog-method-filter').addEventListener('change', (e) => {
+    const val = (e.target as HTMLSelectElement).value;
+    methodFilter = val === 'all' ? 'all' : parseInt(val);
+    lastRenderedTs = '';
+    renderStructuredLog(store);
+  });
+
   // Auto-scroll
   $('slog-autoscroll').addEventListener('change', (e) => {
     autoScroll = (e.target as HTMLInputElement).checked;
@@ -237,7 +340,16 @@ export function bindStructuredLogControls(store: LogStore): void {
   $('slog-clear').addEventListener('click', () => {
     store.clear();
     expandedEntries.clear();
+    pinnedEntries.clear();
     lastRenderedTs = '';
     lastRenderedCount = '';
+  });
+
+  // Diff toggle
+  $('slog-diff').addEventListener('click', () => {
+    showDiff = !showDiff;
+    $('slog-diff').classList.toggle('btn-active', showDiff);
+    lastRenderedTs = '';
+    renderStructuredLog(store);
   });
 }

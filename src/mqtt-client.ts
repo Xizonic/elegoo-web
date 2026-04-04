@@ -19,6 +19,11 @@ export class CC2MqttClient {
   private sn = '';
   private commandId = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectDelay = 1000;
+  private maxReconnectDelay = 30000;
+  private shouldReconnect = true;
+  private registered = false;
   private opts: MqttClientOptions;
 
   constructor(opts: MqttClientOptions) {
@@ -64,6 +69,7 @@ export class CC2MqttClient {
 
     this.client.on('connect', () => {
       this.opts.onStateChange('connected');
+      this.reconnectDelay = 1000; // Reset backoff on successful connect
       // We don't know SN yet — subscribe to wildcard to discover it
       this.client!.subscribe('elegoo/+/api_status');
       // Also try registration if we already know the SN
@@ -82,7 +88,9 @@ export class CC2MqttClient {
 
     this.client.on('close', () => {
       this.stopHeartbeat();
+      this.registered = false;
       this.opts.onStateChange('disconnected');
+      this.scheduleReconnect();
     });
   }
 
@@ -110,6 +118,7 @@ export class CC2MqttClient {
     if (topic.includes('/register_response')) {
       const error = data.error as string;
       if (error === 'ok') {
+        this.registered = true;
         this.opts.onRegistered(this.sn);
         this.subscribeAll();
         this.startHeartbeat();
@@ -170,12 +179,33 @@ export class CC2MqttClient {
   }
 
   disconnect(): void {
+    this.shouldReconnect = false;
     this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.client) {
       this.client.end();
       this.client = null;
     }
     this.sn = '';
+    this.registered = false;
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.shouldReconnect) return;
+    if (this.reconnectTimer) return;
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.shouldReconnect) return;
+      console.log(`[MQTT] Reconnecting in ${this.reconnectDelay}ms...`);
+      this.opts.onStateChange('connecting');
+      this.connect();
+      // Exponential backoff
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+    }, this.reconnectDelay);
   }
 
   get serialNumber(): string {

@@ -1,10 +1,14 @@
 import type { CC2MqttClient } from '../mqtt-client';
 import { $ } from './helpers';
 
-let currentMoveDistance = 10;
+let controlsBound = false;
 
 /** Bind all control event handlers */
 export function bindControls(client: CC2MqttClient): void {
+  if (controlsBound) return;
+  controlsBound = true;
+  let currentMoveDistance = 10;
+
   // Print controls
   $('btn-pause').addEventListener('click', () => client.sendCommand(1021, {}));
   $('btn-resume').addEventListener('click', () => client.sendCommand(1023, {}));
@@ -104,5 +108,17 @@ export function bindControls(client: CC2MqttClient): void {
   $('led-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
     client.sendCommand(1029, { power: on ? 1 : 0 });
+  });
+
+  // Temperature presets
+  document.querySelectorAll('.temp-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el = btn as HTMLElement;
+      const nozzle = parseInt(el.dataset.nozzle ?? '0');
+      const bed = parseInt(el.dataset.bed ?? '0');
+      client.sendCommand(1028, { extruder: nozzle, heater_bed: bed });
+      ($('set-nozzle-temp') as HTMLInputElement).value = nozzle > 0 ? String(nozzle) : '';
+      ($('set-bed-temp') as HTMLInputElement).value = bed > 0 ? String(bed) : '';
+    });
   });
 }

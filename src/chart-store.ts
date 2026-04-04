@@ -11,13 +11,15 @@ export interface Series {
   data: DataPoint[];
 }
 
-const MAX_POINTS = 300; // ~5 min at 1 sample/sec
+const MAX_POINTS = 3600; // 1 hour at 1 sample/sec
 const SAMPLE_INTERVAL = 1000; // ms between stored samples
 
 export class ChartStore {
   private series = new Map<string, Series>();
   private lastSampleTime = 0;
   private listeners: (() => void)[] = [];
+  private latestValues: Record<string, number> = {};
+  private intervalId: ReturnType<typeof setInterval> | null = null;
 
   defineSeries(key: string, label: string, color: string): void {
     if (!this.series.has(key)) {
@@ -25,13 +27,20 @@ export class ChartStore {
     }
   }
 
-  /** Push values for multiple series at once. Throttled to SAMPLE_INTERVAL. */
+  /** Update latest values. Actual recording happens via internal timer. */
   push(values: Record<string, number>): void {
+    Object.assign(this.latestValues, values);
+    if (!this.intervalId) {
+      this.record(); // Record first sample immediately
+      this.intervalId = setInterval(() => this.record(), SAMPLE_INTERVAL);
+    }
+  }
+
+  private record(): void {
     const now = Date.now();
-    if (now - this.lastSampleTime < SAMPLE_INTERVAL) return;
     this.lastSampleTime = now;
 
-    for (const [key, value] of Object.entries(values)) {
+    for (const [key, value] of Object.entries(this.latestValues)) {
       const series = this.series.get(key);
       if (!series) continue;
       series.data.push({ t: now, v: value });
@@ -56,5 +65,15 @@ export class ChartStore {
     return () => {
       this.listeners = this.listeners.filter(l => l !== listener);
     };
+  }
+
+  /** Restore series data from persistence */
+  restoreSeries(key: string, data: DataPoint[]): void {
+    const series = this.series.get(key);
+    if (!series) return;
+    // Only restore if series is currently empty (no new data yet)
+    if (series.data.length === 0 && data.length > 0) {
+      series.data = data;
+    }
   }
 }

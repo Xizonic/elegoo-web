@@ -3,9 +3,15 @@
  * so that main.ts imports remain unchanged.
  */
 export { renderDashboard, renderHeader } from './print-status';
-export { renderCanvas } from './canvas';
-export { renderFiles } from './files';
+export { renderCanvas, setCanvasClient } from './canvas';
+export { renderFiles, bindFileControls } from './files';
 export { bindControls } from './controls';
 export { registerChart, initCharts } from './charts';
 export { renderStructuredLog, bindStructuredLogControls } from './structured-log';
+export { toast } from './toast';
+export { renderSystemInfo } from './system-info';
+export { renderTimelapse, setTimelapseClient, requestTimelapseList, showTimelapsePlayer } from './timelapse';
+export { renderBedMesh } from './bed-mesh';
+export { renderGcodePreview } from './gcode-preview';
+export { renderLayerTimeChart } from './layer-chart';
 
