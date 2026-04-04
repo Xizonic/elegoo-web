@@ -81,7 +81,8 @@ export class StateStore extends EventEmitter {
   private lastExceptions: number[] = [];
   private wasFilamentDetected = true;
   private totalLayers = 0;
-  private firstStatusSeen = false;
+  /** Baseline is ready only after the first full status (method 1002) is processed */
+  private baselineReady = false;
 
   constructor(private bridge: MqttBridge, private progressInterval: number) {
     super();
@@ -167,6 +168,10 @@ export class StateStore extends EventEmitter {
         break;
       case 1002:
         this.status = result as unknown as PrinterStatus;
+        // On first full status, establish baseline without emitting events
+        if (!this.baselineReady) {
+          this.establishBaseline();
+        }
         this.detectEvents();
         break;
       case 2005: {
@@ -247,9 +252,53 @@ export class StateStore extends EventEmitter {
     this.detectEvents();
   }
 
+  /**
+   * Establish baseline from the first full status (method 1002).
+   * Sets all tracking state from authoritative data, then enables event detection.
+   */
+  private establishBaseline(): void {
+    if (!this.status) return;
+    const ms = this.status.machine_status;
+    const ps = this.status.print_status;
+    const ext = this.status.extruder;
+
+    this.lastMachineStatus = ms?.status ?? -1;
+    this.lastSubStatus = ms?.sub_status ?? -1;
+    this.lastExceptions = [...(ms?.exception_status ?? [])];
+    this.wasFilamentDetected = !!ext?.filament_detected;
+
+    if (this.lastMachineStatus === 2) {
+      const progress = ms.progress ?? 0;
+      this.lastProgressNotified = Math.floor(progress / this.progressInterval) * this.progressInterval;
+      this.totalLayers = ps?.total_layer ?? 0;
+      if (ps?.filename) {
+        this.bridge.sendCommand(1046, { filename: ps.filename });
+      }
+      console.log(`[StateStore] Baseline from full status — printing at ${progress}%, no false events`);
+    } else {
+      console.log(`[StateStore] Baseline from full status — idle (status ${this.lastMachineStatus})`);
+    }
+
+    this.trackLayerChange(ps?.current_layer);
+    this.baselineReady = true;
+  }
+
+  /** Update tracking state silently (before baseline is ready) */
+  private updateTrackingState(): void {
+    if (!this.status) return;
+    const ms = this.status.machine_status;
+    const ps = this.status.print_status;
+    // Just track layer changes, don't emit any events
+    this.trackLayerChange(ps?.current_layer);
+  }
+
   /** Detect state transitions and emit print events */
   private detectEvents(): void {
-    if (!this.status) return;
+    if (!this.status || !this.baselineReady) {
+      // Before baseline is ready, just silently update tracking state
+      this.updateTrackingState();
+      return;
+    }
 
     const ms = this.status.machine_status;
     const ps = this.status.print_status;
@@ -257,28 +306,6 @@ export class StateStore extends EventEmitter {
 
     const machineStatus = ms?.status ?? -1;
     const subStatus = ms?.sub_status ?? -1;
-
-    // First status received — store baseline without emitting transitions.
-    // This prevents false print_started when the service connects mid-print.
-    if (!this.firstStatusSeen) {
-      this.firstStatusSeen = true;
-      this.lastMachineStatus = machineStatus;
-      this.lastSubStatus = subStatus;
-      this.lastExceptions = [...(ms?.exception_status ?? [])];
-      this.wasFilamentDetected = !!(ext?.filament_detected ?? true);
-      // If already printing, seed progress tracking so we don't spam
-      if (machineStatus === 2) {
-        const progress = ms.progress ?? 0;
-        this.lastProgressNotified = Math.floor(progress / this.progressInterval) * this.progressInterval;
-        this.totalLayers = ps?.total_layer ?? 0;
-        if (ps?.filename) {
-          this.bridge.sendCommand(1046, { filename: ps.filename });
-        }
-        console.log(`[StateStore] Connected mid-print at ${progress}% — baseline set, no false start event`);
-      }
-      this.trackLayerChange(ps?.current_layer);
-      return;
-    }
 
     let printEnded = false;
 
