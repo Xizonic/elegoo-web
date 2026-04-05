@@ -12,13 +12,13 @@ function updateFan(prefix: string, speed: number, toggleId: string): void {
   ($(toggleId) as HTMLInputElement).checked = speed > 0;
 }
 
-function updateCamera(hasCamera: boolean, printerIp: string): void {
+function updateCamera(hasCamera: boolean, _printerIp: string): void {
   const img = $('camera-feed') as HTMLImageElement;
   const overlay = $('camera-overlay');
 
   if (hasCamera) {
-    const src = `http://${printerIp}:8080/?action=stream`;
-    if (img.src !== src) {
+    const src = `/api/stream`;
+    if (img.src !== src && !img.src.endsWith('/api/stream')) {
       img.src = src;
     }
     overlay.classList.add('hidden');

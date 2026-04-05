@@ -1,0 +1,26 @@
+[Unit]
+Description=Elegoo CC2 Web Service
+Documentation=https://github.com/runnane/elegoo-web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jon
+WorkingDirectory=/home/jon/dev/elegoo-web
+EnvironmentFile=/home/jon/dev/elegoo-web/.env
+ExecStart=/home/jon/dev/elegoo-web/node_modules/.bin/tsx src/server/index.ts
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=elegoo-web
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
