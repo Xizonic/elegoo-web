@@ -2,6 +2,11 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   server: {
+    allowedHosts: [
+      'localhost',
+      'elegooweb.srv.jont.no',
+      '172.20.100.9'
+    ],
     host: '0.0.0.0',
     port: 5173,
     proxy: {

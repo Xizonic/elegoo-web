@@ -5,10 +5,12 @@ import { $ } from './helpers';
 export interface ServiceStatus {
   uptime: number;
   mqtt: string;
+  mqttRegisterAttempts: number;
   printerSn: string | null;
   printerIp: string;
   wsClients: number;
   telegram: string;
+  ai: string;
   camera: string;
 }
 
@@ -44,17 +46,38 @@ export function renderServiceStatus(): void {
   }
 
   const s = lastStatus;
+
+  // MQTT display value
+  let mqttLabel = s.mqtt;
+  if (s.mqtt === 'broker_only') mqttLabel = 'registering...';
+
+  // Printer firmware unresponsive banner
+  const showFirmwareWarning = s.mqtt === 'broker_only' && s.mqttRegisterAttempts >= 3;
+  const firmwareBanner = showFirmwareWarning
+    ? `<div class="svc-firmware-warning">
+        ⚠️ <strong>Printer firmware is not responding.</strong>
+        MQTT broker is reachable but the printer won't accept registration
+        (${s.mqttRegisterAttempts} attempts). Try power-cycling the printer.
+      </div>`
+    : '';
+
   container.innerHTML = `
+    ${firmwareBanner}
     <div class="svc-grid">
       <div class="svc-item">
         ${statusDot(s.mqtt, ['connected'])}
         <span class="svc-label">MQTT</span>
-        <span class="svc-value">${s.mqtt}</span>
+        <span class="svc-value">${mqttLabel}</span>
       </div>
       <div class="svc-item">
         ${statusDot(s.telegram, ['running'])}
         <span class="svc-label">Telegram</span>
         <span class="svc-value">${s.telegram}</span>
+      </div>
+      <div class="svc-item">
+        ${statusDot(s.ai, ['monitoring', 'idle'])}
+        <span class="svc-label">AI</span>
+        <span class="svc-value">${s.ai}</span>
       </div>
       <div class="svc-item">
         ${statusDot(s.camera, ['available'])}

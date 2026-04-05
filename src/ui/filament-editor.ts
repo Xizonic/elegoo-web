@@ -83,15 +83,17 @@ interface EditContext {
 }
 
 let currentCtx: EditContext | null = null;
+let currentBrand = 'ELEGOO';
 
 export function openFilamentEditor(
   canvasId: number,
   trayId: number,
-  current: { type: string; color: string; name: string; minTemp: number; maxTemp: number },
+  current: { type: string; color: string; name: string; brand: string; minTemp: number; maxTemp: number },
   client: CommandSender,
 ): void {
   const modal = ensureModal();
   currentCtx = { canvasId, trayId };
+  currentBrand = current.brand || 'ELEGOO';
 
   $('fm-slot').textContent = `${trayId + 1}`;
   ($('fm-type') as HTMLSelectElement).value = current.type || 'PLA';
@@ -117,16 +119,15 @@ export function openFilamentEditor(
     client.sendCommand(2003, {
       canvas_id: currentCtx.canvasId,
       tray_id: currentCtx.trayId,
+      brand: currentBrand,
       filament_type: type,
-      filament_color: color.replace('#', '').toUpperCase(),
+      filament_color: `#${color.replace('#', '').toUpperCase()}`,
       filament_name: name || type,
       min_nozzle_temp: minTemp,
       max_nozzle_temp: maxTemp,
     });
 
     closeModal();
-    // Refresh canvas info
-    client.sendCommand(2005, {});
   });
 
   modal.classList.remove('hidden');

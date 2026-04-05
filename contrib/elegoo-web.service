@@ -6,10 +6,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=jon
-WorkingDirectory=/home/jon/dev/elegoo-web
-EnvironmentFile=/home/jon/dev/elegoo-web/.env
-ExecStart=/home/jon/dev/elegoo-web/node_modules/.bin/tsx src/server/index.ts
+User=elegoo-web
+Group=elegoo-web
+WorkingDirectory=/opt/elegoo-web
+EnvironmentFile=/opt/elegoo-web/.env
+ExecStart=/usr/bin/node --import tsx src/server/index.ts
 Restart=always
 RestartSec=5
 
@@ -20,7 +21,13 @@ SyslogIdentifier=elegoo-web
 
 # Security hardening
 NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
 PrivateTmp=true
+ReadWritePaths=/opt/elegoo-web
+
+# Environment
+Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target

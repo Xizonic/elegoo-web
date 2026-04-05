@@ -12,17 +12,22 @@
 import { writeFile, readFile, rename, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { StateStore, ChartPoint } from './state-store.js';
+import type { StateStore, ChartPoint, AIChartPoint } from './state-store.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('Persistence');
 
 const SAVE_INTERVAL_MS = 30_000; // Save every 30 seconds
 
 interface PersistedState {
-  version: 1;
+  version: 1 | 2;
   savedAt: number;
   chartData: ChartPoint[];
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }>;
   lastLayer: number;
   lastLayerTime: number;
+  /** Added in version 2 */
+  aiChartData?: AIChartPoint[];
 }
 
 export class StatePersistence {
@@ -44,24 +49,28 @@ export class StatePersistence {
       const raw = await readFile(this.filePath, 'utf-8');
       const data: PersistedState = JSON.parse(raw);
 
-      if (data.version !== 1) return false;
+      if (data.version !== 1 && data.version !== 2) return false;
 
       // Only restore if data is less than 24 hours old
       const age = Date.now() - data.savedAt;
       if (age > 24 * 60 * 60 * 1000) {
-        console.log('[Persistence] Saved state too old (>24h), skipping restore');
+        log.info('Saved state too old (>24h), skipping restore');
         return false;
       }
 
       this.store.restoreChartData(data.chartData);
       this.store.restoreLayerData(data.layerTimes, data.lastLayer, data.lastLayerTime);
+      if (data.aiChartData) {
+        this.store.restoreAIChartData(data.aiChartData);
+      }
 
       const chartCount = data.chartData?.length ?? 0;
       const layerCount = data.layerTimes?.length ?? 0;
-      console.log(`[Persistence] Restored ${chartCount} chart points, ${layerCount} layer entries (age: ${Math.round(age / 1000)}s)`);
+      const aiCount = data.aiChartData?.length ?? 0;
+      log.info(`Restored ${chartCount} chart points, ${layerCount} layer entries, ${aiCount} AI points (age: ${Math.round(age / 1000)}s)`);
       return true;
     } catch (err) {
-      console.warn(`[Persistence] Failed to load: ${(err as Error).message}`);
+      log.warn(`Failed to load: ${(err as Error).message}`);
       return false;
     }
   }
@@ -91,12 +100,13 @@ export class StatePersistence {
   private async save(): Promise<void> {
     try {
       const data: PersistedState = {
-        version: 1,
+        version: 2,
         savedAt: Date.now(),
         chartData: this.store.getChartHistory(),
         layerTimes: this.store.layerTimes,
         lastLayer: this.store.getLastLayer(),
         lastLayerTime: this.store.getLastLayerTime(),
+        aiChartData: this.store.getAIChartHistory(),
       };
 
       const json = JSON.stringify(data);
@@ -112,7 +122,7 @@ export class StatePersistence {
       await writeFile(tmpPath, json, 'utf-8');
       await rename(tmpPath, this.filePath);
     } catch (err) {
-      console.warn(`[Persistence] Save failed: ${(err as Error).message}`);
+      log.warn(`Save failed: ${(err as Error).message}`);
     }
   }
 

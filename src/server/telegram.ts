@@ -10,6 +10,10 @@ import type { MqttBridge } from './mqtt-bridge.js';
 import type { ServiceConfig } from './config.js';
 import { getSnapshot } from './rest-api.js';
 import { CRITICAL_EXCEPTIONS } from '../types.js';
+import type { AIAlert } from './ai-monitor.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('Telegram');
 
 /** Escape special chars for Telegram MarkdownV2 */
 function esc(text: string): string {
@@ -91,11 +95,11 @@ export class TelegramIntegration {
 
     // Listen for print events — serialized to avoid race conditions
     store.on('print_event', (event: PrintEvent) => {
-      console.log(`[Telegram] Event: ${event.type}`);
+      log.info(`Event: ${event.type}`);
       this.eventQueue = this.eventQueue
         .then(() => this.handleEvent(event))
         .catch((err) => {
-          console.error(`[Telegram] Unhandled error in event handler: ${(err as Error).message}`);
+          log.error(`Unhandled error in event handler: ${(err as Error).message}`);
         });
     });
   }
@@ -169,16 +173,19 @@ export class TelegramIntegration {
         return;
       }
 
-      // Print started: send new live message
+      // Print started: send new live message (skip reconnection-based events)
       if (event.type === 'print_started') {
+        if (event.resumed) {
+          log.info('Skipping print_started — reconnected to active print');
+          return;
+        }
         this.liveMessageId = await this.sendNew(text, photo, urgent);
         return;
       }
 
-      // Print ended: final update then clear
+      // Print ended: send as NEW message (not edit), then clear live msg
       if (event.type === 'print_completed' || event.type === 'print_failed') {
-        const edited = await this.updateLiveMessage(text, photo);
-        if (!edited) await this.sendNew(text, photo, urgent);
+        await this.sendNew(text, photo, urgent);
         this.liveMessageId = null;
         return;
       }
@@ -186,7 +193,7 @@ export class TelegramIntegration {
       // All other events: new message
       await this.sendNew(text, photo, urgent);
     } catch (err) {
-      console.error(`[Telegram] Failed: ${(err as Error).message}`);
+      log.error(`Failed: ${(err as Error).message}`);
     }
   }
 
@@ -197,14 +204,14 @@ export class TelegramIntegration {
         caption: text,
         parse_mode: 'MarkdownV2',
       });
-      console.log(`[Telegram] Sent new photo message ${msg.message_id}`);
+      log.info(`Sent new photo message ${msg.message_id}`);
       return msg.message_id;
     }
     const msg = await this.bot.api.sendMessage(chatId, text, {
       parse_mode: 'MarkdownV2',
       disable_notification: !urgent,
     });
-    console.log(`[Telegram] Sent new text message ${msg.message_id}`);
+    log.info(`Sent new text message ${msg.message_id}`);
     return msg.message_id;
   }
 
@@ -224,12 +231,12 @@ export class TelegramIntegration {
           parse_mode: 'MarkdownV2',
         });
       }
-      console.log(`[Telegram] Updated live message ${this.liveMessageId}`);
+      log.info(`Updated live message ${this.liveMessageId}`);
       return true;
     } catch (err) {
       const msg = (err as Error).message;
       if (msg.includes('message is not modified')) return true;
-      console.warn(`[Telegram] Edit failed (msgId=${this.liveMessageId}): ${msg}`);
+      log.warn(`Edit failed (msgId=${this.liveMessageId}): ${msg}`);
       // Message might have been deleted — clear tracking so we send a new one
       this.liveMessageId = null;
       return false;
@@ -241,13 +248,35 @@ export class TelegramIntegration {
   get isRunning(): boolean { return this._running; }
 
   async start(): Promise<void> {
-    console.log('[Telegram] Starting bot...');
+    log.info('Starting bot...');
     this.bot.start({
       onStart: () => {
         this._running = true;
-        console.log('[Telegram] Bot is running ✓');
+        log.info('Bot is running ✓');
       },
     });
+  }
+
+  /** Send an AI alert with optional snapshot */
+  async sendAIAlert(alert: AIAlert): Promise<void> {
+    const esc = (text: string) => text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+    const icon = alert.status === 'critical' ? '🚨' : '⚠️';
+    const issueLines = alert.issues.map(i =>
+      `${icon} ${esc(i.type)}: ${esc(i.description)} \\(${Math.round(i.confidence * 100)}%\\)`
+    ).join('\n');
+
+    const text = [
+      `🤖 *AI Print Alert*`,
+      issueLines || `${icon} ${esc(alert.description)}`,
+      `\n_${esc(`Consecutive warnings: ${alert.consecutiveWarnings}`)}_`,
+    ].join('\n');
+
+    try {
+      const photo = this.config.cameraEnabled ? await getSnapshot(this.config) : null;
+      await this.sendNew(text, photo, true);
+    } catch (err) {
+      log.error(`AI alert failed: ${(err as Error).message}`);
+    }
   }
 
   stop(): void {

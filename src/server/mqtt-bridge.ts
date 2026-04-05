@@ -5,6 +5,9 @@
 
 import mqtt from 'mqtt';
 import { EventEmitter } from 'events';
+import { getLogger } from './logger.js';
+
+const log = getLogger('MQTT');
 
 export interface MqttBridgeEvents {
   connected: [sn: string];
@@ -24,7 +27,10 @@ export class MqttBridge extends EventEmitter {
   private sn = '';
   private commandId = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private registerTimer: ReturnType<typeof setInterval> | null = null;
   private _connected = false;
+  private _brokerConnected = false;
+  private _registerAttempts = 0;
 
   constructor(
     private printerIp: string,
@@ -41,12 +47,14 @@ export class MqttBridge extends EventEmitter {
   }
 
   get isConnected(): boolean { return this._connected; }
+  get brokerConnected(): boolean { return this._brokerConnected; }
+  get registerAttempts(): number { return this._registerAttempts; }
   get serialNumber(): string { return this.sn; }
   get ip(): string { return this.printerIp; }
 
   connect(): void {
     const url = `mqtt://${this.printerIp}:1883`;
-    console.log(`[MQTT] Connecting to ${url}...`);
+    log.info(`Connecting to ${url}...`);
 
     this.client = mqtt.connect(url, {
       clientId: this.clientId,
@@ -59,8 +67,11 @@ export class MqttBridge extends EventEmitter {
     });
 
     this.client.on('connect', () => {
-      console.log('[MQTT] Connected, discovering printer...');
-      this.client!.subscribe('elegoo/+/api_status');
+      log.info('Connected, discovering printer...');
+      this._brokerConnected = true;
+      // Subscribe broadly for SN discovery — printer may not publish
+      // api_status until a client registers, so catch any elegoo topic
+      this.client!.subscribe('elegoo/#');
       if (this.sn) this.register();
     });
 
@@ -69,12 +80,15 @@ export class MqttBridge extends EventEmitter {
     });
 
     this.client.on('error', (err) => {
-      console.error('[MQTT] Error:', err.message);
+      log.error(`Error: ${err.message}`);
     });
 
     this.client.on('close', () => {
       this._connected = false;
+      this._brokerConnected = false;
+      this._registerAttempts = 0;
       this.stopHeartbeat();
+      this.stopRegisterRetry();
       this.emit('disconnected');
     });
   }
@@ -89,21 +103,23 @@ export class MqttBridge extends EventEmitter {
 
     this.emit('raw', 'received', topic, data);
 
-    // Discover SN
-    if (topic.includes('/api_status') && !this.sn) {
+    // Discover SN from any elegoo/<sn>/... topic
+    if (!this.sn && topic.startsWith('elegoo/')) {
       const parts = topic.split('/');
-      if (parts.length >= 3) {
+      if (parts.length >= 3 && parts[1].length > 0) {
         this.sn = parts[1];
-        console.log(`[MQTT] Discovered printer SN: ${this.sn}`);
-        this.client!.unsubscribe('elegoo/+/api_status');
+        log.info(`Discovered printer SN: ${this.sn}`);
+        this.client!.unsubscribe('elegoo/#');
         this.register();
       }
     }
 
     if (topic.includes('/register_response')) {
       if (data.error === 'ok') {
-        console.log('[MQTT] Registered successfully');
+        log.info('Registered successfully');
         this._connected = true;
+        this._registerAttempts = 0;
+        this.stopRegisterRetry();
         this.subscribeAll();
         this.startHeartbeat();
         // Request initial data
@@ -123,10 +139,33 @@ export class MqttBridge extends EventEmitter {
   private register(): void {
     if (!this.client || !this.sn) return;
     this.client.subscribe(`elegoo/${this.sn}/${this.requestId}/register_response`);
+    this.sendRegister();
+    // Retry registration every 5 seconds until successful
+    this.stopRegisterRetry();
+    this.registerTimer = setInterval(() => {
+      if (this._connected) {
+        this.stopRegisterRetry();
+        return;
+      }
+      log.info('Retrying registration...');
+      this._registerAttempts++;
+      this.sendRegister();
+    }, 5000);
+  }
+
+  private sendRegister(): void {
+    if (!this.client || !this.sn) return;
     this.client.publish(
       `elegoo/${this.sn}/api_register`,
       JSON.stringify({ client_id: this.clientId, request_id: this.requestId }),
     );
+  }
+
+  private stopRegisterRetry(): void {
+    if (this.registerTimer) {
+      clearInterval(this.registerTimer);
+      this.registerTimer = null;
+    }
   }
 
   private subscribeAll(): void {
@@ -165,6 +204,7 @@ export class MqttBridge extends EventEmitter {
 
   disconnect(): void {
     this.stopHeartbeat();
+    this.stopRegisterRetry();
     this._connected = false;
     if (this.client) {
       this.client.end();

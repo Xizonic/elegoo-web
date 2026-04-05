@@ -27,6 +27,18 @@ export interface WsClientOptions {
   onServiceStatus?: (data: Record<string, unknown>) => void;
   /** Called with chart data points from service */
   onChartData?: (t: number, values: Record<string, number>) => void;
+  /** Called with AI analysis results */
+  onAIAnalysis?: (data: Record<string, unknown>) => void;
+  /** Called with AI alerts (threshold reached) */
+  onAIAlert?: (data: Record<string, unknown>) => void;
+  /** Called with AI chart data (motion + classification scores) */
+  onAIChartData?: (t: number, motion: number, scores: Record<string, number>) => void;
+  /** Called with event log entries */
+  onEventLog?: (entry: { ts: number; event: Record<string, unknown> }) => void;
+  /** Called when server records a new layer time */
+  onLayerTime?: (entry: { layer: number; duration: number; timestamp: number }) => void;
+  /** Called when server clears layer data (new print) */
+  onLayerClear?: () => void;
 }
 
 export class WsClient {
@@ -135,6 +147,50 @@ export class WsClient {
         if (t && values) {
           this.opts.onChartData?.(t, values);
         }
+        break;
+      }
+
+      case 'ai_analysis': {
+        this.opts.onAIAnalysis?.(msg);
+        break;
+      }
+
+      case 'ai_alert': {
+        this.opts.onAIAlert?.(msg);
+        break;
+      }
+
+      case 'ai_chart_data': {
+        const t = msg.t as number;
+        const motion = msg.motion as number;
+        const scores = msg.scores as Record<string, number>;
+        if (t && scores) {
+          this.opts.onAIChartData?.(t, motion ?? 0, scores);
+        }
+        break;
+      }
+
+      case 'event_log': {
+        const ts = msg.ts as number;
+        const event = msg.event as Record<string, unknown>;
+        if (ts && event) {
+          this.opts.onEventLog?.({ ts, event });
+        }
+        break;
+      }
+
+      case 'layer_time': {
+        const layer = msg.layer as number;
+        const duration = msg.duration as number;
+        const timestamp = msg.timestamp as number;
+        if (layer != null && duration != null && timestamp) {
+          this.opts.onLayerTime?.({ layer, duration, timestamp });
+        }
+        break;
+      }
+
+      case 'layer_clear': {
+        this.opts.onLayerClear?.();
         break;
       }
     }

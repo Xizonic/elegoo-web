@@ -10,7 +10,12 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "service": "tsx src/server/index.ts",
-    "service:check": "tsc --project tsconfig.server.json"
+    "service:check": "tsc --project tsconfig.server.json",
+    "service:install": "sudo bash contrib/install.sh",
+    "service:uninstall": "sudo bash contrib/uninstall.sh",
+    "service:restart": "sudo systemctl restart elegoo-web",
+    "service:stop": "sudo systemctl stop elegoo-web",
+    "service:logs": "sudo journalctl -u elegoo-web -f"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
@@ -20,9 +25,20 @@
     "vite": "^8.0.3"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.0.1",
     "dotenv": "^16.4.0",
     "grammy": "^1.35.0",
     "mqtt": "^5.10.0",
+    "sharp": "^0.34.5",
+    "winston": "^3.19.0",
     "ws": "^8.18.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp"
+    ]
   }
 }

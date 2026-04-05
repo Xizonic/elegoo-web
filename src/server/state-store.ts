@@ -8,6 +8,9 @@
 import { EventEmitter } from 'events';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { PrinterAttributes, PrinterStatus, CanvasInfo, FileEntry } from '../types.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('State');
 import {
   STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES,
   EXCEPTION_NAMES, CRITICAL_EXCEPTIONS,
@@ -21,6 +24,15 @@ export interface ChartPoint {
 
 const CHART_MAX_POINTS = 3600; // 1 hour at 1 sample/sec
 const CHART_SAMPLE_MS = 1000;
+
+/** AI chart data point — motion + classification scores */
+export interface AIChartPoint {
+  t: number;
+  motion: number;
+  scores: Record<string, number>;
+}
+
+const AI_CHART_MAX_POINTS = 3600; // 1 hour of AI data
 
 /** Deep-merge delta into base */
 function deepMerge(base: Record<string, unknown>, update: Record<string, unknown>): Record<string, unknown> {
@@ -37,15 +49,24 @@ function deepMerge(base: Record<string, unknown>, update: Record<string, unknown
   return result;
 }
 
+
+
 export type PrintEvent =
   | { type: 'connected'; sn: string }
   | { type: 'disconnected' }
-  | { type: 'print_started'; filename: string }
+  | { type: 'print_started'; filename: string; resumed?: boolean }
   | { type: 'print_completed'; filename: string; duration: number }
   | { type: 'print_failed'; filename: string; reason: string }
   | { type: 'print_progress'; filename: string; progress: number; layer: number; totalLayers: number; remaining: number }
   | { type: 'error'; codes: number[]; names: string[] }
-  | { type: 'filament_runout' };
+  | { type: 'filament_runout' }
+  | { type: 'layer_change'; layer: number; totalLayers: number; durationSec: number };
+
+/** Timestamped event log entry broadcast to clients */
+export interface EventLogEntry {
+  ts: number;
+  event: PrintEvent;
+}
 
 export class StateStore extends EventEmitter {
   // Current state
@@ -70,9 +91,16 @@ export class StateStore extends EventEmitter {
   private chartData: ChartPoint[] = [];
   private chartTimer: ReturnType<typeof setInterval> | null = null;
 
+  // AI chart data ring buffer (motion + classification scores)
+  private aiChartData: AIChartPoint[] = [];
+
   // Raw log ring buffer for WS clients that want logs
   private rawLog: Array<{ direction: string; topic: string; data: unknown; ts: number }> = [];
   private readonly maxLogEntries = 500;
+
+  // Event log ring buffer (important events for the Event Log panel)
+  private eventLog: EventLogEntry[] = [];
+  private readonly maxEventLog = 200;
 
   // Event detection state
   private lastMachineStatus = -1;
@@ -88,6 +116,14 @@ export class StateStore extends EventEmitter {
     super();
 
     // Wire up MQTT bridge events
+    // Listen to our own print_event emissions and log them
+    this.on('print_event', (event: PrintEvent) => {
+      const entry: EventLogEntry = { ts: Date.now(), event };
+      this.eventLog.push(entry);
+      if (this.eventLog.length > this.maxEventLog) this.eventLog.shift();
+      this.emit('event_log', entry);
+    });
+
     bridge.on('connected', (sn: string) => {
       this.emit('print_event', { type: 'connected', sn } satisfies PrintEvent);
     });
@@ -155,6 +191,27 @@ export class StateStore extends EventEmitter {
     }
   }
 
+  /** Record an AI chart data point and broadcast to clients */
+  pushAIChartData(point: AIChartPoint): void {
+    this.aiChartData.push(point);
+    if (this.aiChartData.length > AI_CHART_MAX_POINTS) {
+      this.aiChartData.shift();
+    }
+    this.emit('ai_chart_data', point);
+  }
+
+  /** Get AI chart history for new WS clients */
+  getAIChartHistory(): AIChartPoint[] {
+    return this.aiChartData;
+  }
+
+  /** Restore AI chart data from persistence */
+  restoreAIChartData(data: AIChartPoint[]): void {
+    if (data && data.length > 0) {
+      this.aiChartData = data;
+    }
+  }
+
   /** Restore layer data from persistence */
   restoreLayerData(
     layerTimes: Array<{ layer: number; duration: number; timestamp: number }>,
@@ -171,6 +228,14 @@ export class StateStore extends EventEmitter {
   getLastLayer(): number { return this._lastLayer; }
   getLastLayerTime(): number { return this._lastLayerTime; }
 
+  /** Clear layer data and notify WS clients */
+  private clearLayerData(): void {
+    this.layerTimes = [];
+    this._lastLayer = 0;
+    this._lastLayerTime = 0;
+    this.emit('layer_clear');
+  }
+
   /** Clean up timers */
   destroy(): void {
     if (this.chartTimer) clearInterval(this.chartTimer);
@@ -179,6 +244,11 @@ export class StateStore extends EventEmitter {
   /** Get recent raw log entries */
   getRecentLogs(count = 100): Array<{ direction: string; topic: string; data: unknown; ts: number }> {
     return this.rawLog.slice(-count);
+  }
+
+  /** Get event log history for new WS clients */
+  getEventLog(): EventLogEntry[] {
+    return this.eventLog;
   }
 
   private handleResponse(method: number, data: Record<string, unknown>): void {
@@ -191,6 +261,8 @@ export class StateStore extends EventEmitter {
         break;
       case 1002:
         this.status = result as unknown as PrinterStatus;
+        // Extract bed mesh from full status if present
+        this.extractBedMesh(result);
         // On first full status, establish baseline without emitting events
         if (!this.baselineReady) {
           this.establishBaseline();
@@ -250,6 +322,18 @@ export class StateStore extends EventEmitter {
     }
   }
 
+  /** Extract bed mesh data from any response/status that may contain it */
+  private extractBedMesh(data: Record<string, unknown>): void {
+    const meshData = (data.bed_mesh ?? data.bed_level_info) as Record<string, unknown> | undefined;
+    if (meshData) {
+      const probed = (meshData.probed_matrix ?? meshData.mesh_matrix ?? meshData.data) as number[][] | undefined;
+      if (probed && Array.isArray(probed) && probed.length > 0) {
+        this.bedMesh = probed;
+        log.info(`Bed mesh updated: ${probed.length}x${probed[0].length}`);
+      }
+    }
+  }
+
   private handleStatusEvent(data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
@@ -263,14 +347,8 @@ export class StateStore extends EventEmitter {
       ) as unknown as PrinterStatus;
     }
 
-    // Capture bed mesh data if present
-    const meshData = (result.bed_mesh ?? result.bed_level_info) as Record<string, unknown> | undefined;
-    if (meshData) {
-      const probed = (meshData.probed_matrix ?? meshData.mesh_matrix ?? meshData.data) as number[][] | undefined;
-      if (probed && Array.isArray(probed) && probed.length > 0) {
-        this.bedMesh = probed;
-      }
-    }
+    // Capture bed mesh data if present (arrives during auto-level)
+    this.extractBedMesh(result);
 
     this.detectEvents();
   }
@@ -297,13 +375,27 @@ export class StateStore extends EventEmitter {
       if (ps?.filename) {
         this.bridge.sendCommand(1046, { filename: ps.filename });
       }
-      console.log(`[StateStore] Baseline from full status — printing at ${progress}%, no false events`);
+      // Clear stale layer data from previous print/session — timestamps are invalid
+      // after a restart, which would produce bogus durations. Layer data will
+      // accumulate fresh from this point.
+      this.clearLayerData();
+      log.info(`Baseline from full status — printing at ${progress}%, layer data reset`);
     } else {
-      console.log(`[StateStore] Baseline from full status — idle (status ${this.lastMachineStatus})`);
+      log.info(`Baseline from full status — idle (status ${this.lastMachineStatus})`);
     }
 
     this.trackLayerChange(ps?.current_layer);
     this.baselineReady = true;
+
+    // If already printing when baseline is set, notify listeners so they can
+    // start monitoring (e.g. AI monitor joining a print already in progress)
+    if (this.lastMachineStatus === 2) {
+      this.emit('print_event', {
+        type: 'print_started',
+        filename: ps?.filename ?? 'unknown',
+        resumed: true,
+      } satisfies PrintEvent);
+    }
   }
 
   /** Update tracking state silently (before baseline is ready) */
@@ -337,9 +429,7 @@ export class StateStore extends EventEmitter {
       this.lastProgressNotified = -1;
       this.totalLayers = ps?.total_layer ?? 0;
       // Reset layer tracking for new print
-      this.layerTimes = [];
-      this._lastLayer = 0;
-      this._lastLayerTime = 0;
+      this.clearLayerData();
       if (ps?.filename) {
         this.bridge.sendCommand(1046, { filename: ps.filename });
       }
@@ -380,7 +470,7 @@ export class StateStore extends EventEmitter {
       if (progress >= nextThreshold && progress < 100) {
         const notifyAt = Math.floor(progress / this.progressInterval) * this.progressInterval;
         if (notifyAt > this.lastProgressNotified) {
-          console.log(`[StateStore] Progress ${progress}% → notify at ${notifyAt}% (next threshold was ${nextThreshold}%)`);
+          log.info(`Progress ${progress}% → notify at ${notifyAt}% (next threshold was ${nextThreshold}%)`);
           this.lastProgressNotified = notifyAt;
           this.emit('print_event', {
             type: 'print_progress',
@@ -406,8 +496,8 @@ export class StateStore extends EventEmitter {
       }
     }
 
-    // Filament runout from sensor
-    if (ext && ext.filament_detect_enable) {
+    // Filament runout from sensor — only during active printing, not when print just ended
+    if (ext && ext.filament_detect_enable && machineStatus === 2 && !printEnded) {
       if (!ext.filament_detected && this.wasFilamentDetected) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
@@ -428,8 +518,26 @@ export class StateStore extends EventEmitter {
     if (layer !== this._lastLayer) {
       if (this._lastLayer > 0 && this._lastLayerTime > 0) {
         const durationSec = (now - this._lastLayerTime) / 1000;
-        this.layerTimes.push({ layer: this._lastLayer, duration: durationSec, timestamp: now });
-        if (this.layerTimes.length > 2000) this.layerTimes.shift();
+        // Sanity check: reject bogus durations (> 10 min per layer is implausible,
+        // likely caused by stale timestamp across restart or print boundary)
+        if (durationSec > 600) {
+          log.warn(`Discarding bogus layer duration: L${this._lastLayer} = ${durationSec.toFixed(0)}s`);
+        } else {
+          const entry = { layer: this._lastLayer, duration: durationSec, timestamp: now };
+          this.layerTimes.push(entry);
+          if (this.layerTimes.length > 2000) this.layerTimes.shift();
+          // Broadcast to WS clients
+          this.emit('layer_time', entry);
+        }
+        // Emit layer_change event for milestone layers (every 10 layers or layer 1)
+        if (this.baselineReady && (layer === 1 || layer % 10 === 0)) {
+          this.emit('print_event', {
+            type: 'layer_change',
+            layer,
+            totalLayers: this.totalLayers || 0,
+            durationSec,
+          } satisfies PrintEvent);
+        }
       }
       this._lastLayer = layer;
       this._lastLayerTime = now;

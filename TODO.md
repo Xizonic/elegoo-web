@@ -2,11 +2,9 @@
 
 ## High Priority
 
-- [ ] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting
-- [ ] **File thumbnail preview** — Show thumbnail on hover/click in file list (method 1045)
-- [ ] **Print history panel** — Method 1048 returns print history (task name, status, begin/end time). Not implemented at all
-- [ ] **Mono filament status** — `mono_filament_info` is received but never displayed (type, color, temp range)
-- [ ] **Disable controls during commands** — Prevent double-sends while a command is in flight (isExecutingCommand pattern)
+- [ ] Settings må flyttes til tab og ikke dialog. Det er ikke mulig å redigere så mye info i en dialog.
+- [ ] Det er ikke mulig å lese labels på charts pr nå. Vi må ha en tooltip som viser verdien på alle data i posisjonen vi har musen over. 
+
 
 ## Medium Priority
 
@@ -14,6 +12,9 @@
 - [ ] **AI detection settings** — Show/configure spaghetti detection and foreign object detection (methods 2010/2011)
 - [ ] **Export MQTT log** — Download log as JSON for offline debugging
 - [ ] **Camera snapshot** — Capture still frame from MJPEG stream
+- [ ] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting
+- [ ] **Print history panel** — Method 1048 returns print history (task name, status, begin/end time). Not implemented at all
+- [ ] **Disable controls during commands** — Prevent double-sends while a command is in flight (isExecutingCommand pattern)
 
 ## Lower Priority / Nice-to-Have
 
@@ -21,14 +22,10 @@
 - [ ] **Dark/light theme toggle** — CSS custom properties make this straightforward
 - [ ] **Keyboard shortcuts** — Pause (P), Resume (R), Stop (S), Home (H) etc.
 - [ ] **Device rename** — Set printer hostname from UI (method 1060)
-- [ ] **Storage capacity** — Show free/total disk space (method 1061)
 - [ ] **Emergency stop button** — Prominent e-stop with confirmation (method 1036)
 - [ ] **Self-check wizard** — Auto-level + vibration optimize + PID detect (method 1035/OneKeyCheck)
-- [ ] **File delete** — Delete files from printer storage (method 1047)
 - [ ] **History delete** — Remove print history entries (method 1049)
-- [ ] **Folder navigation** — File browser currently flat; support directory traversal
 - [ ] **Print queue** — Queue multiple files for sequential printing
-- [ ] **Mobile layout polish** — Responsive layout exists but needs work on touch targets and ordering
 - [ ] **Notification sound** — Audio alert when print completes or error occurs
 - [ ] **Connection presets** — Save/recall multiple printer IPs
 - [ ] **Multi-printer support** — Connect to multiple printers simultaneously in tabs
@@ -39,6 +36,8 @@
 
 ## Completed
 
+- [x] **Event Log panel** — Shows important events (print start/complete/fail, errors, milestones, layer changes every 10 layers) with icons, timestamps, and severity colors
+- [x] **AI label config page** — Settings modal section to customize CLIP/SigLIP classification labels, issue types, severity (OK/WARNING/CRITICAL), and warn/crit thresholds. Persisted to disk.
 - [x] Temperature display with live values and target bars
 - [x] Print status with progress, layer count, thumbnail
 - [x] Fan control with speed bars and toggles
@@ -76,3 +75,19 @@
 - [x] **Structured log: method name filter** — Dropdown with all known method names for quick filtering
 - [x] **Structured log: diff view** — Show delta between consecutive status events
 - [x] **Structured log: pin entries** — Pin important log entries to top for reference
+- [x] **Settings page** — Persistent settings panel with card layout and Telegram config
+- [x] **Panel reorder/hide** — Show/hide panels and change their order, persisted in localStorage
+- [x] **Telegram config in UI** — View Telegram status and update progress interval from settings
+- [x] **Camera click-to-expand** — Click camera feed to open fullscreen overlay
+- [x] **Telegram separate start/complete messages** — Print start and complete are distinct messages; no false start on reconnect
+- [x] **Filament runout false positive fixed** — No longer triggers when print completes and extruder disengages
+- [x] **File thumbnail preview** — Show thumbnail on hover/click in file list (method 1045)
+- [x] **Mono filament status** — `mono_filament_info` is received but never displayed (type, color, temp range)
+- [x] **Storage capacity** — Show free/total disk space (method 1048)
+- [x] **File delete** — Delete files from printer storage (method 1047)
+- [x] **Folder navigation** — File browser currently flat; support directory traversal
+- [x] **Mobile layout polish** — Responsive layout exists but needs work on touch targets and ordering
+- [x] Label scores is collapsed on change, and strings are trimmed to length - so we cannot read them.
+- [x] Not possible to increase size of camera?
+- [x] Saving canvas doest not work (error message 1100?)
+- [x] Add service/server side structured logging to file with rotation (winston?)

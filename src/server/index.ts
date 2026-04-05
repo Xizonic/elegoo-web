@@ -17,18 +17,24 @@ import { WebSocketTransport } from './ws-transport.js';
 import { createRestRouter } from './rest-api.js';
 import { TelegramIntegration } from './telegram.js';
 import { StatePersistence } from './state-persistence.js';
+import { AIMonitor } from './ai-monitor.js';
+import { initLogger, getLogger } from './logger.js';
 
 const config = loadConfig();
+const logger = initLogger(config.dataDir);
+const log = getLogger('Service');
 
-console.log('🖨  Elegoo CC2 Service');
-console.log(`   Printer: ${config.printerIp}`);
-console.log(`   Service: http://0.0.0.0:${config.servicePort}`);
-console.log(`   Camera:  ${config.cameraEnabled ? config.cameraUrl : 'disabled'}`);
-console.log(`   Data:    ${config.dataDir}`);
+log.info('🖨  Elegoo CC2 Service');
+log.info(`Printer: ${config.printerIp}`);
+log.info(`Service: http://0.0.0.0:${config.servicePort}`);
+log.info(`Camera:  ${config.cameraEnabled ? config.cameraUrl : 'disabled'}`);
+log.info(`Data:    ${config.dataDir}`);
 if (config.telegramEnabled) {
-  console.log(`   Telegram: enabled (progress every ${config.progressInterval}%)`);
+  log.info(`Telegram: enabled (progress every ${config.progressInterval}%)`);
 }
-console.log('');
+if (config.aiEnabled) {
+  log.info(`AI:       enabled (VLM: ${config.aiVlmEnabled ? config.aiVlmModel : 'off'}, Local: ${config.aiLocalEnabled ? 'on' : 'off'})`);
+}
 
 // --- MQTT Bridge (singleton connection to printer) ---
 const bridge = new MqttBridge(config.printerIp, config.printerPassword);
@@ -39,20 +45,45 @@ const store = new StateStore(bridge, config.progressInterval);
 // --- State Persistence ---
 const persistence = new StatePersistence(store, config.dataDir);
 
-// --- HTTP Server ---
-const httpServer = createServer(createRestRouter(store, config));
-
-// --- WebSocket Transport (for browser clients) ---
-const wsTransport = new WebSocketTransport(httpServer, store, bridge);
-
 // --- Telegram Bot (optional) ---
 let telegram: TelegramIntegration | null = null;
 if (config.telegramEnabled) {
   telegram = new TelegramIntegration(store, bridge, config);
 }
 
+// --- AI Monitor (optional, created early so REST API can reference it) ---
+let aiMonitor: AIMonitor | null = null;
+if (config.aiEnabled) {
+  aiMonitor = new AIMonitor(store, config);
+}
+
+// --- HTTP Server ---
+const httpServer = createServer(createRestRouter(store, config, aiMonitor));
+
+// --- WebSocket Transport (for browser clients) ---
+const wsTransport = new WebSocketTransport(httpServer, store, bridge);
+
 // Provide service references for status panel
-wsTransport.setServices({ telegram });
+wsTransport.setServices({ telegram, aiMonitor });
+
+// Forward AI events to WS clients
+if (aiMonitor) {
+  aiMonitor.on('analysis', (analysis: Record<string, unknown>) => {
+    wsTransport.broadcast({ type: 'ai_analysis', ...analysis });
+  });
+
+  aiMonitor.on('alert', (alert: Record<string, unknown>) => {
+    wsTransport.broadcast({ type: 'ai_alert', ...alert });
+    // Also send to Telegram
+    if (telegram) {
+      telegram.sendAIAlert(alert as any);
+    }
+  });
+
+  aiMonitor.on('ai_chart_data', (data: { t: number; motion: number; scores: Record<string, number> }) => {
+    store.pushAIChartData(data);
+  });
+}
 
 // --- Startup ---
 async function start(): Promise<void> {
@@ -65,18 +96,24 @@ async function start(): Promise<void> {
 
   // Start HTTP + WebSocket server
   httpServer.listen(config.servicePort, '0.0.0.0', () => {
-    console.log(`[Service] Listening on :${config.servicePort}`);
+    log.info(`Listening on :${config.servicePort}`);
   });
 
   // Start Telegram bot if configured
   if (telegram) {
     await telegram.start();
   }
+
+  // Start AI monitor if configured
+  if (aiMonitor) {
+    await aiMonitor.start();
+  }
 }
 
 // Graceful shutdown
 function shutdown(): void {
-  console.log('\nShutting down...');
+  log.info('Shutting down...');
+  aiMonitor?.stop();
   persistence.stop();
   wsTransport.close();
   telegram?.stop();
@@ -89,6 +126,6 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 start().catch((err) => {
-  console.error('Fatal:', err);
+  log.error('Fatal:', err);
   process.exit(1);
 });

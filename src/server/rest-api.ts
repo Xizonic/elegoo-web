@@ -12,6 +12,10 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
 import type { StateStore } from './state-store.js';
 import type { ServiceConfig } from './config.js';
+import type { AIMonitor, AILabelConfig } from './ai-monitor.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('Camera');
 
 const JPEG_START = Buffer.from([0xff, 0xd8]);
 const JPEG_END = Buffer.from([0xff, 0xd9]);
@@ -86,7 +90,7 @@ async function doFetch(cameraUrl: string): Promise<Buffer | null> {
 
     return null;
   } catch (err) {
-    console.warn(`[Camera] Snapshot failed: ${(err as Error).message}`);
+    log.warn(`Snapshot failed: ${(err as Error).message}`);
     return null;
   }
 }
@@ -116,7 +120,7 @@ function startMjpegUpstream(cameraUrl: string): void {
     timeout: 10_000,
   };
 
-  console.log(`[Camera] Opening upstream MJPEG stream to ${cameraUrl}`);
+  log.info(`Opening upstream MJPEG stream to ${cameraUrl}`);
 
   const req = httpRequest(reqOpts, (upstream) => {
     let buf = Buffer.alloc(0);
@@ -153,7 +157,7 @@ function startMjpegUpstream(cameraUrl: string): void {
     });
 
     upstream.on('end', () => {
-      console.log('[Camera] Upstream stream ended');
+      log.info('Upstream stream ended');
       upstreamActive = false;
       // Reconnect if there are still clients
       if (streamClients.size > 0) {
@@ -162,7 +166,7 @@ function startMjpegUpstream(cameraUrl: string): void {
     });
 
     upstream.on('error', (err) => {
-      console.warn(`[Camera] Upstream error: ${err.message}`);
+      log.warn(`Upstream error: ${err.message}`);
       upstreamActive = false;
       if (streamClients.size > 0) {
         setTimeout(() => startMjpegUpstream(cameraUrl), 5000);
@@ -171,7 +175,7 @@ function startMjpegUpstream(cameraUrl: string): void {
   });
 
   req.on('error', (err) => {
-    console.warn(`[Camera] Upstream connection failed: ${err.message}`);
+    log.warn(`Upstream connection failed: ${err.message}`);
     upstreamActive = false;
     if (streamClients.size > 0) {
       setTimeout(() => startMjpegUpstream(cameraUrl), 5000);
@@ -179,7 +183,7 @@ function startMjpegUpstream(cameraUrl: string): void {
   });
 
   req.on('timeout', () => {
-    console.warn('[Camera] Upstream connection timed out');
+    log.warn('Upstream connection timed out');
     req.destroy();
     upstreamActive = false;
     if (streamClients.size > 0) {
@@ -198,25 +202,26 @@ function addStreamClient(res: ServerResponse, config: ServiceConfig): void {
   });
 
   streamClients.add(res);
-  console.log(`[Camera] Stream client connected (total: ${streamClients.size})`);
+  log.info(`Stream client connected (total: ${streamClients.size})`);
 
   res.on('close', () => {
     streamClients.delete(res);
-    console.log(`[Camera] Stream client disconnected (total: ${streamClients.size})`);
+    log.info(`Stream client disconnected (total: ${streamClients.size})`);
   });
 
   // Start upstream if not already running
   startMjpegUpstream(config.cameraUrl);
 }
 
-export function createRestRouter(store: StateStore, config: ServiceConfig) {
+export function createRestRouter(store: StateStore, config: ServiceConfig, aiMonitor?: AIMonitor | null) {
   return (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url || '';
 
     // CORS headers for API routes
     if (url.startsWith('/api/')) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
@@ -273,6 +278,121 @@ export function createRestRouter(store: StateStore, config: ServiceConfig) {
       }
       addStreamClient(res, config);
       return;
+    }
+
+    // Telegram config — GET (read) and POST (update progress interval)
+    if (url === '/api/config/telegram') {
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          enabled: config.telegramEnabled,
+          chatId: config.telegramChatId ? config.telegramChatId.slice(0, 4) + '...' : '',
+          progressInterval: config.progressInterval,
+        }));
+        return;
+      }
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const data = JSON.parse(body) as { progressInterval?: number };
+            if (typeof data.progressInterval === 'number' &&
+                data.progressInterval >= 5 && data.progressInterval <= 50) {
+              (config as { progressInterval: number }).progressInterval = data.progressInterval;
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, progressInterval: config.progressInterval }));
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Invalid progressInterval (5-50)' }));
+            }
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+    }
+
+    // AI label config — GET (read) POST (update) DELETE (reset to defaults)
+    if (url === '/api/config/ai-labels') {
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          labels: aiMonitor?.getLabelConfigs() ?? [],
+          enabled: config.aiEnabled && config.aiLocalEnabled,
+        }));
+        return;
+      }
+      if (req.method === 'POST') {
+        if (!aiMonitor) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'AI monitor not enabled' }));
+          return;
+        }
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', () => {
+          try {
+            const data = JSON.parse(body) as { labels?: AILabelConfig[] };
+            if (!Array.isArray(data.labels) || data.labels.length === 0) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'labels must be a non-empty array' }));
+              return;
+            }
+            // Validate each label config
+            for (const lc of data.labels) {
+              if (!lc.label || typeof lc.label !== 'string') {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Each label must have a non-empty label string' }));
+                return;
+              }
+              if (!['ok', 'warning', 'critical'].includes(lc.severity)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Invalid severity: ${lc.severity}` }));
+                return;
+              }
+              if (typeof lc.warnThreshold !== 'number' || lc.warnThreshold < 0 || lc.warnThreshold > 1) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'warnThreshold must be 0-1' }));
+                return;
+              }
+              if (typeof lc.critThreshold !== 'number' || lc.critThreshold < 0 || lc.critThreshold > 1) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'critThreshold must be 0-1' }));
+                return;
+              }
+            }
+            aiMonitor.setLabelConfigs(data.labels).then(() => {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true }));
+            }).catch(() => {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Failed to save' }));
+            });
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+      if (req.method === 'DELETE') {
+        if (!aiMonitor) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'AI monitor not enabled' }));
+          return;
+        }
+        aiMonitor.resetLabelConfigs().then(() => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, labels: aiMonitor.getLabelConfigs() }));
+        }).catch(() => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to reset' }));
+        });
+        return;
+      }
     }
 
     // Not an API route — let ws-transport or 404 handle it

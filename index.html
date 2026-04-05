@@ -20,6 +20,7 @@
       <span id="printer-name" class="subtitle"></span>
     </div>
     <div class="header-right">
+      <button id="settings-btn" class="btn btn-sm btn-ghost" title="Settings">⚙️</button>
       <span id="connection-status" class="status-badge disconnected">Disconnected</span>
     </div>
   </header>
@@ -150,10 +151,51 @@
 
         <!-- Camera -->
         <div class="card" id="camera-card">
-          <h3>📷 Camera</h3>
-          <div class="camera-wrap">
+          <div class="card-header">
+            <h3>📷 Camera</h3>
+            <button id="camera-expand-btn" class="btn btn-sm btn-ghost" title="Toggle large view">⤢ Expand</button>
+          </div>
+          <div class="camera-wrap" id="camera-wrap" title="Click to enlarge">
             <img id="camera-feed" alt="Camera off" class="camera-img">
             <div class="camera-overlay" id="camera-overlay">Camera not available</div>
+          </div>
+        </div>
+
+        <!-- Camera Fullscreen Overlay -->
+        <div id="camera-modal" class="camera-modal hidden" tabindex="-1">
+          <div class="camera-modal-content">
+            <img id="camera-modal-img" alt="Camera" class="camera-modal-img">
+            <button id="camera-modal-close" class="camera-modal-close" title="Close">&times;</button>
+          </div>
+        </div>
+
+        <!-- AI Monitor -->
+        <div class="card" id="ai-card">
+          <h3>🤖 AI Monitor</h3>
+          <div id="ai-panel">
+            <div class="ai-empty">AI monitoring disabled or not started</div>
+          </div>
+          <div class="ai-charts-grid">
+            <div class="chart-wrap ai-chart-wrap">
+              <h4 class="ai-chart-title">Motion Detection</h4>
+              <div class="chart-time-selector">
+                <button class="chart-time-btn" data-chart="chart-ai-motion" data-window="60">1m</button>
+                <button class="chart-time-btn active" data-chart="chart-ai-motion" data-window="300">5m</button>
+                <button class="chart-time-btn" data-chart="chart-ai-motion" data-window="900">15m</button>
+                <button class="chart-time-btn" data-chart="chart-ai-motion" data-window="3600">1h</button>
+              </div>
+              <canvas id="chart-ai-motion" class="live-chart"></canvas>
+            </div>
+            <div class="chart-wrap ai-chart-wrap">
+              <h4 class="ai-chart-title">AI Classification</h4>
+              <div class="chart-time-selector">
+                <button class="chart-time-btn" data-chart="chart-ai-class" data-window="60">1m</button>
+                <button class="chart-time-btn active" data-chart="chart-ai-class" data-window="300">5m</button>
+                <button class="chart-time-btn" data-chart="chart-ai-class" data-window="900">15m</button>
+                <button class="chart-time-btn" data-chart="chart-ai-class" data-window="3600">1h</button>
+              </div>
+              <canvas id="chart-ai-class" class="live-chart"></canvas>
+            </div>
           </div>
         </div>
 
@@ -165,9 +207,20 @@
           </div>
         </div>
 
+        <!-- Event Log -->
+        <div class="card" id="event-log-card">
+          <h3>📜 Event Log</h3>
+          <div id="event-log-entries" class="event-log-entries">
+            <div class="event-log-empty">No events yet</div>
+          </div>
+        </div>
+
         <!-- Bed Mesh -->
         <div class="card" id="bed-mesh-card">
-          <h3>🔲 Bed Mesh</h3>
+          <div class="card-header">
+            <h3>🔲 Bed Mesh</h3>
+            <button id="bed-mesh-refresh" class="btn btn-sm btn-ghost" title="Run auto-level to capture bed mesh">📐 Auto Level</button>
+          </div>
           <canvas id="bed-mesh-canvas" class="bed-mesh-canvas"></canvas>
         </div>
 

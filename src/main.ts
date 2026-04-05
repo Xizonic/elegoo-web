@@ -14,6 +14,10 @@ import {
   renderGcodePreview,
   renderLayerTimeChart,
   updateServiceStatus,
+  handleAIAnalysis, handleAIAlert, updateAIStatus,
+  openSettings, applyCardLayout,
+  currentFileSource, currentFileDir, handleThumbnailResponse,
+  handleEventLog, loadEventLogHistory,
 } from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
 
@@ -33,6 +37,15 @@ chartStore.defineSeries('fan_model',  'Model',      '#4fc3f7');
 chartStore.defineSeries('fan_aux',    'Aux',        '#66bb6a');
 chartStore.defineSeries('fan_case',   'Case',       '#ffa726');
 
+// AI chart series — motion detection
+chartStore.defineSeries('ai_motion',        'Motion',           '#58a6ff');
+// AI chart series — classification groups
+chartStore.defineSeries('ai_printing',      'Print in Progress', '#3fb950');
+chartStore.defineSeries('ai_failure',       'Spaghetti/Failure', '#f85149');
+chartStore.defineSeries('ai_empty',         'Empty Bed',         '#8b949e');
+chartStore.defineSeries('ai_paused',        'Paused/Stopped',    '#f0883e');
+chartStore.defineSeries('ai_other',         'Other',             '#a371f7');
+
 
 // Register charts
 registerChart({
@@ -49,6 +62,22 @@ registerChart({
   yMin: 0,
   yMax: 100,
   unit: '%',
+});
+
+registerChart({
+  canvasId: 'chart-ai-motion',
+  seriesKeys: ['ai_motion'],
+  yMin: 0,
+  yMax: 30,
+  unit: '%',
+});
+
+registerChart({
+  canvasId: 'chart-ai-class',
+  seriesKeys: ['ai_printing', 'ai_failure', 'ai_empty', 'ai_paused', 'ai_other'],
+  yMin: 0,
+  yMax: 100,
+  unit: '',
 });
 
 
@@ -87,10 +116,12 @@ state.subscribe(scheduleRender);
 logStore.subscribe(scheduleRender);
 
 let controlsBound = false;
+let dashboardShown = false;
 
-function onConnected(sn: string): void {
-  console.log(`Connected to printer SN: ${sn}`);
-  toast(`Connected to printer ${sn}`, 'success');
+/** Show the dashboard UI and bind controls (idempotent) */
+function showDashboard(): void {
+  if (dashboardShown) return;
+  dashboardShown = true;
   $('connect-dialog').classList.add('hidden');
   $('dashboard').classList.remove('hidden');
 
@@ -109,12 +140,56 @@ function onConnected(sn: string): void {
       player.src = '';
       $('timelapse-player-wrap').classList.add('hidden');
     });
+    $('bed-mesh-refresh').addEventListener('click', () => {
+      if (!confirm('Run auto-level? This will probe the bed and may take a minute.\nThe printer must be idle (not printing).')) return;
+      toast('Starting auto-level...', 'info');
+      client!.sendCommand(1032, {}); // AutoLevel — mesh data arrives via status events
+    });
     initCharts(chartStore);
+
+    // Camera click-to-expand
+    const cameraWrap = $('camera-wrap');
+    const cameraModal = $('camera-modal');
+    const cameraModalImg = $('camera-modal-img') as HTMLImageElement;
+    const cameraFeed = $('camera-feed') as HTMLImageElement;
+    cameraWrap.addEventListener('click', () => {
+      if (!cameraFeed.src || cameraFeed.alt === 'Camera off') return;
+      cameraModalImg.src = cameraFeed.src;
+      cameraModal.classList.remove('hidden');
+      cameraModal.focus();
+    });
+    const closeModal = () => {
+      cameraModal.classList.add('hidden');
+      cameraModalImg.src = '';
+    };
+    $('camera-modal-close').addEventListener('click', (e) => { e.stopPropagation(); closeModal(); });
+    cameraModal.addEventListener('click', closeModal);
+    cameraModal.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Escape') closeModal();
+    });
+
+    // Camera expand toggle
+    const cameraCard = $('camera-card');
+    const expandBtn = $('camera-expand-btn');
+    expandBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const expanded = cameraCard.classList.toggle('camera-expanded');
+      expandBtn.textContent = expanded ? '⤡ Collapse' : '⤢ Expand';
+    });
   }
+}
+
+/** Called when printer MQTT is confirmed connected */
+function onPrinterConnected(sn: string): void {
+  console.log(`Connected to printer SN: ${sn}`);
+  toast(`Connected to printer ${sn}`, 'success');
+  showDashboard();
 
   // Request data that the service may not have cached yet
   client!.sendCommand(1044, { storage_media: 'local', dir: '/', offset: 0, limit: 50 });
+  client!.sendCommand(1048, { storage_media: 'local' });
   client!.sendCommand(1062, {});
+  client!.sendCommand(2006, {});
 }
 
 function connectToService(): void {
@@ -131,11 +206,11 @@ function connectToService(): void {
     onStateChange(connState) {
       updateConnectionBadge(connState);
 
-      if (connState === 'disconnected') {
+      if (connState === 'disconnected' && dashboardShown) {
         toast('Connection lost — reconnecting...', 'warning');
       }
 
-      if (connState === 'error') {
+      if (connState === 'error' && !dashboardShown) {
         ($('connect-btn') as HTMLButtonElement).disabled = false;
         ($('connect-btn') as HTMLButtonElement).textContent = 'Connect';
         $('connect-error').textContent = 'Cannot reach service. Ensure the elegoo-web service is running.';
@@ -143,7 +218,7 @@ function connectToService(): void {
       }
     },
     onRegistered(sn, _printerIp) {
-      onConnected(sn);
+      onPrinterConnected(sn);
     },
     onInit(initData) {
       // Hydrate state from service snapshot
@@ -180,10 +255,45 @@ function connectToService(): void {
       }
       if (initData.serviceStatus) {
         updateServiceStatus(initData.serviceStatus as Record<string, unknown>);
+        const ss = initData.serviceStatus as Record<string, unknown>;
+        if (typeof ss.ai === 'string') {
+          updateAIStatus(ss.ai, ss.aiConfig as Record<string, unknown> | null);
+        }
       }
       // Load chart history from service (replaces localStorage persistence)
       if (initData.chartHistory && Array.isArray(initData.chartHistory)) {
         chartStore.loadHistory(initData.chartHistory as Array<{ t: number; values: Record<string, number> }>);
+      }
+      // Load AI chart history from service
+      if (initData.aiChartHistory && Array.isArray(initData.aiChartHistory)) {
+        const aiPoints = initData.aiChartHistory as Array<{ t: number; motion: number; scores: Record<string, number> }>;
+        // Convert AI chart points into the generic chart format for loadHistory merge
+        const converted = aiPoints.map(p => ({
+          t: p.t,
+          values: {
+            ai_motion: p.motion,
+            ai_printing: p.scores['Print in Progress'] ?? 0,
+            ai_failure: p.scores['Spaghetti/Failure'] ?? 0,
+            ai_empty: p.scores['Empty Bed'] ?? 0,
+            ai_paused: p.scores['Paused/Stopped'] ?? 0,
+            ai_other: p.scores['Other'] ?? 0,
+          },
+        }));
+        // Push into existing series without clearing (chart history already loaded above)
+        for (const point of converted) {
+          chartStore.pushPoint(point.t, point.values);
+        }
+      }
+      // Load event log history
+      if (initData.eventLog && Array.isArray(initData.eventLog)) {
+        loadEventLogHistory(initData.eventLog as Array<{ ts: number; event: Record<string, unknown> }>);
+      }
+
+      // Always show dashboard when service responds — even if printer MQTT is down
+      showDashboard();
+      const printerConnected = initData.connected as boolean;
+      if (!printerConnected) {
+        updateConnectionBadge('disconnected');
       }
       scheduleRender();
     },
@@ -192,11 +302,42 @@ function connectToService(): void {
       if (method === 1044 && client) {
         requestAnimationFrame(() => renderFiles(state, client!));
       }
+      if (method === 1047 && client) {
+        // After file delete, refresh file list and capacity
+        const result = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
+        const errorCode = result?.error_code as number | undefined;
+        if (errorCode === 0) {
+          toast('File deleted', 'success');
+        } else {
+          toast('Delete failed', 'error');
+        }
+        client.sendCommand(1044, { storage_media: currentFileSource(), dir: currentFileDir(), offset: 0, limit: 200 });
+        client.sendCommand(1048, { storage_media: currentFileSource() });
+      }
+      if (method === 1048 && client) {
+        requestAnimationFrame(() => renderFiles(state, client!));
+      }
+      if (method === 1045) {
+        handleThumbnailResponse(state);
+      }
       if (method === 1051) {
         requestAnimationFrame(() => renderTimelapse(state));
       }
       if (method === 1050 && state.videoUrl) {
         showTimelapsePlayer(state.videoUrl);
+      }
+      if (method === 1032) {
+        toast('Auto-level started', 'success');
+      }
+      if (method === 2003) {
+        const result = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
+        const errorCode = result?.error_code as number | undefined;
+        if (errorCode === 0) {
+          toast('Filament saved', 'success');
+          if (client) client.sendCommand(2005, {});
+        } else {
+          toast(`Filament save failed (error ${errorCode ?? '?'})`, 'error');
+        }
       }
     },
     onStatusEvent(data) {
@@ -207,9 +348,37 @@ function connectToService(): void {
     },
     onServiceStatus(data) {
       updateServiceStatus(data);
+      if (typeof data.ai === 'string') {
+        updateAIStatus(data.ai, data.aiConfig as Record<string, unknown> | null);
+      }
     },
     onChartData(t, values) {
       chartStore.pushPoint(t, values);
+    },
+    onAIAnalysis(data) {
+      handleAIAnalysis(data);
+    },
+    onAIAlert(data) {
+      handleAIAlert(data);
+    },
+    onAIChartData(t, motion, scores) {
+      chartStore.pushPoint(t, {
+        ai_motion: motion,
+        ai_printing: scores['Print in Progress'] ?? 0,
+        ai_failure: scores['Spaghetti/Failure'] ?? 0,
+        ai_empty: scores['Empty Bed'] ?? 0,
+        ai_paused: scores['Paused/Stopped'] ?? 0,
+        ai_other: scores['Other'] ?? 0,
+      });
+    },
+    onEventLog(entry) {
+      handleEventLog(entry);
+    },
+    onLayerTime(entry) {
+      state.addLayerTime(entry);
+    },
+    onLayerClear() {
+      state.clearLayerTimes();
     },
   });
 
@@ -223,6 +392,12 @@ $('connect-btn').addEventListener('click', () => {
 
 // Auto-connect on page load
 connectToService();
+
+// Settings button
+$('settings-btn').addEventListener('click', openSettings);
+
+// Apply saved card layout
+applyCardLayout();
 
 // Register PWA service worker
 if ('serviceWorker' in navigator) {

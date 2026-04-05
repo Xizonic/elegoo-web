@@ -26,10 +26,10 @@ export class PrinterState {
   thumbnailFailed = false; // true when printer returns error (e.g. no embedded thumbnail)
   fileTotalLayers: number | null = null;
   systemInfo: Record<string, unknown> | null = null;
+  storageCapacity: { total: number; free: number; used: number } | null = null;
+  monoFilament: Record<string, unknown> | null = null;
   /** Layer timing: records [layer, durationSec] for each completed layer */
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }> = [];
-  private _lastLayer = 0;
-  private _lastLayerTime = 0;
   timelapseList: Record<string, unknown>[] = [];
   videoUrl: string | null = null;
   bedMesh: number[][] | null = null;
@@ -55,8 +55,19 @@ export class PrinterState {
 
   setFullStatus(data: PrinterStatus): void {
     this.status = data;
-    this.trackLayerChange(data.print_status?.current_layer);
+    this.extractBedMesh(data as unknown as Record<string, unknown>);
     this.notify();
+  }
+
+  /** Extract bed mesh data from any response/status that may contain it */
+  private extractBedMesh(data: Record<string, unknown>): void {
+    const meshData = (data.bed_mesh ?? data.bed_level_info) as Record<string, unknown> | undefined;
+    if (meshData) {
+      const probed = (meshData.probed_matrix ?? meshData.mesh_matrix ?? meshData.data) as number[][] | undefined;
+      if (probed && Array.isArray(probed) && probed.length > 0) {
+        this.bedMesh = probed;
+      }
+    }
   }
 
   applyDelta(data: Record<string, unknown>): void {
@@ -69,19 +80,15 @@ export class PrinterState {
       ) as unknown as PrinterStatus;
     }
 
-    // Track layer changes for layer-time chart
-    const ps = (data as Record<string, unknown>).print_status as Record<string, unknown> | undefined;
-    if (ps?.current_layer != null) {
-      this.trackLayerChange(ps.current_layer as number);
-    }
+    // Track layer changes for layer-time chart — handled server-side now
 
     // Capture bed mesh data if present
-    const meshData = (data.bed_mesh ?? data.bed_level_info) as Record<string, unknown> | undefined;
-    if (meshData) {
-      const probed = (meshData.probed_matrix ?? meshData.mesh_matrix ?? meshData.data) as number[][] | undefined;
-      if (probed && Array.isArray(probed) && probed.length > 0) {
-        this.bedMesh = probed;
-      }
+    this.extractBedMesh(data);
+
+    // Capture mono filament info if present in delta
+    const monoInfo = data.mono_filament_info as Record<string, unknown> | undefined;
+    if (monoInfo) {
+      this.monoFilament = monoInfo;
     }
 
     this.notify();
@@ -153,6 +160,36 @@ export class PrinterState {
         }
         break;
       }
+      case 1048: { // GET_DISK_INFO
+        const errorCode = result.error_code as number | undefined;
+        if (errorCode === 0) {
+          this.storageCapacity = {
+            total: result.total_bytes as number ?? 0,
+            free: result.free_bytes as number ?? 0,
+            used: result.used_bytes as number ?? 0,
+          };
+          this.notify();
+        }
+        break;
+      }
+      case 2006: { // GET_MONO_FILAMENT
+        const errorCode = result.error_code as number | undefined;
+        if (errorCode === 0) {
+          const info = result.mono_filament_info as Record<string, unknown> | undefined;
+          if (info) {
+            this.monoFilament = info;
+          } else {
+            // The whole result might be the filament info
+            const cleaned = { ...result };
+            delete cleaned.error_code;
+            if (Object.keys(cleaned).length > 0) {
+              this.monoFilament = cleaned;
+            }
+          }
+          this.notify();
+        }
+        break;
+      }
       case 1050: { // GET_VIDEO_URL
         const errorCode = result.error_code as number | undefined;
         const url = result.url as string | undefined;
@@ -174,34 +211,41 @@ export class PrinterState {
     }
   }
 
-  private trackLayerChange(layer: number | undefined): void {
-    if (layer == null || layer <= 0) return;
-    const now = Date.now();
-    if (layer !== this._lastLayer) {
-      if (this._lastLayer > 0 && this._lastLayerTime > 0) {
-        const durationSec = (now - this._lastLayerTime) / 1000;
-        this.layerTimes.push({ layer: this._lastLayer, duration: durationSec, timestamp: now });
-        // Keep max 2000 entries
-        if (this.layerTimes.length > 2000) this.layerTimes.shift();
-      }
-      this._lastLayer = layer;
-      this._lastLayerTime = now;
-    }
+  private trackLayerChange(_layer: number | undefined): void {
+    // Layer tracking is now handled server-side; this is a no-op.
+    // Layer data arrives via WS layer_time / layer_clear messages.
   }
 
   /** Getters for persistence */
-  getLastLayer(): number { return this._lastLayer; }
-  getLastLayerTime(): number { return this._lastLayerTime; }
+  getLastLayer(): number {
+    const last = this.layerTimes[this.layerTimes.length - 1];
+    return last?.layer ?? 0;
+  }
+  getLastLayerTime(): number {
+    const last = this.layerTimes[this.layerTimes.length - 1];
+    return last?.timestamp ?? 0;
+  }
 
-  /** Restore layer data from persistence */
+  /** Add a single layer time entry (from server WS message) */
+  addLayerTime(entry: { layer: number; duration: number; timestamp: number }): void {
+    this.layerTimes.push(entry);
+    if (this.layerTimes.length > 2000) this.layerTimes.shift();
+    this.notify();
+  }
+
+  /** Clear all layer data (new print started on server) */
+  clearLayerTimes(): void {
+    this.layerTimes = [];
+    this.notify();
+  }
+
+  /** Restore layer data from persistence (init snapshot from server) */
   restoreLayerData(
     layerTimes: Array<{ layer: number; duration: number; timestamp: number }>,
-    lastLayer: number,
-    lastLayerTime: number,
+    _lastLayer: number,
+    _lastLayerTime: number,
   ): void {
     this.layerTimes = layerTimes;
-    this._lastLayer = lastLayer;
-    this._lastLayerTime = lastLayerTime;
   }
 
   /** Handle a status event (delta update) */

@@ -17,25 +17,30 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
-import type { StateStore } from './state-store.js';
+import type { StateStore, EventLogEntry } from './state-store.js';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { TelegramIntegration } from './telegram.js';
+import type { AIMonitor } from './ai-monitor.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('WS');
 
 export interface ServiceStatusProvider {
   telegram: TelegramIntegration | null;
+  aiMonitor: AIMonitor | null;
 }
 
 export class WebSocketTransport {
   private wss: WebSocketServer;
   private statusInterval: ReturnType<typeof setInterval> | null = null;
-  private services: ServiceStatusProvider = { telegram: null };
+  private services: ServiceStatusProvider = { telegram: null, aiMonitor: null };
   private startTime = Date.now();
 
   constructor(server: Server, private store: StateStore, private bridge: MqttBridge) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
     this.wss.on('connection', (ws) => {
-      console.log(`[WS] Client connected (total: ${this.wss.clients.size})`);
+      log.info(`Client connected (total: ${this.wss.clients.size})`);
 
       // Send current state snapshot on connect
       this.sendInit(ws);
@@ -45,7 +50,7 @@ export class WebSocketTransport {
       });
 
       ws.on('close', () => {
-        console.log(`[WS] Client disconnected (total: ${this.wss.clients.size})`);
+        log.info(`Client disconnected (total: ${this.wss.clients.size})`);
       });
     });
 
@@ -64,6 +69,22 @@ export class WebSocketTransport {
 
     store.on('chart_data', (point: { t: number; values: Record<string, number> }) => {
       this.broadcast({ type: 'chart_data', ...point });
+    });
+
+    store.on('event_log', (entry: EventLogEntry) => {
+      this.broadcast({ type: 'event_log', ...entry });
+    });
+
+    store.on('layer_time', (entry: { layer: number; duration: number; timestamp: number }) => {
+      this.broadcast({ type: 'layer_time', ...entry });
+    });
+
+    store.on('layer_clear', () => {
+      this.broadcast({ type: 'layer_clear' });
+    });
+
+    store.on('ai_chart_data', (point: { t: number; motion: number; scores: Record<string, number> }) => {
+      this.broadcast({ type: 'ai_chart_data', ...point });
     });
 
     bridge.on('connected', () => {
@@ -92,15 +113,28 @@ export class WebSocketTransport {
   }
 
   private getServiceStatus(): Record<string, unknown> {
+    // Detailed MQTT state: 'connected' | 'broker_only' | 'disconnected'
+    let mqttState = 'disconnected';
+    if (this.bridge.isConnected) {
+      mqttState = 'connected';
+    } else if (this.bridge.brokerConnected) {
+      mqttState = 'broker_only';
+    }
+
     return {
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
-      mqtt: this.bridge.isConnected ? 'connected' : 'disconnected',
+      mqtt: mqttState,
+      mqttRegisterAttempts: this.bridge.registerAttempts,
       printerSn: this.bridge.serialNumber || null,
       printerIp: this.bridge.ip,
       wsClients: this.wss.clients.size,
       telegram: this.services.telegram
         ? (this.services.telegram.isRunning ? 'running' : 'stopped')
         : 'disabled',
+      ai: this.services.aiMonitor
+        ? (this.services.aiMonitor.monitoring ? 'monitoring' : (this.services.aiMonitor.isRunning ? 'idle' : 'stopped'))
+        : 'disabled',
+      aiConfig: this.services.aiMonitor?.getConfigSummary() ?? null,
       camera: this.store.status?.external_device?.camera ? 'available' : 'unavailable',
     };
   }
@@ -124,6 +158,8 @@ export class WebSocketTransport {
       bedMesh: this.store.bedMesh,
       layerTimes: this.store.layerTimes,
       chartHistory: this.store.getChartHistory(),
+      aiChartHistory: this.store.getAIChartHistory(),
+      eventLog: this.store.getEventLog(),
       serviceStatus: this.getServiceStatus(),
     };
     ws.send(JSON.stringify(msg));
@@ -146,7 +182,7 @@ export class WebSocketTransport {
     }
   }
 
-  private broadcast(data: unknown): void {
+  broadcast(data: unknown): void {
     const json = JSON.stringify(data);
     for (const client of this.wss.clients) {
       if (client.readyState === WebSocket.OPEN) {

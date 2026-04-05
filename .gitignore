@@ -6,3 +6,4 @@ raw/
 dist/
 data/
 .env
+.cache/
