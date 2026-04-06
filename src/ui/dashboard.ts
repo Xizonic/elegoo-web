@@ -2,10 +2,10 @@
  * Re-export all UI modules from a single entry point
  * so that main.ts imports remain unchanged.
  */
-export { renderDashboard, renderHeader } from './print-status';
+export { renderDashboard, renderHeader, toggleCameraOverlay } from './print-status';
 export { renderCanvas, setCanvasClient } from './canvas';
 export { renderFiles, bindFileControls, currentFileSource, currentFileDir, handleThumbnailResponse } from './files';
-export { bindControls } from './controls';
+export { bindControls, onCommandResponse } from './controls';
 export { registerChart, initCharts } from './charts';
 export { renderStructuredLog, bindStructuredLogControls } from './structured-log';
 export { toast } from './toast';
@@ -16,6 +16,8 @@ export { renderGcodePreview } from './gcode-preview';
 export { renderLayerTimeChart } from './layer-chart';
 export { updateServiceStatus } from './service-status';
 export { handleAIAnalysis, handleAIAlert, renderAIPanel, updateAIStatus } from './ai-panel';
-export { openSettings, applyCardLayout } from './settings';
+export { openSettings, applyCardLayout, renderSettingsContent, switchToTab } from './settings';
 export { handleEventLog, loadEventLogHistory, renderEventLog } from './event-log';
+export { renderPrintHistory, bindHistoryControls, setHistoryClient, requestHistory } from './print-history';
+export { renderMaintenance, bindMaintenanceControls, setMaintenanceClient } from './maintenance';
 

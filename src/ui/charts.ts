@@ -1,6 +1,7 @@
 /** Lightweight canvas-based live line chart — no dependencies */
 
 import type { ChartStore, Series } from '../chart-store';
+import { saveChartWindow, getChartWindow } from './ui-settings';
 
 const PADDING = { top: 10, right: 12, bottom: 24, left: 48 };
 const GRID_COLOR = 'rgba(160, 160, 184, 0.12)';
@@ -16,6 +17,8 @@ interface ChartConfig {
   /** Duration shown on x-axis in seconds (default 300 = 5 min) */
   window?: number;
   unit?: string;
+  /** Series keys to show all-time average as dashed horizontal line */
+  averageKeys?: string[];
 }
 
 /** Per-chart zoom/pan state */
@@ -25,6 +28,8 @@ interface ChartInteraction {
   isDragging: boolean;
   dragStartX: number;
   dragStartOffset: number;
+  /** Mouse X in CSS pixels relative to canvas, or -1 if not hovering */
+  hoverX: number;
 }
 
 const charts = new Map<string, ChartConfig>();
@@ -41,6 +46,7 @@ export function registerChart(config: ChartConfig): void {
     isDragging: false,
     dragStartX: 0,
     dragStartOffset: 0,
+    hoverX: -1,
   });
 }
 
@@ -66,6 +72,7 @@ function bindTimeWindowButtons(): void {
       const config = charts.get(canvasId);
       if (config) {
         config.window = seconds;
+        saveChartWindow(canvasId, seconds);
       }
       // Update active state for this chart's buttons
       const parent = el.parentElement;
@@ -73,6 +80,20 @@ function bindTimeWindowButtons(): void {
       el.classList.add('active');
     });
   });
+
+  // Restore saved chart windows
+  for (const [canvasId, config] of charts) {
+    const saved = getChartWindow(canvasId);
+    if (saved) {
+      config.window = saved;
+      // Update active button state
+      const btns = document.querySelectorAll(`.chart-time-btn[data-chart="${canvasId}"]`);
+      btns.forEach(b => {
+        const el = b as HTMLElement;
+        b.classList.toggle('active', parseInt(el.dataset.window!) === saved);
+      });
+    }
+  }
 }
 
 function bindChartInteractions(): void {
@@ -92,6 +113,7 @@ function bindChartInteractions(): void {
     // Drag to pan
     canvas.addEventListener('mousedown', (e) => {
       inter.isDragging = true;
+      inter.hoverX = -1; // Hide tooltip while dragging
       inter.dragStartX = e.clientX;
       inter.dragStartOffset = inter.panOffset;
       canvas.style.cursor = 'grabbing';
@@ -118,6 +140,14 @@ function bindChartInteractions(): void {
     canvas.addEventListener('mouseleave', () => {
       inter.isDragging = false;
       canvas.style.cursor = 'default';
+      inter.hoverX = -1;
+    });
+
+    // Track hover position for tooltip
+    canvas.addEventListener('mousemove', (e) => {
+      if (inter.isDragging) return; // handled above
+      const rect = canvas.getBoundingClientRect();
+      inter.hoverX = e.clientX - rect.left;
     });
 
     // Double-click to reset
@@ -265,6 +295,40 @@ function drawChart(config: ChartConfig): void {
     }
   }
 
+  // Draw average lines (dashed) for configured series
+  if (config.averageKeys?.length) {
+    for (const key of config.averageKeys) {
+      const s = allSeries.find(sr => store!.getSeries(key) === sr);
+      if (!s) continue;
+      // Compute average over ALL data (not just visible window) — represents whole print
+      const allData = s.data.filter(p => p.v > 0);
+      if (allData.length < 2) continue;
+      const avg = allData.reduce((sum, p) => sum + p.v, 0) / allData.length;
+      const y = yMap(avg);
+      if (y < PADDING.top || y > PADDING.top + plotH) continue;
+
+      ctx.save();
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(PADDING.left, y);
+      ctx.lineTo(w - PADDING.right, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label
+      ctx.fillStyle = s.color;
+      ctx.globalAlpha = 0.6;
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`avg ${avg.toFixed(1)}`, w - PADDING.right - 2, y - 2);
+      ctx.restore();
+    }
+  }
+
   // Show zoom/pan indicator if not at defaults
   if (inter && (inter.zoomFactor !== 1.0 || inter.panOffset !== 0)) {
     ctx.fillStyle = 'rgba(33, 150, 243, 0.3)';
@@ -274,5 +338,108 @@ function drawChart(config: ChartConfig): void {
     const zoomLabel = `${inter.zoomFactor.toFixed(1)}x`;
     const panLabel = inter.panOffset !== 0 ? ` pan:${(inter.panOffset / 1000).toFixed(0)}s` : '';
     ctx.fillText(`🔍 ${zoomLabel}${panLabel} (dblclick to reset)`, PADDING.left + 4, PADDING.top + 2);
+  }
+
+  // ── Tooltip on hover ──
+  if (inter && inter.hoverX >= PADDING.left && inter.hoverX <= w - PADDING.right) {
+    const hoverT = tMin + ((inter.hoverX - PADDING.left) / plotW) * (tMax - tMin);
+
+    // Vertical crosshair line
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(inter.hoverX, PADDING.top);
+    ctx.lineTo(inter.hoverX, PADDING.top + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Find nearest data point per series and build tooltip lines
+    const tooltipLines: { color: string; label: string; value: string; y: number }[] = [];
+    for (const s of allSeries) {
+      // Binary-ish search: find nearest point to hoverT
+      let best = s.data[0];
+      let bestDist = Infinity;
+      for (const p of s.data) {
+        const dist = Math.abs(p.t - hoverT);
+        if (dist < bestDist) { bestDist = dist; best = p; }
+        if (p.t > hoverT) break; // data is sorted by time
+      }
+      if (best && bestDist < (tMax - tMin) * 0.05) {
+        tooltipLines.push({
+          color: s.color,
+          label: s.label,
+          value: best.v.toFixed(1) + (config.unit ?? ''),
+          y: yMap(best.v),
+        });
+      }
+    }
+
+    if (tooltipLines.length > 0) {
+      // Draw dots on the crosshair at each series value
+      for (const line of tooltipLines) {
+        ctx.fillStyle = line.color;
+        ctx.beginPath();
+        ctx.arc(inter.hoverX, line.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Tooltip box
+      const tooltipFont = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.font = tooltipFont;
+
+      // Time header
+      const d = new Date(hoverT);
+      const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+
+      // Measure tooltip dimensions
+      const lineHeight = 16;
+      const tooltipPadding = 8;
+      let maxTextWidth = ctx.measureText(timeStr).width;
+      for (const line of tooltipLines) {
+        const text = `${line.label}: ${line.value}`;
+        const tw = ctx.measureText(text).width;
+        if (tw > maxTextWidth) maxTextWidth = tw;
+      }
+      const boxW = maxTextWidth + tooltipPadding * 2 + 12; // 12 for color dot
+      const boxH = lineHeight * (tooltipLines.length + 1) + tooltipPadding * 2;
+
+      // Position: prefer right of cursor, flip if near edge
+      let boxX = inter.hoverX + 12;
+      if (boxX + boxW > w - 4) {
+        boxX = inter.hoverX - boxW - 12;
+      }
+      let boxY = PADDING.top + 4;
+
+      // Background
+      ctx.fillStyle = 'rgba(30, 30, 44, 0.92)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // Time header
+      ctx.fillStyle = LABEL_COLOR;
+      ctx.font = tooltipFont;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(timeStr, boxX + tooltipPadding, boxY + tooltipPadding);
+
+      // Series values
+      for (let i = 0; i < tooltipLines.length; i++) {
+        const line = tooltipLines[i];
+        const ty = boxY + tooltipPadding + (i + 1) * lineHeight;
+        // Color dot
+        ctx.fillStyle = line.color;
+        ctx.beginPath();
+        ctx.arc(boxX + tooltipPadding + 4, ty + 6, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Text
+        ctx.fillStyle = '#e0e0e8';
+        ctx.fillText(`${line.label}: ${line.value}`, boxX + tooltipPadding + 12, ty);
+      }
+    }
   }
 }

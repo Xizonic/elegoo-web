@@ -3,19 +3,28 @@
  *
  * Endpoints:
  *   GET /api/status    — Current printer state as JSON
+ *   GET /api/metrics   — Structured metrics as JSON
+ *   GET /api/metrics/prometheus — Metrics in Prometheus text exposition format
  *   GET /api/snapshot  — Camera JPEG snapshot (proxied + cached)
  *   GET /api/stream    — MJPEG stream proxy (single upstream, fan-out to all clients)
+ *   GET /api/stream/overlay — MJPEG stream with status text overlay
  *   GET /api/health    — Service health check
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
+import { writeFile, readdir, readFile } from 'fs/promises';
+import { join } from 'path';
+import sharp from 'sharp';
 import type { StateStore } from './state-store.js';
 import type { ServiceConfig } from './config.js';
 import type { AIMonitor, AILabelConfig } from './ai-monitor.js';
 import { getLogger } from './logger.js';
+import { STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES, EXCEPTION_NAMES } from '../types.js';
+import type { FanInfo } from '../types.js';
 
 const log = getLogger('Camera');
+const debugLog = getLogger('Debug');
 
 const JPEG_START = Buffer.from([0xff, 0xd8]);
 const JPEG_END = Buffer.from([0xff, 0xd9]);
@@ -24,6 +33,9 @@ const CACHE_TTL_MS = 5_000;
 let cachedSnapshot: Buffer | null = null;
 let cacheTime = 0;
 let fetchInFlight: Promise<Buffer | null> | null = null;
+
+// Debug capture state
+let activeCapture: { file: string } | null = null;
 
 async function fetchCameraFrame(cameraUrl: string): Promise<Buffer | null> {
   // Return cached snapshot if fresh
@@ -105,7 +117,12 @@ export async function getSnapshot(config: ServiceConfig): Promise<Buffer | null>
 // Single upstream connection to the camera, re-streamed to all connected clients.
 const MJPEG_BOUNDARY = '--mjpegboundary';
 const streamClients = new Set<ServerResponse>();
+const overlayClients = new Set<ServerResponse>();
 let upstreamActive = false;
+let overlayStore: StateStore | null = null;
+let overlayProcessing = false;
+const OVERLAY_MIN_INTERVAL_MS = 200; // max ~5 FPS for overlay
+let lastOverlayTime = 0;
 
 function startMjpegUpstream(cameraUrl: string): void {
   if (upstreamActive) return;
@@ -153,14 +170,35 @@ function startMjpegUpstream(cameraUrl: string): void {
             streamClients.delete(client);
           }
         }
+
+        // Broadcast overlay frames (throttled)
+        if (overlayClients.size > 0 && !overlayProcessing) {
+          const now = Date.now();
+          if (now - lastOverlayTime >= OVERLAY_MIN_INTERVAL_MS) {
+            lastOverlayTime = now;
+            overlayProcessing = true;
+            processOverlayFrame(frame).then((overlayFrame) => {
+              if (!overlayFrame) return;
+              for (const client of overlayClients) {
+                try {
+                  client.write(`${MJPEG_BOUNDARY}\r\n`);
+                  client.write('Content-Type: image/jpeg\r\n');
+                  client.write(`Content-Length: ${overlayFrame.length}\r\n\r\n`);
+                  client.write(overlayFrame);
+                } catch {
+                  overlayClients.delete(client);
+                }
+              }
+            }).catch(() => {}).finally(() => { overlayProcessing = false; });
+          }
+        }
       }
     });
 
     upstream.on('end', () => {
       log.info('Upstream stream ended');
       upstreamActive = false;
-      // Reconnect if there are still clients
-      if (streamClients.size > 0) {
+      if (streamClients.size > 0 || overlayClients.size > 0) {
         setTimeout(() => startMjpegUpstream(cameraUrl), 2000);
       }
     });
@@ -168,7 +206,7 @@ function startMjpegUpstream(cameraUrl: string): void {
     upstream.on('error', (err) => {
       log.warn(`Upstream error: ${err.message}`);
       upstreamActive = false;
-      if (streamClients.size > 0) {
+      if (streamClients.size > 0 || overlayClients.size > 0) {
         setTimeout(() => startMjpegUpstream(cameraUrl), 5000);
       }
     });
@@ -177,7 +215,7 @@ function startMjpegUpstream(cameraUrl: string): void {
   req.on('error', (err) => {
     log.warn(`Upstream connection failed: ${err.message}`);
     upstreamActive = false;
-    if (streamClients.size > 0) {
+    if (streamClients.size > 0 || overlayClients.size > 0) {
       setTimeout(() => startMjpegUpstream(cameraUrl), 5000);
     }
   });
@@ -186,7 +224,7 @@ function startMjpegUpstream(cameraUrl: string): void {
     log.warn('Upstream connection timed out');
     req.destroy();
     upstreamActive = false;
-    if (streamClients.size > 0) {
+    if (streamClients.size > 0 || overlayClients.size > 0) {
       setTimeout(() => startMjpegUpstream(cameraUrl), 2000);
     }
   });
@@ -213,7 +251,113 @@ function addStreamClient(res: ServerResponse, config: ServiceConfig): void {
   startMjpegUpstream(config.cameraUrl);
 }
 
+// ---- MJPEG overlay processing ----
+
+function formatOverlayTime(sec: number | undefined): string {
+  if (sec == null || sec <= 0) return '--';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function buildOverlaySvg(width: number, height: number): string {
+  const store = overlayStore;
+  if (!store?.status) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"></svg>`;
+  }
+
+  const s = store.status;
+  const ps = s.print_status;
+  const ms = s.machine_status;
+  const isPrinting = ms?.status === 2;
+  const statusName = STATUS_NAMES[ms?.status] ?? 'Unknown';
+
+  const lines: string[] = [];
+
+  const fontSize = Math.max(14, Math.round(height / 30));
+  const charWidth = fontSize * 0.6; // monospace approximate
+  const padding = 8;
+  const maxChars = Math.max(10, Math.floor((width - padding * 2 - 8) / charWidth));
+
+  if (isPrinting && ps?.filename) {
+    const name = ps.filename.length > maxChars ? ps.filename.slice(0, maxChars - 3) + '...' : ps.filename;
+    lines.push(escapeXml(name));
+    lines.push(`Progress: ${ms?.progress ?? 0}%  Layer: ${ps.current_layer ?? '--'}/${ps.total_layer ?? store.fileTotalLayers ?? '??'}`);
+    lines.push(`Remaining: ${formatOverlayTime(ps.remaining_time_sec)}  Elapsed: ${formatOverlayTime(ps.print_duration)}`);
+  } else {
+    lines.push(`Status: ${statusName}`);
+  }
+
+  // Temperatures
+  const nozzle = s.extruder?.temperature?.toFixed(1) ?? '--';
+  const nozzleTgt = s.extruder?.target ? `/${Math.round(s.extruder.target)}` : '';
+  const bed = s.heater_bed?.temperature?.toFixed(1) ?? '--';
+  const bedTgt = s.heater_bed?.target ? `/${Math.round(s.heater_bed.target)}` : '';
+  lines.push(`Nozzle: ${nozzle}${nozzleTgt}°C  Bed: ${bed}${bedTgt}°C`);
+
+  const lineHeight = fontSize * 1.3;
+  const boxHeight = lines.length * lineHeight + padding * 2;
+  const boxY = height - boxHeight - 4;
+
+  let svgText = '';
+  lines.forEach((line, i) => {
+    const y = boxY + padding + (i + 1) * lineHeight - 2;
+    svgText += `<text x="${padding + 4}" y="${y}" fill="white" font-family="monospace" font-size="${fontSize}" font-weight="bold">`
+      + `<tspan stroke="black" stroke-width="3" paint-order="stroke">${line}</tspan></text>`;
+  });
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+    + `<rect x="2" y="${boxY}" width="${width - 4}" height="${boxHeight}" rx="4" fill="rgba(0,0,0,0.55)"/>`
+    + svgText
+    + `</svg>`;
+}
+
+async function processOverlayFrame(frame: Buffer): Promise<Buffer | null> {
+  try {
+    const meta = await sharp(frame).metadata();
+    const w = meta.width || 640;
+    const h = meta.height || 480;
+
+    const svg = buildOverlaySvg(w, h);
+    const svgBuf = Buffer.from(svg);
+
+    return await sharp(frame)
+      .composite([{ input: svgBuf, top: 0, left: 0 }])
+      .jpeg({ quality: 80 })
+      .toBuffer();
+  } catch (err) {
+    log.warn(`Overlay processing failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+function addOverlayClient(res: ServerResponse, config: ServiceConfig): void {
+  res.writeHead(200, {
+    'Content-Type': `multipart/x-mixed-replace; boundary=${MJPEG_BOUNDARY}`,
+    'Cache-Control': 'no-cache, no-store',
+    'Connection': 'close',
+  });
+
+  overlayClients.add(res);
+  log.info(`Overlay client connected (total: ${overlayClients.size})`);
+
+  res.on('close', () => {
+    overlayClients.delete(res);
+    log.info(`Overlay client disconnected (total: ${overlayClients.size})`);
+  });
+
+  startMjpegUpstream(config.cameraUrl);
+}
+
 export function createRestRouter(store: StateStore, config: ServiceConfig, aiMonitor?: AIMonitor | null) {
+  overlayStore = store;
   return (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url || '';
 
@@ -277,6 +421,16 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
         return;
       }
       addStreamClient(res, config);
+      return;
+    }
+
+    if (url === '/api/stream/overlay') {
+      if (!config.cameraEnabled) {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('Camera disabled');
+        return;
+      }
+      addOverlayClient(res, config);
       return;
     }
 
@@ -363,6 +517,16 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
                 res.end(JSON.stringify({ error: 'critThreshold must be 0-1' }));
                 return;
               }
+              // Validate group if provided; default to 'Other' if missing
+              const validGroups = ['Print in Progress', 'Spaghetti/Failure', 'Empty Bed', 'Paused/Stopped', 'Other'];
+              if (lc.group && !validGroups.includes(lc.group)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Invalid group: ${lc.group}` }));
+                return;
+              }
+              if (!lc.group) {
+                lc.group = 'Other';
+              }
             }
             aiMonitor.setLabelConfigs(data.labels).then(() => {
               res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -395,8 +559,297 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       }
     }
 
+    // Debug capture: start a timed raw MQTT capture
+    if (url === '/api/debug/capture' && req.method === 'POST') {
+      if (activeCapture) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Capture already in progress', file: activeCapture.file }));
+        return;
+      }
+      let body = '';
+      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      req.on('end', () => {
+        let duration = 10;
+        try {
+          const parsed = JSON.parse(body) as { duration?: number };
+          if (parsed.duration && parsed.duration > 0 && parsed.duration <= 60) {
+            duration = parsed.duration;
+          }
+        } catch { /* use default */ }
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `mqtt-capture-${ts}.json`;
+        const messages: Array<{ direction: string; topic: string; data: unknown; ts: number }> = [];
+        const listener = (entry: { direction: string; topic: string; data: unknown; ts: number }) => {
+          messages.push(entry);
+        };
+        store.on('raw', listener);
+        activeCapture = { file: filename };
+        setTimeout(async () => {
+          store.off('raw', listener);
+          activeCapture = null;
+          const filePath = join('data', 'logs', filename);
+          await writeFile(filePath, JSON.stringify(messages, null, 2));
+          debugLog.info(`Capture saved: ${filename} (${messages.length} messages, ${duration}s)`);
+        }, duration * 1000);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, file: filename, duration, message: `Capturing for ${duration}s` }));
+      });
+      return;
+    }
+
+    // List available captures
+    if (url === '/api/debug/captures' && req.method === 'GET') {
+      readdir(join('data', 'logs')).then(files => {
+        const captures = files.filter(f => f.startsWith('mqtt-capture-')).sort().reverse();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ captures, active: activeCapture?.file ?? null }));
+      }).catch(() => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ captures: [], active: null }));
+      });
+      return;
+    }
+
+    // Download a specific capture file
+    if (url.startsWith('/api/debug/captures/') && req.method === 'GET') {
+      const filename = decodeURIComponent(url.slice('/api/debug/captures/'.length));
+      // Prevent path traversal
+      if (filename.includes('..') || filename.includes('/') || !filename.startsWith('mqtt-capture-')) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid filename' }));
+        return;
+      }
+      readFile(join('data', 'logs', filename), 'utf-8').then(content => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(content);
+      }).catch(() => {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'File not found' }));
+      });
+      return;
+    }
+
+    // Reset layer duration data
+    if (url === '/api/layer-data' && req.method === 'DELETE') {
+      store.clearLayerData();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // JSON metrics endpoint
+    if (url === '/api/metrics' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(buildMetrics(store)));
+      return;
+    }
+
+    // Prometheus metrics endpoint
+    if (url === '/api/metrics/prometheus' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+      res.end(buildPrometheusMetrics(store));
+      return;
+    }
+
     // Not an API route — let ws-transport or 404 handle it
     res.writeHead(404);
     res.end('Not found');
   };
+}
+
+/* ── Metrics helpers ─────────────────────────────────────────────── */
+
+function fanPct(speed: number): number {
+  return Math.round((speed / 255) * 100);
+}
+
+function buildMetrics(store: StateStore) {
+  const s = store.status;
+  const a = store.attributes;
+  const ms = s?.machine_status;
+  const ps = s?.print_status;
+  const ext = s?.extruder;
+  const bed = s?.heater_bed;
+  const ch = s?.ztemperature_sensor;
+  const fans = s?.fans;
+  const gm = s?.gcode_move;
+  const layers = store.layerTimes;
+
+  const avgLayerDur = layers.length > 0
+    ? layers.reduce((sum, l) => sum + l.duration, 0) / layers.length
+    : null;
+  const lastLayerDur = layers.length > 0 ? layers[layers.length - 1].duration : null;
+
+  return {
+    printer: a ? {
+      model: a.machine_model,
+      sn: a.sn,
+      ip: a.ip,
+      firmware: a.software_version?.ota_version ?? null,
+    } : null,
+    connected: !!a,
+    state: {
+      status: ms?.status ?? null,
+      status_name: STATUS_NAMES[ms?.status ?? -1] ?? 'Unknown',
+      sub_status: ms?.sub_status ?? null,
+      sub_status_name: SUB_STATUS_NAMES[ms?.sub_status ?? 0] || null,
+      progress: ms?.progress ?? null,
+      exceptions: (ms?.exception_status ?? []).map(c => ({
+        code: c,
+        name: EXCEPTION_NAMES[c] ?? `Unknown (${c})`,
+      })),
+    },
+    temperature: {
+      nozzle: ext?.temperature ?? null,
+      nozzle_target: ext?.target ?? null,
+      bed: bed?.temperature ?? null,
+      bed_target: bed?.target ?? null,
+      chamber: ch?.temperature ?? null,
+    },
+    fans: fans ? {
+      part_fan: fanPct(fans.fan?.speed ?? 0),
+      aux_fan: fanPct(fans.aux_fan?.speed ?? 0),
+      box_fan: fanPct(fans.box_fan?.speed ?? 0),
+      heater_fan: fanPct(fans.heater_fan?.speed ?? 0),
+      controller_fan: fanPct(fans.controller_fan?.speed ?? 0),
+    } : null,
+    position: gm ? {
+      x: gm.x,
+      y: gm.y,
+      z: gm.z,
+      speed: gm.speed,
+      speed_mode: gm.speed_mode,
+      speed_mode_name: SPEED_MODE_NAMES[gm.speed_mode] ?? 'Unknown',
+    } : null,
+    print: ps ? {
+      filename: ps.filename || null,
+      current_layer: ps.current_layer,
+      total_layer: ps.total_layer ?? store.fileTotalLayers ?? null,
+      print_duration: ps.print_duration,
+      remaining_time_sec: ps.remaining_time_sec,
+    } : null,
+    filament_detected: ext?.filament_detected ?? null,
+    filament_usage: store.getFilamentUsageArray(),
+    layers: {
+      count: layers.length,
+      avg_duration_sec: avgLayerDur != null ? Math.round(avgLayerDur * 10) / 10 : null,
+      last_duration_sec: lastLayerDur ?? null,
+    },
+  };
+}
+
+function buildPrometheusMetrics(store: StateStore): string {
+  const lines: string[] = [];
+  const s = store.status;
+  const a = store.attributes;
+  const ms = s?.machine_status;
+  const ps = s?.print_status;
+  const ext = s?.extruder;
+  const bed = s?.heater_bed;
+  const ch = s?.ztemperature_sensor;
+  const fans = s?.fans;
+  const gm = s?.gcode_move;
+  const layers = store.layerTimes;
+
+  const labels = a
+    ? `model="${a.machine_model}",sn="${a.sn}"`
+    : '';
+
+  function g(name: string, help: string, value: number | null | undefined, extra = '') {
+    if (value == null) return;
+    lines.push(`# HELP ${name} ${help}`);
+    lines.push(`# TYPE ${name} gauge`);
+    const lab = [labels, extra].filter(Boolean).join(',');
+    lines.push(`${name}{${lab}} ${value}`);
+  }
+
+  // Connection
+  g('elegoo_connected', 'Printer MQTT connection state (1=connected, 0=disconnected)', a ? 1 : 0);
+
+  // Machine state
+  g('elegoo_machine_status', 'Machine status code', ms?.status);
+  g('elegoo_machine_sub_status', 'Machine sub-status code', ms?.sub_status);
+  g('elegoo_print_progress', 'Print progress percentage (0-100)', ms?.progress);
+
+  // Temperatures
+  g('elegoo_nozzle_temperature_celsius', 'Nozzle temperature', ext?.temperature);
+  g('elegoo_nozzle_target_celsius', 'Nozzle target temperature', ext?.target);
+  g('elegoo_bed_temperature_celsius', 'Bed temperature', bed?.temperature);
+  g('elegoo_bed_target_celsius', 'Bed target temperature', bed?.target);
+  g('elegoo_chamber_temperature_celsius', 'Chamber temperature', ch?.temperature);
+
+  // Fans (as percentage 0-100)
+  if (fans) {
+    const fanEntries: [string, FanInfo | undefined][] = [
+      ['part', fans.fan], ['aux', fans.aux_fan], ['box', fans.box_fan],
+      ['heater', fans.heater_fan], ['controller', fans.controller_fan],
+    ];
+    lines.push('# HELP elegoo_fan_speed_percent Fan speed percentage');
+    lines.push('# TYPE elegoo_fan_speed_percent gauge');
+    for (const [name, fi] of fanEntries) {
+      if (fi == null) continue;
+      const lab = [labels, `fan="${name}"`].filter(Boolean).join(',');
+      lines.push(`elegoo_fan_speed_percent{${lab}} ${fanPct(fi.speed)}`);
+    }
+  }
+
+  // Position
+  if (gm) {
+    g('elegoo_position_x_mm', 'Toolhead X position', gm.x);
+    g('elegoo_position_y_mm', 'Toolhead Y position', gm.y);
+    g('elegoo_position_z_mm', 'Toolhead Z position', gm.z);
+    g('elegoo_speed_mm_per_min', 'Toolhead speed', gm.speed);
+    g('elegoo_speed_mode', 'Speed mode (0=Silent,1=Balanced,2=Sport,3=Ludicrous)', gm.speed_mode);
+  }
+
+  // Print info
+  if (ps) {
+    g('elegoo_print_current_layer', 'Current print layer', ps.current_layer);
+    g('elegoo_print_total_layers', 'Total print layers', ps.total_layer ?? store.fileTotalLayers ?? undefined);
+    g('elegoo_print_duration_seconds', 'Elapsed print time in seconds', ps.print_duration);
+    g('elegoo_print_remaining_seconds', 'Estimated remaining time in seconds', ps.remaining_time_sec);
+  }
+
+  // Filament detected
+  g('elegoo_filament_detected', 'Filament detected (1=yes, 0=no)', ext?.filament_detected);
+
+  // Filament usage per spool
+  const usage = store.getFilamentUsageArray();
+  if (usage.length > 0) {
+    lines.push('# HELP elegoo_filament_used_grams Filament used in grams');
+    lines.push('# TYPE elegoo_filament_used_grams gauge');
+    for (const u of usage) {
+      const lab = [labels, `tray="${u.trayKey}",type="${u.filamentType}"`].filter(Boolean).join(',');
+      lines.push(`elegoo_filament_used_grams{${lab}} ${Math.round(u.grams * 100) / 100}`);
+    }
+    lines.push('# HELP elegoo_filament_used_meters Filament used in meters');
+    lines.push('# TYPE elegoo_filament_used_meters gauge');
+    for (const u of usage) {
+      const lab = [labels, `tray="${u.trayKey}",type="${u.filamentType}"`].filter(Boolean).join(',');
+      lines.push(`elegoo_filament_used_meters{${lab}} ${Math.round(u.meters * 1000) / 1000}`);
+    }
+  }
+
+  // Layer stats
+  if (layers.length > 0) {
+    g('elegoo_layer_count', 'Number of recorded layer times', layers.length);
+    const avgDur = layers.reduce((sum, l) => sum + l.duration, 0) / layers.length;
+    g('elegoo_layer_avg_duration_seconds', 'Average layer duration', Math.round(avgDur * 10) / 10);
+    g('elegoo_layer_last_duration_seconds', 'Last layer duration', layers[layers.length - 1].duration);
+  }
+
+  // Exceptions
+  const exceptions = ms?.exception_status ?? [];
+  if (exceptions.length > 0) {
+    lines.push('# HELP elegoo_exception Active exception (1=active)');
+    lines.push('# TYPE elegoo_exception gauge');
+    for (const code of exceptions) {
+      const name = EXCEPTION_NAMES[code] ?? `unknown_${code}`;
+      const lab = [labels, `code="${code}",name="${name}"`].filter(Boolean).join(',');
+      lines.push(`elegoo_exception{${lab}} 1`);
+    }
+  }
+
+  lines.push('');
+  return lines.join('\n');
 }

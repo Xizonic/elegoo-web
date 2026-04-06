@@ -83,6 +83,10 @@ export class WebSocketTransport {
       this.broadcast({ type: 'layer_clear' });
     });
 
+    store.on('filament_usage', (usage: unknown[]) => {
+      this.broadcast({ type: 'filament_usage', usage });
+    });
+
     store.on('ai_chart_data', (point: { t: number; motion: number; scores: Record<string, number> }) => {
       this.broadcast({ type: 'ai_chart_data', ...point });
     });
@@ -157,6 +161,7 @@ export class WebSocketTransport {
       videoUrl: this.store.videoUrl,
       bedMesh: this.store.bedMesh,
       layerTimes: this.store.layerTimes,
+      filamentUsage: this.store.getFilamentUsageArray(),
       chartHistory: this.store.getChartHistory(),
       aiChartHistory: this.store.getAIChartHistory(),
       eventLog: this.store.getEventLog(),

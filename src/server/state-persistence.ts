@@ -12,7 +12,7 @@
 import { writeFile, readFile, rename, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { StateStore, ChartPoint, AIChartPoint } from './state-store.js';
+import type { StateStore, ChartPoint, AIChartPoint, FilamentUsage } from './state-store.js';
 import { getLogger } from './logger.js';
 
 const log = getLogger('Persistence');
@@ -20,7 +20,7 @@ const log = getLogger('Persistence');
 const SAVE_INTERVAL_MS = 30_000; // Save every 30 seconds
 
 interface PersistedState {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   savedAt: number;
   chartData: ChartPoint[];
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }>;
@@ -28,6 +28,8 @@ interface PersistedState {
   lastLayerTime: number;
   /** Added in version 2 */
   aiChartData?: AIChartPoint[];
+  /** Added in version 3 */
+  filamentUsage?: FilamentUsage[];
 }
 
 export class StatePersistence {
@@ -49,7 +51,7 @@ export class StatePersistence {
       const raw = await readFile(this.filePath, 'utf-8');
       const data: PersistedState = JSON.parse(raw);
 
-      if (data.version !== 1 && data.version !== 2) return false;
+      if (data.version !== 1 && data.version !== 2 && data.version !== 3) return false;
 
       // Only restore if data is less than 24 hours old
       const age = Date.now() - data.savedAt;
@@ -62,6 +64,9 @@ export class StatePersistence {
       this.store.restoreLayerData(data.layerTimes, data.lastLayer, data.lastLayerTime);
       if (data.aiChartData) {
         this.store.restoreAIChartData(data.aiChartData);
+      }
+      if (data.filamentUsage) {
+        this.store.restoreFilamentUsage(data.filamentUsage);
       }
 
       const chartCount = data.chartData?.length ?? 0;
@@ -100,13 +105,14 @@ export class StatePersistence {
   private async save(): Promise<void> {
     try {
       const data: PersistedState = {
-        version: 2,
+        version: 3,
         savedAt: Date.now(),
         chartData: this.store.getChartHistory(),
         layerTimes: this.store.layerTimes,
         lastLayer: this.store.getLastLayer(),
         lastLayerTime: this.store.getLastLayerTime(),
         aiChartData: this.store.getAIChartHistory(),
+        filamentUsage: this.store.getFilamentUsageArray(),
       };
 
       const json = JSON.stringify(data);

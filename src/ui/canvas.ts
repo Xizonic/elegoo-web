@@ -50,8 +50,9 @@ export function renderCanvas(state: PrinterState): void {
       .filter(i => i < unit.tray_list.length)
       .map(i => unit.tray_list[i]);
     for (const tray of orderedTrays) {
-      const isActive = unit.canvas_id === canvas.active_canvas_id &&
-        tray.tray_id === canvas.active_tray_id;
+      const isActive = tray.status === 2 || (
+        unit.canvas_id === canvas.active_canvas_id &&
+        tray.tray_id === canvas.active_tray_id);
       const isEmpty = tray.status === 0;
       const color = `#${(tray.filament_color || '434343').replace(/^#/, '')}`;
       const statusClass = isActive ? 'spool-active' : isEmpty ? 'spool-empty' : 'spool-loaded';
@@ -112,6 +113,7 @@ export function renderCanvas(state: PrinterState): void {
     });
 
     // Bind spool click for filament editing
+    const isPrinting = state.status?.machine_status?.status === 2;
     container.querySelectorAll('.canvas-spool-slot').forEach(slot => {
       slot.addEventListener('click', (e) => {
         // Don't open editor when clicking load/unload buttons
@@ -126,7 +128,7 @@ export function renderCanvas(state: PrinterState): void {
           brand: el.dataset.brand || 'ELEGOO',
           minTemp: parseInt(el.dataset.minTemp || '190'),
           maxTemp: parseInt(el.dataset.maxTemp || '230'),
-        }, canvasClient!);
+        }, canvasClient!, isPrinting);
       });
       (slot as HTMLElement).style.cursor = 'pointer';
     });

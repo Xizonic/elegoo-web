@@ -2,6 +2,7 @@
 
 import type { CommandSender } from '../ws-client';
 import { $, escapeHtml, escapeAttr } from './helpers';
+import { toast } from './toast';
 
 let modalEl: HTMLElement | null = null;
 
@@ -90,7 +91,12 @@ export function openFilamentEditor(
   trayId: number,
   current: { type: string; color: string; name: string; brand: string; minTemp: number; maxTemp: number },
   client: CommandSender,
+  isPrinting?: boolean,
 ): void {
+  if (isPrinting) {
+    toast('Cannot edit filament while printing', 'error');
+    return;
+  }
   const modal = ensureModal();
   currentCtx = { canvasId, trayId };
   currentBrand = current.brand || 'ELEGOO';

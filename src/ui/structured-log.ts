@@ -3,13 +3,14 @@
 import type { LogStore, LogEntry } from '../log-store';
 import { $, escapeHtml } from './helpers';
 import { METHOD_NAMES } from './log-methods';
+import { loadUISettings, saveUISettings } from './ui-settings';
 
 let autoScroll = true;
 let paused = false;
 let searchText = '';
-let directionFilter: 'all' | 'sent' | 'received' = 'all';
-let typeFilter: 'all' | 'status' | 'command' | 'response' | 'heartbeat' = 'all';
-let methodFilter: number | 'all' = 'all';
+let directionFilter: 'all' | 'sent' | 'received' = loadUISettings().slogDirection as 'all' | 'sent' | 'received';
+let typeFilter: 'all' | 'status' | 'command' | 'response' | 'heartbeat' = loadUISettings().slogType as 'all' | 'status' | 'command' | 'response' | 'heartbeat';
+let methodFilter: number | 'all' = (() => { const v = loadUISettings().slogMethod; return v === 'all' ? 'all' : parseInt(v) || 'all'; })();
 let showDiff = false;
 let expandedEntries = new Set<number>();
 let pinnedEntries = new Set<number>();
@@ -279,15 +280,27 @@ export function bindStructuredLogControls(store: LogStore): void {
   }
 
   // Tab switching
+  const savedTab = loadUISettings().logTab;
   document.querySelectorAll('.log-tab').forEach(tab => {
+    const tabName = (tab as HTMLElement).dataset.tab;
+    tab.classList.toggle('active', tabName === savedTab);
     tab.addEventListener('click', () => {
       document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      const tabName = (tab as HTMLElement).dataset.tab;
-      $('log-tab-structured').classList.toggle('hidden', tabName !== 'structured');
-      $('log-tab-raw').classList.toggle('hidden', tabName !== 'raw');
+      const name = (tab as HTMLElement).dataset.tab;
+      $('log-tab-structured').classList.toggle('hidden', name !== 'structured');
+      $('log-tab-raw').classList.toggle('hidden', name !== 'raw');
+      saveUISettings({ logTab: name ?? 'structured' });
     });
   });
+  // Apply saved tab visibility
+  $('log-tab-structured').classList.toggle('hidden', savedTab !== 'structured');
+  $('log-tab-raw').classList.toggle('hidden', savedTab !== 'raw');
+
+  // Restore saved filter values on selects
+  ($('slog-direction-filter') as HTMLSelectElement).value = directionFilter;
+  ($('slog-type-filter') as HTMLSelectElement).value = typeFilter;
+  ($('slog-method-filter') as HTMLSelectElement).value = methodFilter === 'all' ? 'all' : String(methodFilter);
 
   // Search
   $('slog-search').addEventListener('input', (e) => {
@@ -299,6 +312,7 @@ export function bindStructuredLogControls(store: LogStore): void {
   // Direction filter
   $('slog-direction-filter').addEventListener('change', (e) => {
     directionFilter = (e.target as HTMLSelectElement).value as typeof directionFilter;
+    saveUISettings({ slogDirection: directionFilter });
     lastRenderedTs = '';
     renderStructuredLog(store);
   });
@@ -306,6 +320,7 @@ export function bindStructuredLogControls(store: LogStore): void {
   // Type filter
   $('slog-type-filter').addEventListener('change', (e) => {
     typeFilter = (e.target as HTMLSelectElement).value as typeof typeFilter;
+    saveUISettings({ slogType: typeFilter });
     lastRenderedTs = '';
     renderStructuredLog(store);
   });
@@ -314,6 +329,7 @@ export function bindStructuredLogControls(store: LogStore): void {
   $('slog-method-filter').addEventListener('change', (e) => {
     const val = (e.target as HTMLSelectElement).value;
     methodFilter = val === 'all' ? 'all' : parseInt(val);
+    saveUISettings({ slogMethod: val });
     lastRenderedTs = '';
     renderStructuredLog(store);
   });

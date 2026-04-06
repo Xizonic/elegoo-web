@@ -10,6 +10,11 @@ export function formatTime(seconds: number): string {
   return `${m}m`;
 }
 
+/** Format a Date as HH:MM local time (e.g. "14:35") */
+export function formatClock(date: Date): string {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 export function fanPct(speed: number): number {
   return Math.round((speed / 255) * 100);
 }

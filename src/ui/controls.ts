@@ -3,6 +3,58 @@ import { $ } from './helpers';
 
 let controlsBound = false;
 
+/** Track in-flight commands by method → elements to re-enable */
+const inFlight = new Map<number, { elements: HTMLElement[]; timer: ReturnType<typeof setTimeout> }>();
+
+/** Called when a command response is received — re-enables guarded buttons */
+export function onCommandResponse(method: number): void {
+  const entry = inFlight.get(method);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  for (const el of entry.elements) {
+    (el as HTMLButtonElement).disabled = false;
+    el.classList.remove('cmd-pending');
+  }
+  inFlight.delete(method);
+}
+
+/** Send a command and disable the triggering element(s) until response or timeout */
+function guardedSend(
+  client: CommandSender,
+  method: number,
+  params: Record<string, unknown>,
+  ...elements: HTMLElement[]
+): void {
+  // Disable elements
+  for (const el of elements) {
+    (el as HTMLButtonElement).disabled = true;
+    el.classList.add('cmd-pending');
+  }
+
+  client.sendCommand(method, params);
+
+  // Auto-recover after 5s if no response
+  const timer = setTimeout(() => {
+    for (const el of elements) {
+      (el as HTMLButtonElement).disabled = false;
+      el.classList.remove('cmd-pending');
+    }
+    inFlight.delete(method);
+  }, 5000);
+
+  // If there's already an in-flight for this method, clear old timer
+  const existing = inFlight.get(method);
+  if (existing) {
+    clearTimeout(existing.timer);
+    for (const el of existing.elements) {
+      (el as HTMLButtonElement).disabled = false;
+      el.classList.remove('cmd-pending');
+    }
+  }
+
+  inFlight.set(method, { elements, timer });
+}
+
 /** Bind all control event handlers */
 export function bindControls(client: CommandSender): void {
   if (controlsBound) return;
@@ -10,32 +62,40 @@ export function bindControls(client: CommandSender): void {
   let currentMoveDistance = 10;
 
   // Print controls
-  $('btn-pause').addEventListener('click', () => client.sendCommand(1021, {}));
-  $('btn-resume').addEventListener('click', () => client.sendCommand(1023, {}));
-  $('btn-stop').addEventListener('click', () => {
+  const btnPause = $('btn-pause') as HTMLButtonElement;
+  const btnResume = $('btn-resume') as HTMLButtonElement;
+  const btnStop = $('btn-stop') as HTMLButtonElement;
+  btnPause.addEventListener('click', () => guardedSend(client, 1021, {}, btnPause));
+  btnResume.addEventListener('click', () => guardedSend(client, 1023, {}, btnResume));
+  btnStop.addEventListener('click', () => {
     if (confirm('Stop the current print?')) {
-      client.sendCommand(1022, {});
+      guardedSend(client, 1022, {}, btnStop);
     }
   });
 
   // Temperature controls
-  $('btn-set-nozzle').addEventListener('click', () => {
+  const btnSetNozzle = $('btn-set-nozzle') as HTMLButtonElement;
+  const btnOffNozzle = $('btn-off-nozzle') as HTMLButtonElement;
+  const btnSetBed = $('btn-set-bed') as HTMLButtonElement;
+  const btnOffBed = $('btn-off-bed') as HTMLButtonElement;
+
+  btnSetNozzle.addEventListener('click', () => {
     const val = parseInt(($('set-nozzle-temp') as HTMLInputElement).value);
     if (val >= 0 && val <= 300) {
-      client.sendCommand(1028, { extruder: val });
+      guardedSend(client, 1028, { extruder: val }, btnSetNozzle);
     }
   });
-  $('btn-off-nozzle').addEventListener('click', () => {
-    client.sendCommand(1028, { extruder: 0 });
+  btnOffNozzle.addEventListener('click', () => {
+    guardedSend(client, 1028, { extruder: 0 }, btnOffNozzle);
   });
-  $('btn-set-bed').addEventListener('click', () => {
+  btnSetBed.addEventListener('click', () => {
     const val = parseInt(($('set-bed-temp') as HTMLInputElement).value);
     if (val >= 0 && val <= 120) {
-      client.sendCommand(1028, { heater_bed: val });
+      guardedSend(client, 1028, { heater_bed: val }, btnSetBed);
     }
   });
-  $('btn-off-bed').addEventListener('click', () => {
-    client.sendCommand(1028, { heater_bed: 0 });
+  btnOffBed.addEventListener('click', () => {
+    guardedSend(client, 1028, { heater_bed: 0 }, btnOffBed);
   });
 
   // Move buttons — XY pad and Z column
@@ -45,17 +105,19 @@ export function bindControls(client: CommandSender): void {
       const axis = el.dataset.axis;
       const dir = parseInt(el.dataset.dir ?? '1');
       if (axis) {
-        client.sendCommand(1027, { axes: axis, distance: currentMoveDistance * dir });
+        guardedSend(client, 1027, { axes: axis, distance: currentMoveDistance * dir }, el);
       }
     });
   });
 
   // Separate home buttons
-  $('btn-home-xy').addEventListener('click', () => {
-    client.sendCommand(1026, { homed_axes: 'xy' });
+  const btnHomeXY = $('btn-home-xy') as HTMLButtonElement;
+  const btnHomeZ = $('btn-home-z') as HTMLButtonElement;
+  btnHomeXY.addEventListener('click', () => {
+    guardedSend(client, 1026, { homed_axes: 'xy' }, btnHomeXY);
   });
-  $('btn-home-z').addEventListener('click', () => {
-    client.sendCommand(1026, { homed_axes: 'z' });
+  btnHomeZ.addEventListener('click', () => {
+    guardedSend(client, 1026, { homed_axes: 'z' }, btnHomeZ);
   });
 
   // Distance buttons
@@ -71,22 +133,22 @@ export function bindControls(client: CommandSender): void {
   document.querySelectorAll('.speed-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const mode = parseInt((btn as HTMLElement).dataset.mode ?? '1');
-      client.sendCommand(1031, { mode });
+      guardedSend(client, 1031, { mode }, btn as HTMLElement);
     });
   });
 
   // Fan toggle controls
   $('fan-model-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    client.sendCommand(1030, { fan: on ? 166 : 0 }); // ~65% default
+    guardedSend(client, 1030, { fan: on ? 166 : 0 }, e.target as HTMLElement);
   });
   $('fan-aux-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    client.sendCommand(1030, { aux_fan: on ? 128 : 0 });
+    guardedSend(client, 1030, { aux_fan: on ? 128 : 0 }, e.target as HTMLElement);
   });
   $('fan-case-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    client.sendCommand(1030, { box_fan: on ? 26 : 0 }); // ~10% default
+    guardedSend(client, 1030, { box_fan: on ? 26 : 0 }, e.target as HTMLElement);
   });
 
   // Fan +/- buttons
@@ -100,14 +162,14 @@ export function bindControls(client: CommandSender): void {
       const currentPct = parseFloat(bar.style.width) || 0;
       const currentVal = Math.round((currentPct / 100) * 255);
       const newVal = Math.max(0, Math.min(255, currentVal + step));
-      client.sendCommand(1030, { [fanKey]: newVal });
+      guardedSend(client, 1030, { [fanKey]: newVal }, el);
     });
   });
 
   // LED toggle
   $('led-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    client.sendCommand(1029, { power: on ? 1 : 0 });
+    guardedSend(client, 1029, { power: on ? 1 : 0 }, e.target as HTMLElement);
   });
 
   // Temperature presets
@@ -116,9 +178,46 @@ export function bindControls(client: CommandSender): void {
       const el = btn as HTMLElement;
       const nozzle = parseInt(el.dataset.nozzle ?? '0');
       const bed = parseInt(el.dataset.bed ?? '0');
-      client.sendCommand(1028, { extruder: nozzle, heater_bed: bed });
+      guardedSend(client, 1028, { extruder: nozzle, heater_bed: bed }, el);
       ($('set-nozzle-temp') as HTMLInputElement).value = nozzle > 0 ? String(nozzle) : '';
       ($('set-bed-temp') as HTMLInputElement).value = bed > 0 ? String(bed) : '';
     });
+  });
+
+  // MQTT debug capture
+  const captureBtn = $('btn-mqtt-capture') as HTMLButtonElement;
+  captureBtn.addEventListener('click', async () => {
+    if (captureBtn.disabled) return;
+    const duration = 10;
+    captureBtn.disabled = true;
+    captureBtn.textContent = `⏳ ${duration}s...`;
+    try {
+      const res = await fetch('/api/debug/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration }),
+      });
+      const data = await res.json() as { ok?: boolean; file?: string; error?: string };
+      if (!res.ok) {
+        captureBtn.textContent = '❌ ' + (data.error ?? 'Error');
+        setTimeout(() => { captureBtn.textContent = '📥 Capture'; captureBtn.disabled = false; }, 3000);
+        return;
+      }
+      // Countdown
+      let remaining = duration;
+      const timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          captureBtn.textContent = `⏳ ${remaining}s...`;
+        } else {
+          clearInterval(timer);
+          captureBtn.textContent = '✅ Saved!';
+          setTimeout(() => { captureBtn.textContent = '📥 Capture'; captureBtn.disabled = false; }, 3000);
+        }
+      }, 1000);
+    } catch {
+      captureBtn.textContent = '❌ Failed';
+      setTimeout(() => { captureBtn.textContent = '📥 Capture'; captureBtn.disabled = false; }, 3000);
+    }
   });
 }

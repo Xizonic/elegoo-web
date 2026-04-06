@@ -2,28 +2,37 @@
 
 ## High Priority
 
-- [ ] Settings må flyttes til tab og ikke dialog. Det er ikke mulig å redigere så mye info i en dialog.
-- [ ] Det er ikke mulig å lese labels på charts pr nå. Vi må ha en tooltip som viser verdien på alle data i posisjonen vi har musen over. 
+- [ ] Hvordan kan jeg laste opp filer?
+  - CC2 supports `PUT http://<printer_ip>:80/upload` (stock firmware). SDK sends `Content-Range`, `Content-Type: application/octet-stream`. Server needs a proxy endpoint to forward uploads to the printer.
+  - Newer SDK also sends `X-File-Name`, `X-File-MD5`, `X-Token` headers.
+- [x] vi trenger et api metrics endpoint med json data for stats
+- [x] vi trenger et prometheus metrics endpoint
+- [ ] vi trenger et MCP server endpoint
+- [ ] vi trenger en octoprint emulator server 
+- [ ] vi trenger en moonraker emulator server
+- [ ] vi trenger å lage en summary rapport pr print, som viser stats fra print med all info og bilder vi har logget under print. Vi ønsker å lage en god PDF med fine grafer og screenshots og info.
+- [x] **Print history panel** — Method 1036 returns print history (task name, status, begin/end time). Paginated panel with refresh.
+- [x] **Disable controls during commands** — Buttons disabled while command is in flight, auto-recover after 5s timeout
+- [x] **Camera snapshot** — Snapshot button in camera card downloads JPEG via /api/snapshot
+- [x] **Self-check wizard** — Maintenance card with Self-Check (1035), Auto-Level (1032), Vibration (1033), PID (1034) buttons with status display
+- [ ] Vi trenger en ny tab for Help som dokumenterer API, prom, MCP, octoprint, moonraker, command reference etc
 
 
 ## Medium Priority
 
-- [ ] **Power loss recovery UI** — Status 15 has no UI handling; show dialog to resume or cancel
-- [ ] **AI detection settings** — Show/configure spaghetti detection and foreign object detection (methods 2010/2011)
-- [ ] **Export MQTT log** — Download log as JSON for offline debugging
-- [ ] **Camera snapshot** — Capture still frame from MJPEG stream
-- [ ] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting
-- [ ] **Print history panel** — Method 1048 returns print history (task name, status, begin/end time). Not implemented at all
-- [ ] **Disable controls during commands** — Prevent double-sends while a command is in flight (isExecutingCommand pattern)
+
 
 ## Lower Priority / Nice-to-Have
 
+- [ ] **Power loss recovery UI** — Status 15 has no UI handling; show dialog to resume or cancel
+- [ ] **AI detection settings** — Show/configure spaghetti detection and foreign object detection (methods 2010/2011)
+- [ ] **Export MQTT log** — Download log as JSON for offline debugging
+- [ ] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting
 - [ ] **OTA firmware update** — Firmware update UI with progress (method 1064, sub_status OTA* codes)
 - [ ] **Dark/light theme toggle** — CSS custom properties make this straightforward
 - [ ] **Keyboard shortcuts** — Pause (P), Resume (R), Stop (S), Home (H) etc.
 - [ ] **Device rename** — Set printer hostname from UI (method 1060)
 - [ ] **Emergency stop button** — Prominent e-stop with confirmation (method 1036)
-- [ ] **Self-check wizard** — Auto-level + vibration optimize + PID detect (method 1035/OneKeyCheck)
 - [ ] **History delete** — Remove print history entries (method 1049)
 - [ ] **Print queue** — Queue multiple files for sequential printing
 - [ ] **Notification sound** — Audio alert when print completes or error occurs
@@ -91,3 +100,20 @@
 - [x] Not possible to increase size of camera?
 - [x] Saving canvas doest not work (error message 1100?)
 - [x] Add service/server side structured logging to file with rotation (winston?)
+- [x] **Settings moved to inline panel** — Settings refactored from modal dialog to an inline card in the dashboard grid for better editability
+- [x] **Chart tooltips** — Hover over any chart to see a crosshair with all series values at that timestamp
+- [x] ~~Kan vi finne ut hvor mange MM filament vi trenger av hver type~~ → `total_filament_used` vises i fil-liste og print-status
+- [x] ~~Er det mer metadata vi kan vise?~~ → Chamber min/max temp, fan RPM, print_duration vs total_duration lagt til
+- [x] ~~Har gcode mer data vi kan vise?~~ → Ikke mulig, CC2 har ingen metode for å hente gcode-innhold
+- [x] ~~Kan vi hente ut gcode? Laste og rendre?~~ → Ikke mulig, CC2-protokollen har ingen fil-overføring (kun listing/thumbnail/delete)
+- [x] ~~Kan vi gjøre som i detangle appen vår - lage en additional mjpeg stream utifra service som overlayer status tekst~~ → Implementert som `/api/stream/overlay`
+- [x] istedet for fram/sekund som er veldig lavt, kan vi vise mg/sec?
+- [x] Remaining: 47m <> Elapsed: 2h20m i status view må bytte plass. Elapsed må stå først.
+- [x] i speed & flow chart må vi vise average flow stiplet linje for gjeldende print/gjeldende filament
+- [x] alle lokale UI settings må lagres i browserstate slik at de overlever reloads. - feks valgt oppløsning på grafer, filter på logg, valgt type kamera etc
+- [x] Det virker som annen hver speed&flow pakke er tom - tallene flapper mellom et tall og "--" (annen hver render er --)
+- [x] files local/usb viser samme data? 
+- [x] Når jeg prøver å slette en fil står det bare "delete failed"
+- [x] vi trenger en knapp for å resette layer duration data
+- [x] Spool Calculator - her trenger vi å kunne inputte hvor mange mm tykkelse vi har igjen på rullen slik at den utifra dette kan kalkulere vekt på filament og antall meter igjen. 
+- [x] På camera overlay må vi ikke kutte lengden på filnavn, nå stopper den halveis over img. Vi vet jo størrelse på bilde..

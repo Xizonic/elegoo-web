@@ -17,6 +17,19 @@ function deepMerge(base: Record<string, unknown>, update: Record<string, unknown
   return result;
 }
 
+/** Map CC2 task status to human-readable string */
+function mapTaskStatus(status: number | string | undefined): string {
+  if (typeof status === 'string') return status;
+  switch (status) {
+    case 0: return 'unknown';
+    case 1: return 'printing';
+    case 2: return 'completed';
+    case 3: return 'failed';
+    case 4: return 'stopped';
+    default: return 'unknown';
+  }
+}
+
 export class PrinterState {
   attributes: PrinterAttributes | null = null;
   status: PrinterStatus | null = null;
@@ -25,14 +38,20 @@ export class PrinterState {
   thumbnail: string | null = null; // base64 PNG
   thumbnailFailed = false; // true when printer returns error (e.g. no embedded thumbnail)
   fileTotalLayers: number | null = null;
+  fileFilamentUsed: number | null = null;
   systemInfo: Record<string, unknown> | null = null;
   storageCapacity: { total: number; free: number; used: number } | null = null;
   monoFilament: Record<string, unknown> | null = null;
   /** Layer timing: records [layer, durationSec] for each completed layer */
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }> = [];
+  /** Per-spool filament usage (from server) */
+  filamentUsage: Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }> = [];
   timelapseList: Record<string, unknown>[] = [];
   videoUrl: string | null = null;
   bedMesh: number[][] | null = null;
+  /** Print history from method 1036 */
+  printHistory: Array<{ uuid: string; filename: string; status: string; begin_time: number; end_time: number }> = [];
+  printHistoryTotal = 0;
   private listeners: StateListener[] = [];
 
   subscribe(listener: StateListener): () => void {
@@ -71,6 +90,12 @@ export class PrinterState {
   }
 
   applyDelta(data: Record<string, unknown>): void {
+    // Normalize firmware field name variations
+    if ('gcode_move_inf' in data && !('gcode_move' in data)) {
+      data.gcode_move = data.gcode_move_inf;
+      delete data.gcode_move_inf;
+    }
+
     if (!this.status) {
       this.status = data as unknown as PrinterStatus;
     } else {
@@ -91,6 +116,19 @@ export class PrinterState {
       this.monoFilament = monoInfo;
     }
 
+    // Capture canvas info updates from delta (active tray changes, etc.)
+    const canvasDelta = data.canvas_info as CanvasInfo | undefined;
+    if (canvasDelta) {
+      if (this.canvas) {
+        this.canvas = deepMerge(
+          this.canvas as unknown as Record<string, unknown>,
+          canvasDelta as unknown as Record<string, unknown>
+        ) as unknown as CanvasInfo;
+      } else {
+        this.canvas = canvasDelta;
+      }
+    }
+
     this.notify();
   }
 
@@ -108,6 +146,12 @@ export class PrinterState {
   handleResponse(method: number, data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
+
+    // Normalize firmware field name variations
+    if ('gcode_move_inf' in result && !('gcode_move' in result)) {
+      result.gcode_move = result.gcode_move_inf;
+      delete result.gcode_move_inf;
+    }
 
     switch (method) {
       case 1001: // GET_ATTRIBUTES
@@ -146,8 +190,12 @@ export class PrinterState {
         const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as number | undefined;
         if (layers != null) {
           this.fileTotalLayers = layers;
-          this.notify();
         }
+        const filament = (result.total_filament_used ?? result.TotalFilamentUsed) as number | undefined;
+        if (filament != null) {
+          this.fileFilamentUsed = filament;
+        }
+        this.notify();
         break;
       }
       case 1062: { // GET_SYSTEM_INFO
@@ -204,6 +252,25 @@ export class PrinterState {
         const list = result.file_list as Record<string, unknown>[] | undefined;
         if (errorCode === 0 && list) {
           this.timelapseList = list;
+          this.notify();
+        }
+        break;
+      }
+      case 1036: { // PRINT_TASK_LIST
+        const errorCode = result.error_code as number | undefined;
+        if (errorCode === 0) {
+          const tasks = result.task_list as Array<Record<string, unknown>> | undefined;
+          const total = result.total as number | undefined;
+          if (tasks) {
+            this.printHistory = tasks.map(t => ({
+              uuid: (t.uuid as string) || '',
+              filename: (t.filename ?? t.task_name ?? t.name ?? '') as string,
+              status: mapTaskStatus(t.status as number | string | undefined),
+              begin_time: (t.begin_time as number) || 0,
+              end_time: (t.end_time as number) || 0,
+            }));
+            this.printHistoryTotal = total ?? this.printHistory.length;
+          }
           this.notify();
         }
         break;

@@ -19,8 +19,14 @@
       <h1>Elegoo CC2 web frontend</h1>
       <span id="printer-name" class="subtitle"></span>
     </div>
+    <div class="header-center">
+      <nav class="main-tabs" id="main-tabs">
+        <button class="main-tab active" data-tab="dashboard">🖨️ Dashboard</button>
+        <button class="main-tab" data-tab="tools">🧮 Tools</button>
+        <button class="main-tab" data-tab="settings">⚙️ Settings</button>
+      </nav>
+    </div>
     <div class="header-right">
-      <button id="settings-btn" class="btn btn-sm btn-ghost" title="Settings">⚙️</button>
       <span id="connection-status" class="status-badge disconnected">Disconnected</span>
     </div>
   </header>
@@ -68,8 +74,16 @@
             </div>
           </div>
           <div class="print-meta">
-            <span id="print-layer">Layer Progress: --/--</span>
+            <span id="print-layer">Layer: --/--</span>
+            <span id="print-filament">--</span>
+          </div>
+          <div class="print-meta">
+            <span id="print-elapsed">--</span>
             <span id="print-remaining">--</span>
+          </div>
+          <div class="print-meta">
+            <span id="print-started">--</span>
+            <span id="print-eta">--</span>
           </div>
 
         </div>
@@ -119,6 +133,7 @@
               <div class="temp-label">Chamber</div>
               <div class="temp-value">
                 <span id="temp-chamber">--</span>°C
+                <span class="temp-range" id="temp-chamber-range"></span>
               </div>
             </div>
           </div>
@@ -153,7 +168,11 @@
         <div class="card" id="camera-card">
           <div class="card-header">
             <h3>📷 Camera</h3>
-            <button id="camera-expand-btn" class="btn btn-sm btn-ghost" title="Toggle large view">⤢ Expand</button>
+            <div class="camera-header-actions">
+              <button id="camera-snapshot-btn" class="btn btn-sm btn-ghost" title="Save snapshot">📸 Snapshot</button>
+              <button id="camera-overlay-btn" class="btn btn-sm btn-ghost" title="Toggle status overlay">📊 Overlay</button>
+              <button id="camera-expand-btn" class="btn btn-sm btn-ghost" title="Toggle large view">⤢ Expand</button>
+            </div>
           </div>
           <div class="camera-wrap" id="camera-wrap" title="Click to enlarge">
             <img id="camera-feed" alt="Camera off" class="camera-img">
@@ -224,9 +243,36 @@
           <canvas id="bed-mesh-canvas" class="bed-mesh-canvas"></canvas>
         </div>
 
+        <!-- Maintenance / Self-Check -->
+        <div class="card" id="maintenance-card">
+          <h3>🔧 Maintenance</h3>
+          <div id="maintenance-status"></div>
+          <div class="maintenance-grid">
+            <button id="btn-self-check" class="btn btn-ghost maintenance-btn" title="Run full self-check (auto-level + vibration + PID)">
+              <span class="maintenance-icon">🔍</span>
+              <span>Full Self-Check</span>
+            </button>
+            <button id="btn-maintenance-level" class="btn btn-ghost maintenance-btn" title="Auto-level bed probing">
+              <span class="maintenance-icon">📐</span>
+              <span>Auto Level</span>
+            </button>
+            <button id="btn-maintenance-vibration" class="btn btn-ghost maintenance-btn" title="Input shaper / vibration optimization">
+              <span class="maintenance-icon">〰️</span>
+              <span>Vibration Opt.</span>
+            </button>
+            <button id="btn-maintenance-pid" class="btn btn-ghost maintenance-btn" title="PID auto-tune for nozzle and bed heaters">
+              <span class="maintenance-icon">🌡️</span>
+              <span>PID Calibrate</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Gcode Preview -->
         <div class="card" id="gcode-preview-card">
-          <h3>📐 Layer Preview</h3>
+          <div class="card-header">
+            <h3>📐 Layer Preview</h3>
+            <button id="btn-reset-layer-data" class="btn btn-sm btn-ghost" title="Reset layer duration data">🗑 Reset</button>
+          </div>
           <canvas id="gcode-preview-canvas" class="gcode-preview-canvas"></canvas>
           <div class="chart-wrap">
             <canvas id="chart-layer-time" class="live-chart"></canvas>
@@ -292,6 +338,7 @@
                 <button class="btn btn-sm fan-dec" data-fan="fan" data-step="-13">−</button>
                 <div class="fan-bar-wrap"><div class="fan-bar" id="fan-model-bar"></div></div>
                 <span class="fan-value" id="fan-model-value">--%</span>
+                <span class="fan-rpm" id="fan-model-rpm"></span>
                 <button class="btn btn-sm fan-inc" data-fan="fan" data-step="13">+</button>
               </div>
             </div>
@@ -305,6 +352,7 @@
                 <button class="btn btn-sm fan-dec" data-fan="aux_fan" data-step="-13">−</button>
                 <div class="fan-bar-wrap"><div class="fan-bar" id="fan-aux-bar"></div></div>
                 <span class="fan-value" id="fan-aux-value">--%</span>
+                <span class="fan-rpm" id="fan-aux-rpm"></span>
                 <button class="btn btn-sm fan-inc" data-fan="aux_fan" data-step="13">+</button>
               </div>
             </div>
@@ -318,6 +366,7 @@
                 <button class="btn btn-sm fan-dec" data-fan="box_fan" data-step="-13">−</button>
                 <div class="fan-bar-wrap"><div class="fan-bar" id="fan-case-bar"></div></div>
                 <span class="fan-value" id="fan-case-value">--%</span>
+                <span class="fan-rpm" id="fan-case-rpm"></span>
                 <button class="btn btn-sm fan-inc" data-fan="box_fan" data-step="13">+</button>
               </div>
             </div>
@@ -338,13 +387,58 @@
           </div>
         </div>
 
+        <!-- Speed & Flow -->
+        <div class="card" id="speed-flow-card">
+          <h3>Speed &amp; Flow</h3>
+          <div class="speed-flow-live">
+            <div class="speed-flow-item">
+              <span class="speed-flow-label">Speed</span>
+              <span class="speed-flow-value" id="live-speed">-- mm/min</span>
+            </div>
+            <div class="speed-flow-item">
+              <span class="speed-flow-label">Extrusion</span>
+              <span class="speed-flow-value" id="live-extrusion">-- mm/s</span>
+            </div>
+            <div class="speed-flow-item">
+              <span class="speed-flow-label">Flow</span>
+              <span class="speed-flow-value" id="live-flow">-- mm³/s</span>
+            </div>
+            <div class="speed-flow-item">
+              <span class="speed-flow-label">Mass</span>
+              <span class="speed-flow-value" id="live-mass-flow">-- mg/s</span>
+            </div>
+          </div>
+          <div id="filament-usage-display" class="filament-usage-display"></div>
+          <div class="chart-wrap">
+            <div class="chart-time-selector">
+              <button class="chart-time-btn" data-chart="chart-speed" data-window="60">1m</button>
+              <button class="chart-time-btn active" data-chart="chart-speed" data-window="300">5m</button>
+              <button class="chart-time-btn" data-chart="chart-speed" data-window="900">15m</button>
+              <button class="chart-time-btn" data-chart="chart-speed" data-window="3600">1h</button>
+            </div>
+            <canvas id="chart-speed" class="live-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Print History -->
+        <div class="card" id="print-history-card">
+          <div class="card-header">
+            <h3>📜 Print History</h3>
+            <button id="btn-history-refresh" class="btn btn-sm btn-ghost" title="Refresh print history">⟳ Refresh</button>
+          </div>
+          <div id="print-history-entries" class="print-history-entries">
+            <div class="file-empty">Click refresh to load history</div>
+          </div>
+          <div id="print-history-total"></div>
+        </div>
+
         <!-- Files -->
         <div class="card" id="files-card">
           <div class="files-header">
             <h3>📁 Files</h3>
             <div class="file-source-tabs">
               <button class="file-source-tab active" data-source="local">Local</button>
-              <button class="file-source-tab" data-source="u_disk">USB</button>
+              <button class="file-source-tab" data-source="u-disk">USB</button>
             </div>
           </div>
           <div id="file-list" class="file-list">
@@ -375,6 +469,7 @@
               <button class="log-tab active" data-tab="structured">Structured</button>
               <button class="log-tab" data-tab="raw">Raw</button>
             </div>
+            <button class="btn btn-sm" id="btn-mqtt-capture" title="Capture all raw MQTT messages to file for debugging">📥 Capture</button>
           </div>
 
           <!-- Structured tab -->
@@ -422,6 +517,23 @@
             <div id="log-entries" class="log-entries"></div>
           </div>
         </div>
+
+      </div>
+    </div>
+
+    <!-- Tools tab (hidden by default) -->
+    <div id="tools-tab-content" class="settings-page hidden">
+      <div class="settings-page-inner" style="max-width: 1000px">
+        <h2 class="settings-page-title">🧮 Spool Calculator</h2>
+        <div id="tools-content"></div>
+      </div>
+    </div>
+
+    <!-- Settings tab (hidden by default, shown when Settings tab is active) -->
+    <div id="settings-tab-content" class="settings-page hidden">
+      <div class="settings-page-inner">
+        <h2 class="settings-page-title">⚙️ Settings</h2>
+        <div id="settings-content" class="settings-content-full"></div>
       </div>
     </div>
   </main>

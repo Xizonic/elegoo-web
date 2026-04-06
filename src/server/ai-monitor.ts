@@ -74,16 +74,15 @@ const CLASSIFICATION_GROUPS = [
 
 type ClassificationGroup = typeof CLASSIFICATION_GROUPS[number];
 
-/** Map a CLIP label to one of the 5 chart groups */
+/** Map a CLIP label to one of the 5 chart groups (fallback for configs without group field) */
 function categorizeLabel(label: string): ClassificationGroup {
   const l = label.toLowerCase();
-  if (l.includes('actively printing') || l.includes('being extruded')) return 'Print in Progress';
+  if (l.includes('actively printing') || l.includes('being extruded') || l.includes('starting layers')) return 'Print in Progress';
   if (l.includes('spaghetti') || l.includes('tangled') || l.includes('disaster') ||
-      l.includes('layer shift') || l.includes('warping') ||
+      l.includes('layer shift') || l.includes('warping') || l.includes('stringing') || l.includes('strings') ||
       l.includes('blob') || l.includes('fell off') || l.includes('unstuck'))
     return 'Spaghetti/Failure';
   if (l.includes('empty') && l.includes('bed')) return 'Empty Bed';
-  // 'Paused/Stopped' is now only set by motion-based stall detection, not CLIP labels
   return 'Other';
 }
 
@@ -126,6 +125,8 @@ export interface AILabelConfig {
   severity: 'ok' | 'warning' | 'critical';
   warnThreshold: number;
   critThreshold: number;
+  /** Chart group for classification display */
+  group: ClassificationGroup;
 }
 
 /** Build default label configs from hardcoded values */
@@ -138,6 +139,7 @@ function buildDefaultLabelConfigs(): AILabelConfig[] {
       severity: mapping?.severity ?? 'ok',
       warnThreshold: mapping ? DEFAULT_WARN_THRESHOLD : 1,
       critThreshold: mapping ? DEFAULT_CRIT_THRESHOLD : 1,
+      group: categorizeLabel(label),
     };
   });
 }
@@ -306,12 +308,12 @@ class LocalAnalyzer {
       // Check all results for issue labels above confidence threshold
       for (const r of results) {
         const cfgIdx = labels.indexOf(r.label);
+        const cfg = cfgIdx >= 0 ? labelConfigs[cfgIdx] : undefined;
 
-        // Accumulate into chart groups
-        const group = categorizeLabel(r.label);
+        // Accumulate into chart groups — use configured group, fallback to keyword matching
+        const group = cfg?.group ?? categorizeLabel(r.label);
         groupScores[group] = (groupScores[group] || 0) + r.score * 100;
 
-        const cfg = cfgIdx >= 0 ? labelConfigs[cfgIdx] : undefined;
         if (cfg && cfg.severity !== 'ok' && r.score > cfg.warnThreshold) {
           issues.push({
             type: cfg.issueType,
@@ -736,6 +738,12 @@ export class AIMonitor extends EventEmitter {
       const raw = await readFile(this.labelConfigPath, 'utf-8');
       const parsed = JSON.parse(raw) as AILabelConfig[];
       if (Array.isArray(parsed) && parsed.length > 0) {
+        // Migrate old configs without group field
+        for (const lc of parsed) {
+          if (!lc.group) {
+            lc.group = categorizeLabel(lc.label);
+          }
+        }
         this.labelConfigs = parsed;
         log.info(`Loaded ${parsed.length} label configs from ${this.labelConfigPath}`);
       }

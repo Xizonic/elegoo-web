@@ -4,7 +4,7 @@ import { PrinterState } from './printer-state';
 import { LogStore } from './log-store';
 import { ChartStore } from './chart-store';
 import {
-  renderDashboard, renderCanvas, renderFiles, renderHeader, bindControls,
+  renderDashboard, renderCanvas, renderFiles, renderHeader, bindControls, onCommandResponse,
   registerChart, initCharts,
   renderStructuredLog, bindStructuredLogControls,
   bindFileControls, toast, setCanvasClient,
@@ -15,9 +15,12 @@ import {
   renderLayerTimeChart,
   updateServiceStatus,
   handleAIAnalysis, handleAIAlert, updateAIStatus,
-  openSettings, applyCardLayout,
+  openSettings, applyCardLayout, renderSettingsContent, switchToTab,
   currentFileSource, currentFileDir, handleThumbnailResponse,
   handleEventLog, loadEventLogHistory,
+  toggleCameraOverlay,
+  renderPrintHistory, bindHistoryControls, setHistoryClient, requestHistory,
+  renderMaintenance, bindMaintenanceControls, setMaintenanceClient,
 } from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
 
@@ -45,6 +48,9 @@ chartStore.defineSeries('ai_failure',       'Spaghetti/Failure', '#f85149');
 chartStore.defineSeries('ai_empty',         'Empty Bed',         '#8b949e');
 chartStore.defineSeries('ai_paused',        'Paused/Stopped',    '#f0883e');
 chartStore.defineSeries('ai_other',         'Other',             '#a371f7');
+
+// Speed & flow chart series
+chartStore.defineSeries('extrusion_rate', 'Extrusion',  '#4fc3f7');
 
 
 // Register charts
@@ -80,6 +86,14 @@ registerChart({
   unit: '',
 });
 
+registerChart({
+  canvasId: 'chart-speed',
+  seriesKeys: ['extrusion_rate'],
+  yMin: 0,
+  unit: 'mm/s',
+  averageKeys: ['extrusion_rate'],
+});
+
 
 function scheduleRender(): void {
   if (renderScheduled) return;
@@ -95,6 +109,8 @@ function scheduleRender(): void {
       renderBedMesh(state);
       renderGcodePreview(state);
       renderLayerTimeChart(state);
+      renderPrintHistory(state);
+      renderMaintenance(state);
       renderLog(logStore);
       renderStructuredLog(logStore);
     }
@@ -124,6 +140,7 @@ function showDashboard(): void {
   dashboardShown = true;
   $('connect-dialog').classList.add('hidden');
   $('dashboard').classList.remove('hidden');
+  $('dashboard').dataset.connected = 'true';
 
   if (!controlsBound) {
     controlsBound = true;
@@ -133,7 +150,11 @@ function showDashboard(): void {
     bindFileControls(client!);
     setCanvasClient(client!);
     setTimelapseClient(client!);
+    setHistoryClient(client!);
+    setMaintenanceClient(client!);
     $('timelapse-refresh').addEventListener('click', () => requestTimelapseList());
+    bindHistoryControls();
+    bindMaintenanceControls();
     $('timelapse-close').addEventListener('click', () => {
       const player = $('timelapse-player') as HTMLVideoElement;
       player.pause();
@@ -145,7 +166,21 @@ function showDashboard(): void {
       toast('Starting auto-level...', 'info');
       client!.sendCommand(1032, {}); // AutoLevel — mesh data arrives via status events
     });
+    $('btn-reset-layer-data').addEventListener('click', async () => {
+      if (!confirm('Reset all layer duration data?')) return;
+      try {
+        const res = await fetch('/api/layer-data', { method: 'DELETE' });
+        if (res.ok) {
+          toast('Layer data reset', 'success');
+        } else {
+          toast('Reset failed', 'error');
+        }
+      } catch {
+        toast('Network error', 'error');
+      }
+    });
     initCharts(chartStore);
+
 
     // Camera click-to-expand
     const cameraWrap = $('camera-wrap');
@@ -175,6 +210,43 @@ function showDashboard(): void {
       e.stopPropagation();
       const expanded = cameraCard.classList.toggle('camera-expanded');
       expandBtn.textContent = expanded ? '⤡ Collapse' : '⤢ Expand';
+    });
+
+    // Camera overlay toggle
+    const overlayBtn = $('camera-overlay-btn');
+    overlayBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCameraOverlay();
+    });
+
+    // Camera snapshot download
+    const snapshotBtn = $('camera-snapshot-btn') as HTMLButtonElement;
+    snapshotBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (snapshotBtn.disabled) return;
+      snapshotBtn.disabled = true;
+      snapshotBtn.textContent = '⏳ ...';
+      try {
+        const res = await fetch('/api/snapshot');
+        if (!res.ok) {
+          toast('Snapshot failed', 'error');
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = `snapshot-${ts}.jpg`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('Snapshot saved', 'success');
+      } catch {
+        toast('Snapshot failed', 'error');
+      } finally {
+        snapshotBtn.disabled = false;
+        snapshotBtn.textContent = '📸 Snapshot';
+      }
     });
   }
 }
@@ -253,6 +325,9 @@ function connectToService(): void {
           state.restoreLayerData(lt, lastEntry.layer, lastEntry.timestamp);
         }
       }
+      if (initData.filamentUsage && Array.isArray(initData.filamentUsage)) {
+        state.filamentUsage = initData.filamentUsage as typeof state.filamentUsage;
+      }
       if (initData.serviceStatus) {
         updateServiceStatus(initData.serviceStatus as Record<string, unknown>);
         const ss = initData.serviceStatus as Record<string, unknown>;
@@ -299,6 +374,7 @@ function connectToService(): void {
     },
     onMessage(method, data) {
       state.handleResponse(method, data as Record<string, unknown>);
+      onCommandResponse(method);
       if (method === 1044 && client) {
         requestAnimationFrame(() => renderFiles(state, client!));
       }
@@ -309,7 +385,14 @@ function connectToService(): void {
         if (errorCode === 0) {
           toast('File deleted', 'success');
         } else {
-          toast('Delete failed', 'error');
+          const ERROR_NAMES: Record<number, string> = {
+            1003: 'Invalid parameter',
+            1007: 'Cannot delete file',
+            1009: 'Printer busy',
+            1021: 'File not found',
+          };
+          const msg = ERROR_NAMES[errorCode ?? -1] ?? `Error ${errorCode ?? 'unknown'}`;
+          toast(`Delete failed: ${msg}`, 'error');
         }
         client.sendCommand(1044, { storage_media: currentFileSource(), dir: currentFileDir(), offset: 0, limit: 200 });
         client.sendCommand(1048, { storage_media: currentFileSource() });
@@ -329,12 +412,26 @@ function connectToService(): void {
       if (method === 1032) {
         toast('Auto-level started', 'success');
       }
+      if (method === 1033) {
+        toast('Vibration optimization started', 'success');
+      }
+      if (method === 1034) {
+        toast('PID calibration started', 'success');
+      }
+      if (method === 1035) {
+        toast('Self-check started', 'success');
+      }
+      if (method === 1036) {
+        requestAnimationFrame(() => renderPrintHistory(state));
+      }
       if (method === 2003) {
         const result = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
         const errorCode = result?.error_code as number | undefined;
         if (errorCode === 0) {
           toast('Filament saved', 'success');
           if (client) client.sendCommand(2005, {});
+        } else if (errorCode === 1009) {
+          toast('Cannot edit filament while printing — printer is busy', 'error');
         } else {
           toast(`Filament save failed (error ${errorCode ?? '?'})`, 'error');
         }
@@ -380,6 +477,10 @@ function connectToService(): void {
     onLayerClear() {
       state.clearLayerTimes();
     },
+    onFilamentUsage(usage) {
+      state.filamentUsage = usage;
+      scheduleRender();
+    },
   });
 
   client.connect();
@@ -393,8 +494,13 @@ $('connect-btn').addEventListener('click', () => {
 // Auto-connect on page load
 connectToService();
 
-// Settings button
-$('settings-btn').addEventListener('click', openSettings);
+// Tab navigation
+document.querySelectorAll('.main-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = (btn as HTMLElement).dataset.tab as 'dashboard' | 'settings' | 'tools';
+    switchToTab(tab);
+  });
+});
 
 // Apply saved card layout
 applyCardLayout();

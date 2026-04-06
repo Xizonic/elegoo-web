@@ -2,6 +2,7 @@
 
 import { $ } from './helpers';
 import { toast } from './toast';
+import { renderSpoolCalc } from './spool-calc';
 
 // ---- Card layout settings (localStorage) ----
 
@@ -88,48 +89,64 @@ export function applyCardLayout(): void {
   }
 }
 
-// ---- Settings Modal ----
+// ---- Settings Tab ----
 
-let modalEl: HTMLElement | null = null;
+let settingsRendered = false;
 
+/** Switch to the Settings tab */
 export function openSettings(): void {
-  if (modalEl) {
-    modalEl.classList.remove('hidden');
-    renderSettingsContent();
-    return;
-  }
-  modalEl = document.createElement('div');
-  modalEl.id = 'settings-modal';
-  modalEl.className = 'settings-modal';
-  modalEl.innerHTML = `
-    <div class="settings-dialog">
-      <div class="settings-header">
-        <h2>⚙️ Settings</h2>
-        <button id="settings-close" class="settings-close-btn">&times;</button>
-      </div>
-      <div id="settings-content" class="settings-content"></div>
-    </div>
-  `;
-  document.body.appendChild(modalEl);
-
-  modalEl.querySelector('#settings-close')!.addEventListener('click', closeSettings);
-  modalEl.addEventListener('click', (e) => {
-    if (e.target === modalEl) closeSettings();
-  });
-  modalEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeSettings();
-  });
-
+  switchToTab('settings');
   renderSettingsContent();
 }
 
-function closeSettings(): void {
-  modalEl?.classList.add('hidden');
+/** Switch between main tabs (dashboard / settings / tools) */
+export function switchToTab(tab: 'dashboard' | 'settings' | 'tools'): void {
+  const connectDialog = document.getElementById('connect-dialog');
+  const dashboard = document.getElementById('dashboard');
+  const settingsPage = document.getElementById('settings-tab-content');
+  const toolsPage = document.getElementById('tools-tab-content');
+  const tabs = document.querySelectorAll('.main-tab');
+
+  if (!dashboard || !settingsPage) return;
+
+  tabs.forEach(t => {
+    const el = t as HTMLElement;
+    el.classList.toggle('active', el.dataset.tab === tab);
+  });
+
+  // Hide all pages first
+  settingsPage.classList.add('hidden');
+  toolsPage?.classList.add('hidden');
+  dashboard.classList.add('hidden');
+  connectDialog?.classList.add('hidden');
+
+  if (tab === 'dashboard') {
+    // Show dashboard (or connect dialog if not yet connected)
+    if (dashboard.dataset.connected !== 'true' && connectDialog) {
+      connectDialog.classList.remove('hidden');
+    } else {
+      dashboard.classList.remove('hidden');
+    }
+  } else if (tab === 'settings') {
+    settingsPage.classList.remove('hidden');
+    renderSettingsContent();
+  } else if (tab === 'tools') {
+    toolsPage?.classList.remove('hidden');
+    renderSpoolCalc();
+  }
 }
 
-function renderSettingsContent(): void {
+/** Render settings content into the settings page (called on tab switch) */
+export function renderSettingsContent(): void {
   const content = document.getElementById('settings-content');
   if (!content) return;
+  if (settingsRendered) return;
+  settingsRendered = true;
+
+  buildSettingsHTML(content);
+}
+
+function buildSettingsHTML(content: HTMLElement): void {
 
   currentLayout = loadCardLayout();
 
@@ -222,6 +239,7 @@ function renderSettingsContent(): void {
           [currentLayout.order[idx + 1], currentLayout.order[idx]];
         saveCardLayout(currentLayout);
         applyCardLayout();
+        settingsRendered = false;
         renderSettingsContent();
       }
     });
@@ -232,6 +250,7 @@ function renderSettingsContent(): void {
     currentLayout = { order: [...DEFAULT_CARD_ORDER], hidden: [] };
     saveCardLayout(currentLayout);
     applyCardLayout();
+    settingsRendered = false;
     renderSettingsContent();
     toast('Layout reset to default', 'success');
   });
@@ -323,6 +342,7 @@ interface AILabelConfig {
   severity: 'ok' | 'warning' | 'critical';
   warnThreshold: number;
   critThreshold: number;
+  group: string;
 }
 
 /** Shorten a CLIP label for display */
@@ -361,6 +381,9 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
     const sevOpts = ['ok', 'warning', 'critical'].map(s =>
       `<option value="${s}" ${lc.severity === s ? 'selected' : ''}>${s.toUpperCase()}</option>`
     ).join('');
+    const groupOpts = ['Print in Progress', 'Spaghetti/Failure', 'Empty Bed', 'Paused/Stopped', 'Other'].map(g =>
+      `<option value="${g}" ${lc.group === g ? 'selected' : ''}>${g}</option>`
+    ).join('');
     return `
       <div class="ai-label-config-row" data-idx="${idx}">
         <div class="ai-label-config-field ai-label-config-label">
@@ -370,6 +393,10 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
         <div class="ai-label-config-field">
           <label>Issue Type</label>
           <input type="text" class="settings-input ai-lc-issue" value="${lc.issueType}" data-idx="${idx}" placeholder="e.g. spaghetti">
+        </div>
+        <div class="ai-label-config-field">
+          <label>Group</label>
+          <select class="settings-input ai-lc-group" data-idx="${idx}">${groupOpts}</select>
         </div>
         <div class="ai-label-config-field">
           <label>Severity</label>
@@ -383,6 +410,10 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
           <label>Crit @</label>
           <input type="number" class="settings-input ai-lc-crit" value="${lc.critThreshold}" data-idx="${idx}" min="0" max="1" step="0.05">
         </div>
+        <div class="ai-label-config-field ai-label-config-delete">
+          <label>&nbsp;</label>
+          <button class="btn btn-sm btn-ghost ai-lc-delete" data-idx="${idx}" title="Delete this label">✕</button>
+        </div>
       </div>
     `;
   }).join('');
@@ -390,14 +421,50 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
   container.innerHTML = `
     <div class="ai-label-config-list">${rows}</div>
     <div class="settings-actions">
+      <button id="ai-labels-add" class="btn btn-sm btn-ghost">➕ Add Label</button>
       <button id="ai-labels-save" class="btn btn-sm btn-primary">Save Labels</button>
       <button id="ai-labels-reset" class="btn btn-sm btn-ghost">Reset to Defaults</button>
     </div>
   `;
 
+  // Delete label buttons
+  container.querySelectorAll('.ai-lc-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt((btn as HTMLElement).dataset.idx!, 10);
+      const current = collectLabelConfigs(container);
+      if (!current) return;
+      current.splice(idx, 1);
+      renderAILabelEditor(container, current);
+    });
+  });
+
+  // Add label button
+  container.querySelector('#ai-labels-add')?.addEventListener('click', () => {
+    const current = collectLabelConfigs(container);
+    if (!current) return;
+    current.push({
+      label: '',
+      issueType: 'ok',
+      severity: 'ok',
+      warnThreshold: 0.5,
+      critThreshold: 0.8,
+      group: 'Other',
+    });
+    renderAILabelEditor(container, current);
+  });
+
   container.querySelector('#ai-labels-save')?.addEventListener('click', async () => {
-    const updated = collectLabelConfigs(container, labels.length);
+    const updated = collectLabelConfigs(container);
     if (!updated) return;
+    if (updated.length === 0) {
+      toast('Add at least one label', 'error');
+      return;
+    }
+    const emptyIdx = updated.findIndex(l => !l.label);
+    if (emptyIdx >= 0) {
+      toast(`Label ${emptyIdx + 1} cannot be empty`, 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/config/ai-labels', {
         method: 'POST',
@@ -432,20 +499,27 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
   });
 }
 
-function collectLabelConfigs(container: HTMLElement, count: number): AILabelConfig[] | null {
+function collectLabelConfigs(container: HTMLElement): AILabelConfig[] | null {
+  const rows = container.querySelectorAll('.ai-label-config-row');
   const configs: AILabelConfig[] = [];
-  for (let i = 0; i < count; i++) {
-    const label = (container.querySelector(`.ai-lc-label[data-idx="${i}"]`) as HTMLTextAreaElement)?.value.trim();
-    const issueType = (container.querySelector(`.ai-lc-issue[data-idx="${i}"]`) as HTMLInputElement)?.value.trim();
-    const severity = (container.querySelector(`.ai-lc-severity[data-idx="${i}"]`) as HTMLSelectElement)?.value as 'ok' | 'warning' | 'critical';
-    const warnThreshold = parseFloat((container.querySelector(`.ai-lc-warn[data-idx="${i}"]`) as HTMLInputElement)?.value);
-    const critThreshold = parseFloat((container.querySelector(`.ai-lc-crit[data-idx="${i}"]`) as HTMLInputElement)?.value);
+  for (const row of rows) {
+    const idx = (row as HTMLElement).dataset.idx!;
+    const label = (row.querySelector(`.ai-lc-label[data-idx="${idx}"]`) as HTMLTextAreaElement)?.value.trim();
+    const issueType = (row.querySelector(`.ai-lc-issue[data-idx="${idx}"]`) as HTMLInputElement)?.value.trim();
+    const group = (row.querySelector(`.ai-lc-group[data-idx="${idx}"]`) as HTMLSelectElement)?.value || 'Other';
+    const severity = (row.querySelector(`.ai-lc-severity[data-idx="${idx}"]`) as HTMLSelectElement)?.value as 'ok' | 'warning' | 'critical';
+    const warnThreshold = parseFloat((row.querySelector(`.ai-lc-warn[data-idx="${idx}"]`) as HTMLInputElement)?.value);
+    const critThreshold = parseFloat((row.querySelector(`.ai-lc-crit[data-idx="${idx}"]`) as HTMLInputElement)?.value);
 
-    if (!label) {
-      toast(`Label ${i + 1} cannot be empty`, 'error');
-      return null;
-    }
-    configs.push({ label, issueType: issueType || 'ok', severity, warnThreshold, critThreshold });
+    // Allow empty labels only for newly added rows (they'll be filled in)
+    configs.push({
+      label: label || '',
+      issueType: issueType || 'ok',
+      severity: severity || 'ok',
+      warnThreshold: isNaN(warnThreshold) ? 0.5 : warnThreshold,
+      critThreshold: isNaN(critThreshold) ? 0.8 : critThreshold,
+      group: group || 'Other',
+    });
   }
   return configs;
 }

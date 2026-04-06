@@ -47,6 +47,12 @@ Key methods: 1001 (attributes), 1002 (full status), 1020-1023 (print control), 1
 - Using the wrong form returns error 1003 (INVALID_PARAMETER)
 - This was discovered by comparing against the official Elegoo web interface source (`raw/index-unminified.html`)
 
+**WARNING**: Field names in status updates may differ from documentation:
+- `gcode_move` (not `gcode_move_inf` as some docs suggest) — verified via MQTT capture
+- Extruder position is `gcode_move.extruder` (not `gcode_move.e`) — verified via MQTT capture
+- Code normalizes `gcode_move_inf` → `gcode_move` at ingest for compatibility with older firmware
+- Always use the debug capture feature (`POST /api/debug/capture`) to verify actual field names
+
 Reference: [CC2_PROTOCOL.md](https://github.com/danielcherubini/elegoo-homeassistant/blob/main/docs/CC2_PROTOCOL.md)
 
 ## Conventions

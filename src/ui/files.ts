@@ -2,7 +2,7 @@ import type { PrinterState } from '../printer-state';
 import type { CommandSender } from '../ws-client';
 import { $, escapeHtml, escapeAttr, formatTime } from './helpers';
 
-let currentSource: 'local' | 'u_disk' = 'local';
+let currentSource: 'local' | 'u-disk' = 'local';
 let currentDir = '/';
 
 export function currentFileSource(): string { return currentSource; }
@@ -93,10 +93,16 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
   const files = state.files;
 
   let html = renderCapacityBar(state);
+
+  // Show USB not-connected warning
+  if (currentSource === 'u-disk' && !state.status?.external_device?.u_disk) {
+    html += '<div class="file-empty">⚠️ No USB drive detected</div>';
+  }
+
   html += renderBreadcrumb(client);
 
   if (!files.length) {
-    html += `<div class="file-empty">No files ${currentDir === '/' ? '' : 'in this folder '}on ${currentSource === 'u_disk' ? 'USB drive' : 'printer'}</div>`;
+    html += `<div class="file-empty">No files ${currentDir === '/' ? '' : 'in this folder '}on ${currentSource === 'u-disk' ? 'USB drive' : 'printer'}</div>`;
     container.innerHTML = html;
     bindBreadcrumbNav(container, client);
     return;
@@ -114,7 +120,8 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
     const sizeMB = isFolder ? '' : (file.size / (1024 * 1024)).toFixed(1);
     const timeInfo = file.print_time ? formatTime(file.print_time) : '';
     const layerInfo = file.layer ? `${file.layer} layers` : '';
-    const meta = isFolder ? 'Folder' : [sizeMB + ' MB', timeInfo, layerInfo].filter(Boolean).join(' · ');
+    const filamentInfo = file.total_filament_used ? `${file.total_filament_used.toFixed(1)}g filament` : '';
+    const meta = isFolder ? 'Folder' : [sizeMB + ' MB', timeInfo, layerInfo, filamentInfo].filter(Boolean).join(' · ');
 
     html += `
       <div class="file-item ${isFolder ? 'file-item-folder' : ''}" data-filename="${escapeAttr(file.filename)}" data-type="${isFolder ? 'folder' : 'file'}">
@@ -217,7 +224,7 @@ export function bindFileControls(client: CommandSender): void {
 
   document.querySelectorAll('.file-source-tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      const source = (tab as HTMLElement).dataset.source as 'local' | 'u_disk';
+      const source = (tab as HTMLElement).dataset.source as 'local' | 'u-disk';
       currentSource = source;
       currentDir = '/';
       document.querySelectorAll('.file-source-tab').forEach(t => t.classList.remove('active'));

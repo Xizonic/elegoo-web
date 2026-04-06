@@ -39,6 +39,8 @@ export interface WsClientOptions {
   onLayerTime?: (entry: { layer: number; duration: number; timestamp: number }) => void;
   /** Called when server clears layer data (new print) */
   onLayerClear?: () => void;
+  /** Called with filament usage updates per spool */
+  onFilamentUsage?: (usage: Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }>) => void;
 }
 
 export class WsClient {
@@ -191,6 +193,14 @@ export class WsClient {
 
       case 'layer_clear': {
         this.opts.onLayerClear?.();
+        break;
+      }
+
+      case 'filament_usage': {
+        const usage = msg.usage as Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }>;
+        if (Array.isArray(usage)) {
+          this.opts.onFilamentUsage?.(usage);
+        }
         break;
       }
     }

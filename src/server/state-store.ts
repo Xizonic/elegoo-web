@@ -34,6 +34,25 @@ export interface AIChartPoint {
 
 const AI_CHART_MAX_POINTS = 3600; // 1 hour of AI data
 
+/** Filament densities (g/cm³) for weight calculation */
+const FILAMENT_DENSITY: Record<string, number> = {
+  PLA: 1.24, ABS: 1.04, ASA: 1.07, PETG: 1.27, TPU: 1.21,
+  PA: 1.14, PC: 1.20, PVA: 1.23, HIPS: 1.04,
+};
+const FILAMENT_RADIUS_MM = 1.75 / 2;
+const CROSS_SECTION_MM2 = Math.PI * FILAMENT_RADIUS_MM * FILAMENT_RADIUS_MM; // ~2.405 mm²
+const CROSS_SECTION_CM2 = Math.PI * (0.175 / 2) ** 2; // in cm² for g/cm³ density
+
+/** Per-spool filament usage tracking */
+export interface FilamentUsage {
+  trayKey: string;       // 'mono' or 'canvas_<canvasId>_tray_<trayId>'
+  filamentType: string;  // PLA, PETG, etc.
+  color: string;         // hex color
+  extruded_mm: number;   // total mm of filament pushed through extruder
+  grams: number;         // computed from extruded_mm + density
+  meters: number;        // extruded_mm / 1000
+}
+
 /** Deep-merge delta into base */
 function deepMerge(base: Record<string, unknown>, update: Record<string, unknown>): Record<string, unknown> {
   const result = { ...base };
@@ -86,6 +105,13 @@ export class StateStore extends EventEmitter {
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }> = [];
   private _lastLayer = 0;
   private _lastLayerTime = 0;
+
+  // Extruder position tracking for flow rate calculation
+  private _lastExtruderE = 0;
+  private _lastExtruderSampleTime = 0;
+
+  // Filament usage tracking (per-spool, server-side, survives browser reloads)
+  filamentUsage: Map<string, FilamentUsage> = new Map();
 
   // Chart data ring buffer (server-side, no gaps)
   private chartData: ChartPoint[] = [];
@@ -159,6 +185,36 @@ export class StateStore extends EventEmitter {
     if (!this.status) return;
     const s = this.status;
     const fanPct = (v: number) => Math.round((v / 255) * 100);
+
+    // Compute extrusion rate from Δe/Δt (mm/s of filament)
+    const now = Date.now();
+    const currentE = s.gcode_move?.extruder ?? s.gcode_move?.e ?? 0;
+    let extrusionRate = 0;
+    let deltaE = 0;
+    if (this._lastExtruderSampleTime > 0) {
+      const dt = (now - this._lastExtruderSampleTime) / 1000; // seconds
+      if (dt > 0 && currentE > this._lastExtruderE) {
+        deltaE = currentE - this._lastExtruderE;
+        extrusionRate = deltaE / dt;
+      }
+    }
+    this._lastExtruderE = currentE;
+    this._lastExtruderSampleTime = now;
+
+    // Volumetric flow: extrusion_rate (mm/s) * cross-section area of 1.75mm filament
+    const flowRate = extrusionRate * CROSS_SECTION_MM2; // mm³/s
+
+    // Mass flow: volumetric flow in cm³/s * density (g/cm³)
+    const activeType = this.getActiveFilamentType();
+    const density = FILAMENT_DENSITY[activeType.toUpperCase()] ?? FILAMENT_DENSITY.PLA;
+    const flowCm3s = (extrusionRate / 10) * CROSS_SECTION_CM2; // mm→cm for rate, cm² cross-section
+    const massFlowRate = flowCm3s * density; // g/s
+
+    // Accumulate filament usage per-spool during printing
+    if (deltaE > 0 && s.machine_status?.status === 2) {
+      this.accumulateFilament(deltaE, activeType, density);
+    }
+
     const point: ChartPoint = {
       t: Date.now(),
       values: {
@@ -170,6 +226,9 @@ export class StateStore extends EventEmitter {
         fan_model: fanPct(s.fans?.fan?.speed ?? 0),
         fan_aux: fanPct(s.fans?.aux_fan?.speed ?? 0),
         fan_case: fanPct(s.fans?.box_fan?.speed ?? 0),
+        extrusion_rate: Math.round(extrusionRate * 100) / 100,
+        flow_rate: Math.round(flowRate * 100) / 100,
+        mass_flow_rate: Math.round(massFlowRate * 1000) / 1000,
       },
     };
     this.chartData.push(point);
@@ -177,6 +236,82 @@ export class StateStore extends EventEmitter {
       this.chartData.shift();
     }
     this.emit('chart_data', point);
+  }
+
+  /** Get the active filament type from canvas or mono config */
+  private getActiveFilamentType(): string {
+    if (this.canvas?.canvas_list?.length) {
+      for (const unit of this.canvas.canvas_list) {
+        if (unit.canvas_id !== this.canvas.active_canvas_id) continue;
+        for (const tray of unit.tray_list) {
+          if (tray.tray_id === this.canvas.active_tray_id && tray.filament_type) {
+            return tray.filament_type;
+          }
+        }
+      }
+    }
+    const mono = (this.status as unknown as Record<string, unknown>)?.mono_filament_info as Record<string, unknown> | undefined;
+    if (mono?.filament_type) return mono.filament_type as string;
+    return 'PLA';
+  }
+
+  /** Get the active tray key and color for filament tracking */
+  private getActiveTrayInfo(): { key: string; color: string } {
+    if (this.canvas?.canvas_list?.length) {
+      for (const unit of this.canvas.canvas_list) {
+        if (unit.canvas_id !== this.canvas.active_canvas_id) continue;
+        for (const tray of unit.tray_list) {
+          if (tray.tray_id === this.canvas.active_tray_id) {
+            return {
+              key: `canvas_${unit.canvas_id}_tray_${tray.tray_id}`,
+              color: tray.filament_color || '#888888',
+            };
+          }
+        }
+      }
+    }
+    const mono2 = (this.status as unknown as Record<string, unknown>)?.mono_filament_info as Record<string, unknown> | undefined;
+    return {
+      key: 'mono',
+      color: (mono2?.filament_color as string) || '#888888',
+    };
+  }
+
+  /** Accumulate extruded filament into the active spool's usage bucket */
+  private accumulateFilament(deltaE_mm: number, filamentType: string, density: number): void {
+    const { key, color } = this.getActiveTrayInfo();
+    let usage = this.filamentUsage.get(key);
+    if (!usage) {
+      usage = { trayKey: key, filamentType, color, extruded_mm: 0, grams: 0, meters: 0 };
+      this.filamentUsage.set(key, usage);
+    }
+    usage.extruded_mm += deltaE_mm;
+    usage.meters = usage.extruded_mm / 1000;
+    // Volume in cm³ = length_cm * cross_section_cm²
+    usage.grams = (usage.extruded_mm / 10) * CROSS_SECTION_CM2 * density;
+    // Update type/color in case spool was reconfigured
+    usage.filamentType = filamentType;
+    usage.color = color;
+    this.emit('filament_usage', this.getFilamentUsageArray());
+  }
+
+  /** Get filament usage as a serializable array */
+  getFilamentUsageArray(): FilamentUsage[] {
+    return Array.from(this.filamentUsage.values());
+  }
+
+  /** Clear filament usage (on new print start) */
+  clearFilamentUsage(): void {
+    this.filamentUsage.clear();
+    this.emit('filament_usage', []);
+  }
+
+  /** Restore filament usage from persistence */
+  restoreFilamentUsage(data: FilamentUsage[]): void {
+    this.filamentUsage.clear();
+    for (const u of data) {
+      this.filamentUsage.set(u.trayKey, u);
+    }
   }
 
   /** Get chart history for new WS clients */
@@ -229,7 +364,7 @@ export class StateStore extends EventEmitter {
   getLastLayerTime(): number { return this._lastLayerTime; }
 
   /** Clear layer data and notify WS clients */
-  private clearLayerData(): void {
+  clearLayerData(): void {
     this.layerTimes = [];
     this._lastLayer = 0;
     this._lastLayerTime = 0;
@@ -254,6 +389,12 @@ export class StateStore extends EventEmitter {
   private handleResponse(method: number, data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
+
+    // Normalize firmware field name variations
+    if ('gcode_move_inf' in result && !('gcode_move' in result)) {
+      result.gcode_move = result.gcode_move_inf;
+      delete result.gcode_move_inf;
+    }
 
     switch (method) {
       case 1001:
@@ -338,6 +479,12 @@ export class StateStore extends EventEmitter {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
 
+    // Normalize firmware field name variations
+    if ('gcode_move_inf' in result && !('gcode_move' in result)) {
+      result.gcode_move = result.gcode_move_inf;
+      delete result.gcode_move_inf;
+    }
+
     if (!this.status) {
       this.status = result as unknown as PrinterStatus;
     } else {
@@ -349,6 +496,19 @@ export class StateStore extends EventEmitter {
 
     // Capture bed mesh data if present (arrives during auto-level)
     this.extractBedMesh(result);
+
+    // Capture canvas info updates from delta (active tray changes, etc.)
+    const canvasDelta = result.canvas_info as CanvasInfo | undefined;
+    if (canvasDelta) {
+      if (this.canvas) {
+        this.canvas = deepMerge(
+          this.canvas as unknown as Record<string, unknown>,
+          canvasDelta as unknown as Record<string, unknown>
+        ) as unknown as CanvasInfo;
+      } else {
+        this.canvas = canvasDelta;
+      }
+    }
 
     this.detectEvents();
   }
@@ -375,11 +535,21 @@ export class StateStore extends EventEmitter {
       if (ps?.filename) {
         this.bridge.sendCommand(1046, { filename: ps.filename });
       }
-      // Clear stale layer data from previous print/session — timestamps are invalid
-      // after a restart, which would produce bogus durations. Layer data will
-      // accumulate fresh from this point.
-      this.clearLayerData();
-      log.info(`Baseline from full status — printing at ${progress}%, layer data reset`);
+      // Only reset layer data if it looks stale (last tracked layer is ahead of
+      // current, or no data at all). If we're resuming the same print after a
+      // restart, keep the accumulated data and just fix the timing baseline so
+      // the next layer transition doesn't produce a bogus duration.
+      const currentLayer = ps?.current_layer ?? 0;
+      if (this._lastLayer > 0 && currentLayer > 0 && this._lastLayer <= currentLayer && this.layerTimes.length > 0) {
+        // Data looks consistent with the current print — keep it, just reset
+        // the timestamp so the first layer after restart isn't bogus
+        this._lastLayer = currentLayer;
+        this._lastLayerTime = Date.now();
+        log.info(`Baseline from full status — printing at ${progress}%, kept ${this.layerTimes.length} layer entries, rebased timing at L${currentLayer}`);
+      } else {
+        this.clearLayerData();
+        log.info(`Baseline from full status — printing at ${progress}%, layer data reset (stale or empty)`);
+      }
     } else {
       log.info(`Baseline from full status — idle (status ${this.lastMachineStatus})`);
     }
@@ -424,12 +594,21 @@ export class StateStore extends EventEmitter {
 
     let printEnded = false;
 
-    // Print started
-    if (machineStatus === 2 && this.lastMachineStatus !== 2) {
+    // Print started — either machine_status transitions to 2,
+    // or sub_status transitions from completed/stopped to active while already printing
+    const ENDED_SUBSTATUS = new Set([2077, 2503, 2504]);
+    const isNewPrint = (machineStatus === 2 && this.lastMachineStatus !== 2) ||
+      (machineStatus === 2 && ENDED_SUBSTATUS.has(this.lastSubStatus) && !ENDED_SUBSTATUS.has(subStatus) && subStatus !== 0);
+
+    if (isNewPrint) {
       this.lastProgressNotified = -1;
       this.totalLayers = ps?.total_layer ?? 0;
       // Reset layer tracking for new print
       this.clearLayerData();
+      // Reset filament usage for new print
+      this.clearFilamentUsage();
+      this._lastExtruderE = 0;
+      this._lastExtruderSampleTime = 0;
       if (ps?.filename) {
         this.bridge.sendCommand(1046, { filename: ps.filename });
       }

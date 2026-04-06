@@ -10,14 +10,44 @@ const LABEL_FONT = '10px -apple-system, BlinkMacSystemFont, sans-serif';
 const SERIES_COLOR = '#ab47bc';
 
 let lastDataLen = -1;
+let hoverX = -1; // CSS pixels relative to canvas, -1 = not hovering
+let hoverBound = false;
+let lastState: PrinterState | null = null;
+
+function bindHover(canvas: HTMLCanvasElement): void {
+  if (hoverBound) return;
+  hoverBound = true;
+
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    hoverX = e.clientX - rect.left;
+    // Force redraw with hover
+    if (lastState) drawLayerChart(canvas, lastState);
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    hoverX = -1;
+    if (lastState) drawLayerChart(canvas, lastState);
+  });
+}
 
 export function renderLayerTimeChart(state: PrinterState): void {
   const canvas = $('chart-layer-time') as HTMLCanvasElement | null;
   if (!canvas) return;
 
+  bindHover(canvas);
+  lastState = state;
+
   const layerTimes = state.layerTimes;
-  if (layerTimes.length === lastDataLen) return;
+  // Always redraw when data was cleared (length went to 0 but canvas still has old drawing)
+  if (layerTimes.length === lastDataLen && layerTimes.length > 0 && hoverX === -1) return;
   lastDataLen = layerTimes.length;
+
+  drawLayerChart(canvas, state);
+}
+
+function drawLayerChart(canvas: HTMLCanvasElement, state: PrinterState): void {
+  const layerTimes = state.layerTimes;
 
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -165,4 +195,84 @@ export function renderLayerTimeChart(state: PrinterState): void {
   ctx.font = '9px sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(`avg ${avgDuration.toFixed(1)}s`, w - PADDING.right - 4, avgY - 8);
+
+  // ── Tooltip on hover ──
+  if (hoverX >= PADDING.left && hoverX <= w - PADDING.right) {
+    // Map hover X to layer number
+    const hoverLayer = xMin + ((hoverX - PADDING.left) / plotW) * xRange;
+
+    // Find nearest data point
+    let best = visible[0];
+    let bestDist = Infinity;
+    for (const lt of visible) {
+      const dist = Math.abs(lt.layer - hoverLayer);
+      if (dist < bestDist) { bestDist = dist; best = lt; }
+    }
+
+    if (best && bestDist < xRange * 0.05 + 1) {
+      const bx = xMap(best.layer);
+      const by = yMap(best.duration);
+
+      // Vertical crosshair line
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(bx, PADDING.top);
+      ctx.lineTo(bx, PADDING.top + plotH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Highlight dot
+      ctx.fillStyle = SERIES_COLOR;
+      ctx.beginPath();
+      ctx.arc(bx, by, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tooltip box
+      const tooltipFont = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.font = tooltipFont;
+
+      const line1 = `Layer ${best.layer}`;
+      const line2 = `Duration: ${best.duration.toFixed(1)}s`;
+      const diffFromAvg = best.duration - avgDuration;
+      const line3 = `vs avg: ${diffFromAvg >= 0 ? '+' : ''}${diffFromAvg.toFixed(1)}s`;
+
+      const lineHeight = 16;
+      const tooltipPadding = 8;
+      const maxTextWidth = Math.max(
+        ctx.measureText(line1).width,
+        ctx.measureText(line2).width,
+        ctx.measureText(line3).width,
+      );
+      const boxW = maxTextWidth + tooltipPadding * 2;
+      const boxH = lineHeight * 3 + tooltipPadding * 2;
+
+      // Position: prefer right of point, flip if near edge
+      let boxX = bx + 12;
+      if (boxX + boxW > w - 4) {
+        boxX = bx - boxW - 12;
+      }
+      const boxY = Math.max(PADDING.top, by - boxH / 2);
+
+      // Background
+      ctx.fillStyle = 'rgba(30, 30, 44, 0.92)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // Text
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = LABEL_COLOR;
+      ctx.fillText(line1, boxX + tooltipPadding, boxY + tooltipPadding);
+      ctx.fillStyle = '#e0e0e8';
+      ctx.fillText(line2, boxX + tooltipPadding, boxY + tooltipPadding + lineHeight);
+      ctx.fillStyle = diffFromAvg > 0 ? '#ef5350' : '#66bb6a';
+      ctx.fillText(line3, boxX + tooltipPadding, boxY + tooltipPadding + lineHeight * 2);
+    }
+  }
 }
