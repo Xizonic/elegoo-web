@@ -132,6 +132,7 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
         </div>
         <div class="file-actions">
           ${isFolder ? '' : `<button class="btn btn-sm btn-ghost file-thumbnail-btn" title="Preview">🖼️</button>`}
+          ${isFolder ? '' : `<button class="btn btn-sm btn-ghost file-download-btn" title="Download">📥</button>`}
           ${isFolder ? '' : `<button class="btn btn-sm btn-primary file-print-btn" title="Print">▶</button>`}
           ${isFolder ? '' : `<button class="btn btn-sm btn-ghost file-delete-btn" title="Delete">🗑️</button>`}
         </div>
@@ -183,8 +184,27 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
       const filename = item?.dataset.filename;
       if (filename && confirm(`Delete ${filename}?`)) {
         const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
-        client.sendCommand(1047, { storage_media: currentSource, filename: fullPath });
+        client.sendCommand(1047, { storage_media: currentSource, file_path: fullPath });
       }
+    });
+  });
+
+  // Download button
+  container.querySelectorAll('.file-download-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = (e.target as HTMLElement).closest('.file-item') as HTMLElement;
+      const filename = item?.dataset.filename;
+      if (!filename) return;
+      const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
+      const source = currentSource === 'u-disk' ? 'u-disk' : 'local';
+      // Trigger browser download via the server proxy
+      const a = document.createElement('a');
+      a.href = `/api/files/download?file=${encodeURIComponent(fullPath)}&source=${encodeURIComponent(source)}`;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     });
   });
 
@@ -234,4 +254,78 @@ export function bindFileControls(client: CommandSender): void {
       client.sendCommand(1048, { storage_media: source });
     });
   });
+
+  // Upload handler
+  const uploadInput = document.getElementById('file-upload-input') as HTMLInputElement | null;
+  if (uploadInput) {
+    uploadInput.addEventListener('change', () => {
+      const file = uploadInput.files?.[0];
+      if (!file) return;
+      uploadInput.value = ''; // reset so same file can be re-selected
+      uploadFile(file, client);
+    });
+  }
+}
+
+async function uploadFile(file: File, client: CommandSender): Promise<void> {
+  const progressEl = document.getElementById('upload-progress');
+  const fillEl = document.getElementById('upload-progress-fill');
+  const textEl = document.getElementById('upload-progress-text');
+  const labelEl = document.getElementById('file-upload-label');
+  if (!progressEl || !fillEl || !textEl) return;
+
+  progressEl.classList.remove('hidden');
+  fillEl.style.width = '0%';
+  textEl.textContent = `Uploading ${file.name}...`;
+  if (labelEl) labelEl.classList.add('disabled');
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const source = currentSource === 'u-disk' ? 'u-disk' : 'local';
+
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/files/upload?source=${encodeURIComponent(source)}`);
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        fillEl.style.width = pct + '%';
+        textEl.textContent = `Uploading ${file.name}... ${pct}% (${formatBytes(e.loaded)} / ${formatBytes(e.total)})`;
+      }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          let msg = `Upload failed (HTTP ${xhr.status})`;
+          try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* ignore */ }
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(formData);
+    });
+
+    fillEl.style.width = '100%';
+    textEl.textContent = `✓ ${file.name} uploaded`;
+    // Refresh file list
+    client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+    client.sendCommand(1048, { storage_media: currentSource });
+  } catch (err) {
+    textEl.textContent = `✗ ${(err as Error).message}`;
+    fillEl.style.width = '0%';
+    progressEl.classList.add('upload-error');
+  } finally {
+    if (labelEl) labelEl.classList.remove('disabled');
+    // Auto-hide progress after 4 seconds on success
+    setTimeout(() => {
+      if (!progressEl.classList.contains('upload-error')) {
+        progressEl.classList.add('hidden');
+      }
+    }, 4000);
+  }
 }

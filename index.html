@@ -91,6 +91,7 @@
           <button id="btn-pause" class="btn btn-warning btn-icon" title="Pause">⏸</button>
           <button id="btn-resume" class="btn btn-success btn-icon hidden" title="Resume">▶</button>
           <button id="btn-stop" class="btn btn-danger btn-icon" title="Stop">⏹</button>
+          <button id="btn-estop" class="btn btn-danger btn-icon" title="Emergency Stop">🛑</button>
         </div>
       </div>
 
@@ -315,10 +316,10 @@
             <div class="speed-control">
               <label>Print Speed</label>
               <div class="speed-buttons">
-                <button class="btn btn-sm speed-btn" data-mode="0">Silent</button>
-                <button class="btn btn-sm speed-btn active" data-mode="1">Balanced</button>
-                <button class="btn btn-sm speed-btn" data-mode="2">Sport</button>
-                <button class="btn btn-sm speed-btn" data-mode="3">Ludicrous</button>
+                <button class="btn btn-sm speed-btn" data-mode="50">Silent</button>
+                <button class="btn btn-sm speed-btn active" data-mode="100">Balanced</button>
+                <button class="btn btn-sm speed-btn" data-mode="130">Sport</button>
+                <button class="btn btn-sm speed-btn" data-mode="160">Ludicrous</button>
               </div>
             </div>
           </div>
@@ -436,10 +437,20 @@
         <div class="card" id="files-card">
           <div class="files-header">
             <h3>📁 Files</h3>
-            <div class="file-source-tabs">
-              <button class="file-source-tab active" data-source="local">Local</button>
-              <button class="file-source-tab" data-source="u-disk">USB</button>
+            <div class="files-header-actions">
+              <label class="btn btn-sm btn-primary file-upload-label" id="file-upload-label">
+                📤 Upload
+                <input type="file" id="file-upload-input" accept=".gcode,.3mf" hidden>
+              </label>
+              <div class="file-source-tabs">
+                <button class="file-source-tab active" data-source="local">Local</button>
+                <button class="file-source-tab" data-source="u-disk">USB</button>
+              </div>
             </div>
+          </div>
+          <div id="upload-progress" class="upload-progress hidden">
+            <div class="upload-progress-bar"><div class="upload-progress-fill" id="upload-progress-fill"></div></div>
+            <span id="upload-progress-text">Uploading...</span>
           </div>
           <div id="file-list" class="file-list">
             <div class="loading">Loading...</div>

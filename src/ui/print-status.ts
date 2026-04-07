@@ -288,10 +288,11 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     updateFan('fan-case', fans.box_fan?.speed ?? 0, 'fan-case-toggle', fans.box_fan?.rpm);
   }
 
-  // Speed mode buttons
-  const speedMode = pos?.speed_mode ?? 1;
+  // Speed mode buttons — status reports 0/1/2/3, buttons use command values 50/100/130/160
+  const speedModeMap: Record<number, number> = { 0: 50, 1: 100, 2: 130, 3: 160 };
+  const speedMode = speedModeMap[pos?.speed_mode ?? 1] ?? 100;
   document.querySelectorAll('.speed-btn').forEach(btn => {
-    const mode = parseInt((btn as HTMLElement).dataset.mode ?? '1');
+    const mode = parseInt((btn as HTMLElement).dataset.mode ?? '100');
     btn.classList.toggle('active', mode === speedMode);
   });
 

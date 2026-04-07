@@ -157,23 +157,55 @@ export const STATUS_NAMES: Record<number, string> = {
 
 export const SUB_STATUS_NAMES: Record<number, string> = {
   0: '',
+  // Preheat
   1045: 'Preheating Nozzle',
   1096: 'Preheating Nozzle',
   1405: 'Preheating Bed',
   1906: 'Preheating Bed',
+  // Printing
   2075: 'Printing',
   2077: 'Completed',
+  // Resume / Pause / Stop
   2401: 'Resuming',
   2402: 'Resume Complete',
   2501: 'Pausing',
   2502: 'Paused',
-  2505: 'Paused',
   2503: 'Stopping',
   2504: 'Stopped',
+  2505: 'Paused',
+  // Homing
   2801: 'Homing',
   2802: 'Homing Done',
+  // Leveling
   2901: 'Auto Leveling',
   2902: 'Leveling Done',
+  // Self-check phases
+  3001: 'Self-Check: Auto Level',
+  3002: 'Self-Check: Vibration',
+  3003: 'Self-Check: PID',
+  3004: 'Self-Check Complete',
+  // Vibration / PID
+  5935: 'Resonance Test Complete',
+  5936: 'Resonance Test Failed',
+  1505: 'PID Calibration Complete',
+  1506: 'PID Calibration Failed',
+  // Canvas / AMS
+  4001: 'Canvas: Load Filament',
+  4002: 'Canvas: Unload Filament',
+  4003: 'Canvas: Cut Filament',
+  4004: 'Canvas: Feed Filament',
+  4005: 'Canvas: Retract Filament',
+  4006: 'Canvas: Purge Filament',
+  4007: 'Canvas: Switch Filament',
+  4008: 'Canvas: Ready',
+  // OTA / System
+  6001: 'System Updating',
+  6002: 'Version Checking',
+  // Timelapse
+  7001: 'Timelapse Processing',
+  // File transfer
+  8001: 'File Transferring',
+  8002: 'Preparing File',
 };
 
 export const SPEED_MODE_NAMES: Record<number, string> = {

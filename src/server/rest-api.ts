@@ -9,10 +9,13 @@
  *   GET /api/stream    — MJPEG stream proxy (single upstream, fan-out to all clients)
  *   GET /api/stream/overlay — MJPEG stream with status text overlay
  *   GET /api/health    — Service health check
+ *   GET /api/files/download — Proxy file download from printer
+ *   POST /api/files/upload  — Proxy file upload to printer (chunked PUT)
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
+import { createHash } from 'crypto';
 import { writeFile, readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import sharp from 'sharp';
@@ -637,6 +640,162 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       return;
     }
 
+    // ── File download proxy ─────────────────────────────────────────
+    // GET /api/files/download?file=<path>&source=local|u-disk|sd-card
+    if (url.startsWith('/api/files/download') && req.method === 'GET') {
+      const params = new URL(url, 'http://localhost').searchParams;
+      const fileName = params.get('file');
+      const source = params.get('source') || 'local';
+      if (!fileName) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing file parameter' }));
+        return;
+      }
+      const pathMap: Record<string, string> = { 'local': '/download', 'u-disk': '/download/udisk', 'sd-card': '/download/sdcard' };
+      const dlPath = pathMap[source] ?? '/download';
+      log.info(`Download proxy: ${fileName} from ${dlPath}`);
+
+      const proxyReq = httpRequest({
+        hostname: config.printerIp,
+        port: 80,
+        path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
+        method: 'GET',
+        timeout: 30_000,
+        // Printer's libhv sends both Content-Length and Transfer-Encoding: chunked,
+        // which is invalid HTTP. Node's strict parser rejects this.
+        insecureHTTPParser: true,
+      }, (proxyRes) => {
+        if (proxyRes.statusCode !== 200) {
+          res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Printer returned ${proxyRes.statusCode}` }));
+          proxyRes.resume();
+          return;
+        }
+        const baseName = fileName.split('/').pop() || 'file';
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${baseName}"`,
+          ...(proxyRes.headers['content-length'] ? { 'Content-Length': proxyRes.headers['content-length'] } : {}),
+        });
+        proxyRes.pipe(res);
+      });
+      proxyReq.on('error', (err) => {
+        log.error(`Download proxy error: ${(err as NodeJS.ErrnoException).code} ${err.message}`);
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to connect to printer' }));
+        }
+      });
+      proxyReq.on('timeout', () => {
+        log.error('Download proxy timeout');
+        proxyReq.destroy();
+        if (!res.headersSent) {
+          res.writeHead(504, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Download timed out' }));
+        }
+      });
+      proxyReq.end();
+      return;
+    }
+
+    // ── File upload proxy ───────────────────────────────────────────
+    // POST /api/files/upload  (multipart/form-data with 'file' field)
+    // Query: ?source=local|u-disk|sd-card
+    if (url.startsWith('/api/files/upload') && req.method === 'POST') {
+      const params = new URL(url, 'http://localhost').searchParams;
+      const source = params.get('source') || 'local';
+      const pathMap: Record<string, string> = { 'local': '/upload', 'u-disk': '/upload/udisk', 'sd-card': '/upload/sdcard' };
+      const uploadPath = pathMap[source] ?? '/upload';
+
+      // Parse multipart boundary from Content-Type
+      const contentType = req.headers['content-type'] || '';
+      const boundaryMatch = contentType.match(/boundary=(.+?)(?:;|$)/);
+      if (!boundaryMatch) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing multipart boundary' }));
+        return;
+      }
+
+      // Collect full body (gcode files are typically < 100MB)
+      const chunks: Buffer[] = [];
+      let totalSize = 0;
+      const MAX_UPLOAD = 500 * 1024 * 1024; // 500MB limit
+      req.on('data', (chunk: Buffer) => {
+        totalSize += chunk.length;
+        if (totalSize > MAX_UPLOAD) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File too large (max 500MB)' }));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', async () => {
+        try {
+          const body = Buffer.concat(chunks);
+
+          // Extract the file from multipart data
+          const boundary = boundaryMatch[1];
+          const { fileName, fileData } = parseMultipart(body, boundary);
+          if (!fileName || !fileData) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'No file found in upload' }));
+            return;
+          }
+
+          // Compute MD5 of entire file
+          const md5 = createHash('md5').update(fileData).digest('hex');
+
+          // Upload in 1MB chunks via PUT
+          const CHUNK_SIZE = 1024 * 1024;
+          const totalBytes = fileData.length;
+          let offset = 0;
+
+          while (offset < totalBytes) {
+            const end = Math.min(offset + CHUNK_SIZE, totalBytes);
+            const chunkData = fileData.subarray(offset, end);
+
+            const chunkResult = await uploadChunk(
+              config.printerIp, uploadPath, config.printerPassword,
+              fileName, md5, chunkData, offset, end - 1, totalBytes,
+            );
+
+            if (chunkResult.error_code !== 0) {
+              // Retry once on offset mismatch
+              if (chunkResult.error_code === 9000) {
+                const retry = await uploadChunk(
+                  config.printerIp, uploadPath, config.printerPassword,
+                  fileName, md5, chunkData, offset, end - 1, totalBytes,
+                );
+                if (retry.error_code !== 0) {
+                  res.writeHead(502, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: `Upload failed at offset ${offset}`, error_code: retry.error_code }));
+                  return;
+                }
+              } else {
+                res.writeHead(502, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: `Upload failed at offset ${offset}`, error_code: chunkResult.error_code }));
+                return;
+              }
+            }
+
+            offset = end;
+          }
+
+          log.info(`Upload complete: ${fileName} (${formatUploadSize(totalBytes)}, MD5: ${md5})`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, fileName, size: totalBytes, md5 }));
+        } catch (err) {
+          log.error(`Upload error: ${(err as Error).message}`);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Upload failed' }));
+          }
+        }
+      });
+      return;
+    }
+
     // JSON metrics endpoint
     if (url === '/api/metrics' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -655,6 +814,77 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
     res.writeHead(404);
     res.end('Not found');
   };
+}
+
+/* ── File upload helpers ──────────────────────────────────────────── */
+
+function parseMultipart(body: Buffer, boundary: string): { fileName: string | null; fileData: Buffer | null } {
+  const sep = Buffer.from(`--${boundary}`);
+  let start = body.indexOf(sep);
+  if (start === -1) return { fileName: null, fileData: null };
+
+  // Find the part with Content-Disposition containing filename
+  while (start !== -1) {
+    const headerEnd = body.indexOf(Buffer.from('\r\n\r\n'), start);
+    if (headerEnd === -1) break;
+
+    const headers = body.subarray(start, headerEnd).toString('utf-8');
+    const nameMatch = headers.match(/filename="([^"]+)"/);
+
+    if (nameMatch) {
+      const dataStart = headerEnd + 4;
+      const nextBoundary = body.indexOf(sep, dataStart);
+      const dataEnd = nextBoundary !== -1 ? nextBoundary - 2 : body.length; // -2 for \r\n before boundary
+      return { fileName: nameMatch[1], fileData: body.subarray(dataStart, dataEnd) };
+    }
+
+    start = body.indexOf(sep, start + sep.length);
+  }
+  return { fileName: null, fileData: null };
+}
+
+function uploadChunk(
+  printerIp: string, uploadPath: string, password: string,
+  fileName: string, md5: string, chunk: Buffer,
+  rangeStart: number, rangeEnd: number, totalSize: number,
+): Promise<{ error_code: number }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({
+      hostname: printerIp,
+      port: 80,
+      path: uploadPath,
+      method: 'PUT',
+      timeout: 30_000,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': chunk.length,
+        'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${totalSize}`,
+        'X-Token': password,
+        'X-File-Name': encodeURIComponent(fileName),
+        'X-File-MD5': md5,
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', (d: Buffer) => { body += d.toString(); });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body) as { error_code: number });
+        } catch {
+          resolve({ error_code: -1 });
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Upload chunk timeout')); });
+    req.write(chunk);
+    req.end();
+  });
+}
+
+function formatUploadSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 /* ── Metrics helpers ─────────────────────────────────────────────── */

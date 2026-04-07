@@ -36,7 +36,7 @@ export function bindMaintenanceControls(): void {
     if (!maintenanceClient) return;
     if (!confirm('Run full self-check?\nThis performs auto-level, vibration optimization, and PID calibration sequentially.\nThe printer must be idle (not printing).')) return;
     toast('Starting self-check...', 'info');
-    maintenanceClient.sendCommand(1035, {});
+    maintenanceClient.sendCommand(1035, { ringing_optimize: true, pid_check: true, auto_bed_leveling: true });
   });
 
   btnAutoLevel.addEventListener('click', () => {

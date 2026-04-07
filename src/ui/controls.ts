@@ -33,14 +33,26 @@ function guardedSend(
 
   client.sendCommand(method, params);
 
-  // Auto-recover after 5s if no response
+  // Per-method timeouts (official app values)
+  const timeouts: Record<number, number> = {
+    1024: 300_000, // Feed — 5 min
+    1025: 300_000, // Retreat — 5 min
+    1026: 50_000,  // Home — 50s
+    1027: 25_000,  // Move — 25s
+    1032: 300_000, // AutoLevel — 5 min
+    1033: 300_000, // VibrationOptimize — 5 min
+    1034: 300_000, // PID — 5 min
+    1035: 7_200_000, // SelfCheck — 2h
+  };
+  const timeout = timeouts[method] ?? 10_000;
+
   const timer = setTimeout(() => {
     for (const el of elements) {
       (el as HTMLButtonElement).disabled = false;
       el.classList.remove('cmd-pending');
     }
     inFlight.delete(method);
-  }, 5000);
+  }, timeout);
 
   // If there's already an in-flight for this method, clear old timer
   const existing = inFlight.get(method);
@@ -70,6 +82,14 @@ export function bindControls(client: CommandSender): void {
   btnStop.addEventListener('click', () => {
     if (confirm('Stop the current print?')) {
       guardedSend(client, 1022, {}, btnStop);
+    }
+  });
+
+  // Emergency Stop
+  const btnEStop = $('btn-estop') as HTMLButtonElement;
+  btnEStop.addEventListener('click', () => {
+    if (confirm('⚠️ EMERGENCY STOP\nThis immediately halts all motion and heaters.\nContinue?')) {
+      guardedSend(client, 1007, {}, btnEStop);
     }
   });
 
@@ -132,7 +152,7 @@ export function bindControls(client: CommandSender): void {
   // Speed mode
   document.querySelectorAll('.speed-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const mode = parseInt((btn as HTMLElement).dataset.mode ?? '1');
+      const mode = parseInt((btn as HTMLElement).dataset.mode ?? '100');
       guardedSend(client, 1031, { mode }, btn as HTMLElement);
     });
   });
@@ -140,15 +160,15 @@ export function bindControls(client: CommandSender): void {
   // Fan toggle controls
   $('fan-model-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    guardedSend(client, 1030, { fan: on ? 166 : 0 }, e.target as HTMLElement);
+    guardedSend(client, 1030, { fan: on ? 255 : 0 }, e.target as HTMLElement);
   });
   $('fan-aux-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    guardedSend(client, 1030, { aux_fan: on ? 128 : 0 }, e.target as HTMLElement);
+    guardedSend(client, 1030, { aux_fan: on ? 255 : 0 }, e.target as HTMLElement);
   });
   $('fan-case-toggle').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    guardedSend(client, 1030, { box_fan: on ? 26 : 0 }, e.target as HTMLElement);
+    guardedSend(client, 1030, { box_fan: on ? 255 : 0 }, e.target as HTMLElement);
   });
 
   // Fan +/- buttons

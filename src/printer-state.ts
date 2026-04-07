@@ -52,6 +52,9 @@ export class PrinterState {
   /** Print history from method 1036 */
   printHistory: Array<{ uuid: string; filename: string; status: string; begin_time: number; end_time: number }> = [];
   printHistoryTotal = 0;
+  /** Auto-report sequence tracking for gap detection */
+  private lastAutoReportId: number | null = null;
+  private refreshCallback: (() => void) | null = null;
   private listeners: StateListener[] = [];
 
   subscribe(listener: StateListener): () => void {
@@ -315,11 +318,27 @@ export class PrinterState {
     this.layerTimes = layerTimes;
   }
 
-  /** Handle a status event (delta update) */
+  /** Register callback to request full status refresh (method 1002) on auto-report gaps */
+  setRefreshCallback(cb: () => void): void {
+    this.refreshCallback = cb;
+  }
+
+  /** Handle a status event (delta update) with auto-report gap detection */
   handleStatusEvent(data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
-    if (result) {
-      this.applyDelta(result);
+    if (!result) return;
+
+    // Auto-report gap detection: track auto_report_id sequence
+    const reportId = data.auto_report_id as number | undefined;
+    if (reportId != null) {
+      if (this.lastAutoReportId != null && reportId !== this.lastAutoReportId + 1) {
+        // Gap detected — request full status refresh
+        console.warn(`Auto-report gap: expected ${this.lastAutoReportId + 1}, got ${reportId}. Requesting full refresh.`);
+        this.refreshCallback?.();
+      }
+      this.lastAutoReportId = reportId;
     }
+
+    this.applyDelta(result);
   }
 }

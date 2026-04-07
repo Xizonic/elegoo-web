@@ -24,6 +24,7 @@ export class CC2MqttClient {
   private maxReconnectDelay = 30000;
   private shouldReconnect = true;
   private registered = false;
+  private heartbeatMissed = 0;
   private opts: MqttClientOptions;
 
   constructor(opts: MqttClientOptions) {
@@ -71,7 +72,7 @@ export class CC2MqttClient {
       this.opts.onStateChange('connected');
       this.reconnectDelay = 1000; // Reset backoff on successful connect
       // We don't know SN yet — subscribe to wildcard to discover it
-      this.client!.subscribe('elegoo/+/api_status');
+      this.client!.subscribe('elegoo/+/api_status', { qos: 1 });
       // Also try registration if we already know the SN
       if (this.sn) {
         this.register();
@@ -104,6 +105,9 @@ export class CC2MqttClient {
 
     this.opts.onRawMessage?.('received', topic, data);
 
+    // Any message from the printer resets the heartbeat miss counter
+    this.heartbeatMissed = 0;
+
     // Discover SN from status topic
     if (topic.includes('/api_status') && !this.sn) {
       const parts = topic.split('/');
@@ -117,6 +121,7 @@ export class CC2MqttClient {
 
     if (topic.includes('/register_response')) {
       const error = data.error as string;
+      const code = data.code as number | undefined;
       if (error === 'ok') {
         this.registered = true;
         this.opts.onRegistered(this.sn);
@@ -126,6 +131,10 @@ export class CC2MqttClient {
         this.sendCommand(1001, {}); // GET_ATTRIBUTES
         this.sendCommand(1002, {}); // GET_STATUS
         this.sendCommand(2005, {}); // GET_CANVAS_STATUS
+      } else if (code === 3) {
+        // Too many clients — printer only allows 2 concurrent connections
+        this.opts.onStateChange('error');
+        console.error('Registration rejected: too many clients (max 2). Disconnect another client and retry.');
       }
     } else if (topic.includes('/api_response')) {
       const method = data.method as number;
@@ -137,7 +146,7 @@ export class CC2MqttClient {
 
   private register(): void {
     if (!this.client || !this.sn) return;
-    this.client.subscribe(`elegoo/${this.sn}/${this.requestId}/register_response`);
+    this.client.subscribe(`elegoo/${this.sn}/${this.requestId}/register_response`, { qos: 1 });
     this.client.publish(
       `elegoo/${this.sn}/api_register`,
       JSON.stringify({ client_id: this.clientId, request_id: this.requestId })
@@ -146,20 +155,30 @@ export class CC2MqttClient {
 
   private subscribeAll(): void {
     if (!this.client || !this.sn) return;
-    this.client.subscribe(`elegoo/${this.sn}/api_status`);
-    this.client.subscribe(`elegoo/${this.sn}/${this.clientId}/api_response`);
+    this.client.subscribe(`elegoo/${this.sn}/api_status`, { qos: 1 });
+    this.client.subscribe(`elegoo/${this.sn}/${this.clientId}/api_response`, { qos: 1 });
   }
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    this.heartbeatMissed = 0;
     this.heartbeatTimer = setInterval(() => {
       if (this.client && this.sn) {
+        this.heartbeatMissed++;
+        if (this.heartbeatMissed >= 2) {
+          // 2 consecutive heartbeats with no response — reconnect
+          console.warn('Heartbeat timeout — reconnecting...');
+          this.stopHeartbeat();
+          this.registered = false;
+          this.client?.end(true);
+          return;
+        }
         this.client.publish(
           `elegoo/${this.sn}/${this.clientId}/api_request`,
           JSON.stringify({ type: 'PING' })
         );
       }
-    }, 10_000);
+    }, 30_000);
   }
 
   private stopHeartbeat(): void {

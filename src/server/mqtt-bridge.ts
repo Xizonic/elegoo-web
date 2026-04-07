@@ -31,6 +31,7 @@ export class MqttBridge extends EventEmitter {
   private _connected = false;
   private _brokerConnected = false;
   private _registerAttempts = 0;
+  private heartbeatMissed = 0;
 
   constructor(
     private printerIp: string,
@@ -71,7 +72,7 @@ export class MqttBridge extends EventEmitter {
       this._brokerConnected = true;
       // Subscribe broadly for SN discovery — printer may not publish
       // api_status until a client registers, so catch any elegoo topic
-      this.client!.subscribe('elegoo/#');
+      this.client!.subscribe('elegoo/#', { qos: 1 });
       if (this.sn) this.register();
     });
 
@@ -103,6 +104,9 @@ export class MqttBridge extends EventEmitter {
 
     this.emit('raw', 'received', topic, data);
 
+    // Any message from the printer resets the heartbeat miss counter
+    this.heartbeatMissed = 0;
+
     // Discover SN from any elegoo/<sn>/... topic
     if (!this.sn && topic.startsWith('elegoo/')) {
       const parts = topic.split('/');
@@ -127,6 +131,9 @@ export class MqttBridge extends EventEmitter {
         this.sendCommand(1002, {}); // GET_STATUS
         this.sendCommand(2005, {}); // GET_CANVAS_STATUS
         this.emit('connected', this.sn);
+      } else if ((data.code as number) === 3) {
+        log.error('Registration rejected: too many clients (max 2). Disconnect another client and retry.');
+        this.stopRegisterRetry();
       }
     } else if (topic.includes('/api_response')) {
       const method = data.method as number;
@@ -138,7 +145,7 @@ export class MqttBridge extends EventEmitter {
 
   private register(): void {
     if (!this.client || !this.sn) return;
-    this.client.subscribe(`elegoo/${this.sn}/${this.requestId}/register_response`);
+    this.client.subscribe(`elegoo/${this.sn}/${this.requestId}/register_response`, { qos: 1 });
     this.sendRegister();
     // Retry registration every 5 seconds until successful
     this.stopRegisterRetry();
@@ -170,20 +177,29 @@ export class MqttBridge extends EventEmitter {
 
   private subscribeAll(): void {
     if (!this.client || !this.sn) return;
-    this.client.subscribe(`elegoo/${this.sn}/api_status`);
-    this.client.subscribe(`elegoo/${this.sn}/${this.clientId}/api_response`);
+    this.client.subscribe(`elegoo/${this.sn}/api_status`, { qos: 1 });
+    this.client.subscribe(`elegoo/${this.sn}/${this.clientId}/api_response`, { qos: 1 });
   }
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    this.heartbeatMissed = 0;
     this.heartbeatTimer = setInterval(() => {
       if (this.client && this.sn) {
+        this.heartbeatMissed++;
+        if (this.heartbeatMissed >= 2) {
+          log.warn('Heartbeat timeout (2 missed) — reconnecting...');
+          this.stopHeartbeat();
+          this._connected = false;
+          this.client?.end(true);
+          return;
+        }
         this.client.publish(
           `elegoo/${this.sn}/${this.clientId}/api_request`,
           JSON.stringify({ type: 'PING' }),
         );
       }
-    }, 10_000);
+    }, 30_000);
   }
 
   private stopHeartbeat(): void {

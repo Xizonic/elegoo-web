@@ -137,6 +137,8 @@ export class StateStore extends EventEmitter {
   private totalLayers = 0;
   /** Baseline is ready only after the first full status (method 1002) is processed */
   private baselineReady = false;
+  /** Auto-report sequence tracking for gap detection */
+  private lastAutoReportId: number | null = null;
 
   constructor(private bridge: MqttBridge, private progressInterval: number) {
     super();
@@ -478,6 +480,16 @@ export class StateStore extends EventEmitter {
   private handleStatusEvent(data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
+
+    // Auto-report gap detection: track auto_report_id sequence
+    const reportId = data.auto_report_id as number | undefined;
+    if (reportId != null) {
+      if (this.lastAutoReportId != null && reportId !== this.lastAutoReportId + 1) {
+        log.warn(`Auto-report gap: expected ${this.lastAutoReportId + 1}, got ${reportId}. Requesting full refresh.`);
+        this.bridge.sendCommand(1002, {});
+      }
+      this.lastAutoReportId = reportId;
+    }
 
     // Normalize firmware field name variations
     if ('gcode_move_inf' in result && !('gcode_move' in result)) {

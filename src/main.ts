@@ -484,6 +484,11 @@ function connectToService(): void {
   });
 
   client.connect();
+
+  // Wire auto-report gap detection: request full status on missed sequence IDs
+  state.setRefreshCallback(() => {
+    client?.sendCommand(1002, {});
+  });
 }
 
 // Connect button handler — now connects to the local service

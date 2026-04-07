@@ -156,6 +156,8 @@ body {
 .btn-success { background: var(--success); color: #111; }
 .btn-warning { background: var(--warning); color: #111; }
 .btn-danger { background: var(--danger); color: #fff; }
+#btn-estop { background: #b00; border: 2px solid #f44; font-size: 16px; }
+#btn-estop:hover { background: #d00; }
 .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .btn-icon { width: 40px; height: 40px; font-size: 18px; padding: 0; border-radius: var(--radius); }
@@ -885,6 +887,47 @@ body {
   margin-bottom: 12px;
 }
 .files-header h3 { margin-bottom: 0; }
+.files-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-upload-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.file-upload-label.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.upload-progress.hidden { display: none; }
+.upload-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.upload-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+.upload-progress.upload-error .upload-progress-fill {
+  background: var(--error);
+}
 .file-source-tabs {
   display: flex;
   gap: 2px;
