@@ -7,7 +7,7 @@
 import PDFDocument from 'pdfkit';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
-import type { PrintReport } from './print-report-collector.js';
+import type { PrintReport, ReportSnapshot } from './print-report-collector.js';
 import type { ChartPoint } from './state-store.js';
 import { getLogger } from './logger.js';
 
@@ -139,14 +139,44 @@ function drawHeader(doc: PDFKit.PDFDocument, report: PrintReport, pageW: number)
     : report.outcome === 'failed' ? COLORS.error
     : COLORS.warning;
 
-  doc.fontSize(20).fillColor(COLORS.text).text('Print Report', { continued: false });
-  doc.fontSize(12).fillColor(COLORS.muted).text(report.filename);
+  const thumbSize = 60;
+  const hasThumb = !!report.thumbnail;
+  const textX = hasThumb ? doc.page.margins.left + thumbSize + 10 : doc.page.margins.left;
+  const textW = hasThumb ? pageW - thumbSize - 10 : pageW;
+  const startY = doc.y;
+
+  // Draw thumbnail if available
+  if (hasThumb) {
+    try {
+      const imgBuf = Buffer.from(report.thumbnail!, 'base64');
+      doc.image(imgBuf, doc.page.margins.left, startY, { width: thumbSize, height: thumbSize, fit: [thumbSize, thumbSize] });
+    } catch {
+      // Thumbnail decode failed, skip
+    }
+  }
+
+  doc.fontSize(20).fillColor(COLORS.text).text('Print Report', textX, startY, { width: textW });
+  doc.fontSize(12).fillColor(COLORS.muted).text(report.filename, textX, doc.y, { width: textW });
   doc.moveDown(0.3);
 
-  // Outcome badge
+  // Outcome badge — draw colored rectangle + text instead of Unicode bullet
   const outcomeText = report.outcome.charAt(0).toUpperCase() + report.outcome.slice(1);
-  doc.fontSize(11).fillColor(outcomeColor).text(`● ${outcomeText}`, { continued: true });
-  doc.fillColor(COLORS.muted).text(`  —  ${formatDuration(report.duration)}  —  ${new Date(report.startedAt).toLocaleString()}`);
+  const badgeY = doc.y;
+  const badgeH = 16;
+  const badgeTextW = doc.widthOfString(outcomeText, { fontSize: 11 }) + 16;
+  doc.save()
+    .roundedRect(textX, badgeY, badgeTextW, badgeH, 3)
+    .fillColor(outcomeColor).fillOpacity(0.15).fill()
+    .restore();
+  doc.fontSize(11).fillColor(outcomeColor).text(outcomeText, textX + 8, badgeY + 2, { lineBreak: false });
+  doc.fontSize(10).fillColor(COLORS.muted)
+    .text(`${formatDuration(report.duration)}  |  ${new Date(report.startedAt).toLocaleString()}`, textX + badgeTextW + 10, badgeY + 3, { lineBreak: false });
+  doc.y = badgeY + badgeH + 4;
+
+  // Ensure we're below the thumbnail
+  if (hasThumb && doc.y < startY + thumbSize + 5) {
+    doc.y = startY + thumbSize + 5;
+  }
 }
 
 function drawSummaryCard(doc: PDFKit.PDFDocument, report: PrintReport, pageW: number): void {
@@ -388,26 +418,49 @@ function drawFilamentTable(doc: PDFKit.PDFDocument, report: PrintReport, pageW: 
   doc.y = y + 4;
 }
 
+/** Select best snapshots: one per 10% progress bracket, max 10 */
+function selectSnapshotsByProgress(snapshots: ReportSnapshot[]): ReportSnapshot[] {
+  if (snapshots.length === 0) return [];
+  const sorted = [...snapshots].sort((a, b) => a.progress - b.progress);
+  const selected: ReportSnapshot[] = [];
+  const usedBrackets = new Set<number>();
+
+  for (const snap of sorted) {
+    const bracket = Math.floor(snap.progress / 10) * 10;
+    if (!usedBrackets.has(bracket)) {
+      usedBrackets.add(bracket);
+      selected.push(snap);
+      if (selected.length >= 10) break;
+    }
+  }
+  return selected;
+}
+
 function drawSnapshots(doc: PDFKit.PDFDocument, report: PrintReport, reportsDir: string, pageW: number): void {
-  const imgW = (pageW - 15) / 2;
+  const snaps = selectSnapshotsByProgress(report.snapshots);
+  const gap = 15;
+  const imgW = (pageW - gap) / 2;
   const imgH = imgW * 0.75;
-  let col = 0;
   const x = doc.page.margins.left;
 
-  for (const snap of report.snapshots) {
-    // Check page space
-    if (doc.y + imgH + 30 > doc.page.height - doc.page.margins.bottom) {
+  for (let i = 0; i < snaps.length; i++) {
+    const snap = snaps[i];
+    const col = i % 2;
+
+    // New row: check page space
+    if (col === 0 && doc.y + imgH + 30 > doc.page.height - doc.page.margins.bottom) {
       doc.addPage();
     }
 
-    const imgX = col === 0 ? x : x + imgW + 15;
-    const imgY = doc.y;
+    const imgX = col === 0 ? x : x + imgW + gap;
+    const imgY = col === 0 ? doc.y : doc.y; // same row baseline
+    // Save row start Y on first column
+    const rowY = col === 0 ? doc.y : doc.y;
 
     try {
       const imgPath = join(reportsDir, report.id, snap.filename);
       doc.image(imgPath, imgX, imgY, { width: imgW, height: imgH, fit: [imgW, imgH] });
     } catch {
-      // If image fails, draw placeholder
       doc.save()
         .rect(imgX, imgY, imgW, imgH)
         .fillColor('#eeeeee').fill()
@@ -422,28 +475,33 @@ function drawSnapshots(doc: PDFKit.PDFDocument, report: PrintReport, reportsDir:
     doc.fontSize(7).fillColor(COLORS.muted)
       .text(`${time} — ${snap.progress}% — Layer ${snap.layer}`, imgX, captionY, { width: imgW });
 
-    col++;
-    if (col >= 2) {
-      col = 0;
-      doc.y = captionY + 14;
+    // After second column (or last image), advance Y past the row
+    if (col === 1 || i === snaps.length - 1) {
+      doc.y = rowY + imgH + 18;
+    } else {
+      // Stay at same Y for the second column
+      doc.y = rowY;
     }
-  }
-
-  if (col !== 0) {
-    doc.y = doc.y + imgH + 18;
   }
 }
 
 function drawEventLog(doc: PDFKit.PDFDocument, report: PrintReport): void {
   const x = doc.page.margins.left;
+  const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const timeW = 55;
+  const descW = pageW - timeW - 8;
 
   for (const evt of report.events) {
     if (doc.y > doc.page.height - doc.page.margins.bottom - 20) {
       doc.addPage();
     }
+    const y = doc.y;
     const time = new Date(evt.ts).toLocaleTimeString();
-    doc.fontSize(8).fillColor(COLORS.muted).text(time, x, doc.y, { continued: true, width: 60 });
-    doc.fillColor(COLORS.text).text(`  ${evt.summary}`);
+    doc.fontSize(8).fillColor(COLORS.muted).text(time, x, y, { width: timeW });
+    doc.fontSize(8).fillColor(COLORS.text).text(evt.summary, x + timeW + 8, y, { width: descW });
+    // Advance past the taller of the two columns
+    const lineH = Math.max(doc.heightOfString(time, { width: timeW }), doc.heightOfString(evt.summary, { width: descW }));
+    doc.y = y + lineH + 2;
   }
 }
 

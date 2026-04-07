@@ -35,8 +35,10 @@ function eventMeta(type: string): { icon: string; cls: string } {
     case 'print_progress':  return { icon: '📊', cls: 'event-muted' };
     case 'error':           return { icon: '🚨', cls: 'event-error' };
     case 'filament_runout': return { icon: '🧵', cls: 'event-error' };
-    case 'layer_change':    return { icon: '📏', cls: 'event-muted' };
-    default:                return { icon: '📋', cls: 'event-muted' };
+    case 'layer_change':        return { icon: '📏', cls: 'event-muted' };
+    case 'status_change':       return { icon: '🔄', cls: 'event-info' };
+    case 'sub_status_change':   return { icon: '↪️', cls: 'event-muted' };
+    default:                    return { icon: '📋', cls: 'event-muted' };
   }
 }
 
@@ -81,6 +83,10 @@ function eventDescription(e: Record<string, unknown>): string {
       const dur = typeof e.durationSec === 'number' ? ` (layer took ${fmtDuration(e.durationSec as number)})` : '';
       return `Layer ${layer}${total ? '/' + total : ''}${dur}`;
     }
+    case 'status_change':
+      return `Status: ${escapeHtml(String(e.from))} → ${escapeHtml(String(e.to))}`;
+    case 'sub_status_change':
+      return `Sub-status: ${escapeHtml(String(e.from || 'Default'))} → ${escapeHtml(String(e.to || 'Default'))}`;
     default:
       return `Event: ${escapeHtml(type)}`;
   }

@@ -2,8 +2,6 @@
 
 ## High Priority
 
-why do AI/telegram send me alerts when there are none, only "OK" messages, like "inside an enclosed 3D printer, thin flat lines of filament are being laid down as the first layer directly on the dark textured build plate surface, the very beginning of a 3D print"
-I dont want these. 
 
 ## Medium Priority
 

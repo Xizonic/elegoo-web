@@ -12,7 +12,7 @@
 import { writeFile, readFile, rename, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { StateStore, ChartPoint, AIChartPoint, FilamentUsage } from './state-store.js';
+import type { StateStore, ChartPoint, AIChartPoint, FilamentUsage, EventLogEntry } from './state-store.js';
 import { getLogger } from './logger.js';
 
 const log = getLogger('Persistence');
@@ -20,7 +20,7 @@ const log = getLogger('Persistence');
 const SAVE_INTERVAL_MS = 30_000; // Save every 30 seconds
 
 interface PersistedState {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   savedAt: number;
   chartData: ChartPoint[];
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }>;
@@ -30,6 +30,8 @@ interface PersistedState {
   aiChartData?: AIChartPoint[];
   /** Added in version 3 */
   filamentUsage?: FilamentUsage[];
+  /** Added in version 4 */
+  eventLog?: EventLogEntry[];
 }
 
 export class StatePersistence {
@@ -51,7 +53,7 @@ export class StatePersistence {
       const raw = await readFile(this.filePath, 'utf-8');
       const data: PersistedState = JSON.parse(raw);
 
-      if (data.version !== 1 && data.version !== 2 && data.version !== 3) return false;
+      if (data.version !== 1 && data.version !== 2 && data.version !== 3 && data.version !== 4) return false;
 
       // Only restore if data is less than 24 hours old
       const age = Date.now() - data.savedAt;
@@ -68,11 +70,15 @@ export class StatePersistence {
       if (data.filamentUsage) {
         this.store.restoreFilamentUsage(data.filamentUsage);
       }
+      if (data.eventLog) {
+        this.store.restoreEventLog(data.eventLog);
+      }
 
       const chartCount = data.chartData?.length ?? 0;
       const layerCount = data.layerTimes?.length ?? 0;
       const aiCount = data.aiChartData?.length ?? 0;
-      log.info(`Restored ${chartCount} chart points, ${layerCount} layer entries, ${aiCount} AI points (age: ${Math.round(age / 1000)}s)`);
+      const eventCount = data.eventLog?.length ?? 0;
+      log.info(`Restored ${chartCount} chart points, ${layerCount} layer entries, ${aiCount} AI points, ${eventCount} events (age: ${Math.round(age / 1000)}s)`);
       return true;
     } catch (err) {
       log.warn(`Failed to load: ${(err as Error).message}`);
@@ -105,7 +111,7 @@ export class StatePersistence {
   private async save(): Promise<void> {
     try {
       const data: PersistedState = {
-        version: 3,
+        version: 4,
         savedAt: Date.now(),
         chartData: this.store.getChartHistory(),
         layerTimes: this.store.layerTimes,
@@ -113,6 +119,7 @@ export class StatePersistence {
         lastLayerTime: this.store.getLastLayerTime(),
         aiChartData: this.store.getAIChartHistory(),
         filamentUsage: this.store.getFilamentUsageArray(),
+        eventLog: this.store.getEventLog(),
       };
 
       const json = JSON.stringify(data);

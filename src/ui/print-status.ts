@@ -147,16 +147,29 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     $('print-filename').textContent = statusName + (subStatusName ? ` — ${subStatusName}` : '');
   }
 
-  // Status badge
+  // Status badge — always show both status and sub-status
   const badge = $('print-status-badge');
+  const subLabel = subStatusName ? ` · ${subStatusName}` : '';
   if (isPrinting && !isPaused) {
-    badge.textContent = '⟳ Printing';
+    badge.textContent = `⟳ Printing${subLabel}`;
     badge.className = 'print-status-badge badge-printing';
   } else if (isPaused) {
-    badge.textContent = '⏸ Paused';
+    badge.textContent = `⏸ Paused${subLabel}`;
     badge.className = 'print-status-badge badge-paused';
+  } else if (machineStatus?.status === 5) {
+    badge.textContent = `📐 ${statusName}${subLabel}`;
+    badge.className = 'print-status-badge badge-busy';
+  } else if (machineStatus?.status === 3 || machineStatus?.status === 4 || machineStatus?.status === 13) {
+    badge.textContent = `🔄 ${statusName}${subLabel}`;
+    badge.className = 'print-status-badge badge-busy';
+  } else if (machineStatus?.status === 6 || machineStatus?.status === 7 || machineStatus?.status === 8) {
+    badge.textContent = `⚙️ ${statusName}${subLabel}`;
+    badge.className = 'print-status-badge badge-busy';
+  } else if (machineStatus?.status === 14) {
+    badge.textContent = `🛑 ${statusName}`;
+    badge.className = 'print-status-badge badge-error';
   } else {
-    badge.textContent = statusName;
+    badge.textContent = statusName + subLabel;
     badge.className = 'print-status-badge badge-idle';
   }
 
@@ -183,6 +196,19 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     progressText.classList.add('pulse');
   } else if (!isPrinting && !isPaused) {
     progressText.classList.remove('pulse');
+  }
+
+  // Window title — show status and progress
+  if (isPrinting || isPaused) {
+    const pctStr = `${progress}%`;
+    const stateStr = isPaused ? 'Paused' : 'Printing';
+    const sub = subStatusName ? ` · ${subStatusName}` : '';
+    document.title = `${pctStr} ${stateStr}${sub} — elegoo-web`;
+  } else if (machineStatus?.status === 1) {
+    document.title = 'Idle — elegoo-web';
+  } else {
+    const sub = subStatusName ? ` · ${subStatusName}` : '';
+    document.title = `${statusName}${sub} — elegoo-web`;
   }
 
   // Layer info — use fileTotalLayers from method 1046 or fallback to print_status

@@ -22,7 +22,7 @@ export interface ChartPoint {
   values: Record<string, number>;
 }
 
-const CHART_MAX_POINTS = 3600; // 1 hour at 1 sample/sec
+const CHART_MAX_POINTS = 300_000; // ~83 hours at 1 sample/sec (safety valve)
 const CHART_SAMPLE_MS = 1000;
 
 /** AI chart data point — motion + classification scores */
@@ -32,7 +32,7 @@ export interface AIChartPoint {
   scores: Record<string, number>;
 }
 
-const AI_CHART_MAX_POINTS = 3600; // 1 hour of AI data
+const AI_CHART_MAX_POINTS = 300_000; // safety valve matching chart data
 
 /** Filament densities (g/cm³) for weight calculation */
 const FILAMENT_DENSITY: Record<string, number> = {
@@ -79,7 +79,9 @@ export type PrintEvent =
   | { type: 'print_progress'; filename: string; progress: number; layer: number; totalLayers: number; remaining: number }
   | { type: 'error'; codes: number[]; names: string[] }
   | { type: 'filament_runout' }
-  | { type: 'layer_change'; layer: number; totalLayers: number; durationSec: number };
+  | { type: 'layer_change'; layer: number; totalLayers: number; durationSec: number }
+  | { type: 'status_change'; from: string; to: string; fromCode: number; toCode: number }
+  | { type: 'sub_status_change'; from: string; to: string; fromCode: number; toCode: number };
 
 /** Timestamped event log entry broadcast to clients */
 export interface EventLogEntry {
@@ -126,7 +128,7 @@ export class StateStore extends EventEmitter {
 
   // Event log ring buffer (important events for the Event Log panel)
   private eventLog: EventLogEntry[] = [];
-  private readonly maxEventLog = 200;
+  private readonly maxEventLog = 50_000;
 
   // Event detection state
   private lastMachineStatus = -1;
@@ -416,6 +418,18 @@ export class StateStore extends EventEmitter {
     return this.eventLog;
   }
 
+  /** Restore event log from persistence */
+  restoreEventLog(data: EventLogEntry[]): void {
+    if (data && data.length > 0) {
+      this.eventLog = data;
+    }
+  }
+
+  /** Clear event log (on new print start) */
+  clearEventLog(): void {
+    this.eventLog = [];
+  }
+
   private handleResponse(method: number, data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
@@ -647,6 +661,11 @@ export class StateStore extends EventEmitter {
       this.clearLayerData();
       // Reset filament usage for new print
       this.clearFilamentUsage();
+      // Reset event log for new print
+      this.clearEventLog();
+      // Reset chart data for new print
+      this.chartData = [];
+      this.aiChartData = [];
       this._lastExtruderE = 0;
       this._lastExtruderSampleTime = 0;
       if (ps?.filename) {
@@ -723,6 +742,28 @@ export class StateStore extends EventEmitter {
       this.wasFilamentDetected = !!ext.filament_detected;
     }
 
+    // Status change events
+    if (machineStatus !== this.lastMachineStatus) {
+      this.emit('print_event', {
+        type: 'status_change',
+        fromCode: this.lastMachineStatus,
+        toCode: machineStatus,
+        from: STATUS_NAMES[this.lastMachineStatus] ?? `Unknown (${this.lastMachineStatus})`,
+        to: STATUS_NAMES[machineStatus] ?? `Unknown (${machineStatus})`,
+      } satisfies PrintEvent);
+    }
+
+    // Sub-status change events (skip default/0 transitions)
+    if (subStatus !== this.lastSubStatus && !(this.lastSubStatus <= 0 && subStatus <= 0)) {
+      this.emit('print_event', {
+        type: 'sub_status_change',
+        fromCode: this.lastSubStatus,
+        toCode: subStatus,
+        from: SUB_STATUS_NAMES[this.lastSubStatus] ?? `Unknown (${this.lastSubStatus})`,
+        to: SUB_STATUS_NAMES[subStatus] ?? `Unknown (${subStatus})`,
+      } satisfies PrintEvent);
+    }
+
     this.lastMachineStatus = machineStatus;
     this.lastSubStatus = subStatus;
     this.lastExceptions = [...exceptions];
@@ -744,7 +785,7 @@ export class StateStore extends EventEmitter {
         } else {
           const entry = { layer: this._lastLayer, duration: durationSec, timestamp: now };
           this.layerTimes.push(entry);
-          if (this.layerTimes.length > 2000) this.layerTimes.shift();
+          if (this.layerTimes.length > 50_000) this.layerTimes.shift();
           // Broadcast to WS clients
           this.emit('layer_time', entry);
         }

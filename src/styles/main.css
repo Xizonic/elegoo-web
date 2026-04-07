@@ -217,14 +217,17 @@ body {
 
 .print-status-badge {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 3px 12px;
   border-radius: 10px;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   margin: 4px 0;
+  letter-spacing: 0.02em;
 }
 .badge-printing { background: rgba(33, 150, 243, 0.2); color: var(--accent); }
 .badge-paused { background: rgba(255, 167, 38, 0.2); color: var(--warning); }
+.badge-busy { background: rgba(156, 39, 176, 0.2); color: #ce93d8; }
+.badge-error { background: rgba(239, 83, 80, 0.2); color: var(--danger); }
 .badge-idle { background: rgba(160, 160, 184, 0.15); color: var(--text-secondary); }
 
 /* Exception banner */

@@ -135,13 +135,13 @@ export interface FileEntry {
   total_filament_used?: number;
 }
 
-// Machine status codes
+// Machine status codes (We enum from official app)
 export const STATUS_NAMES: Record<number, string> = {
   0: 'Initializing',
   1: 'Idle',
   2: 'Printing',
   3: 'Loading Filament',
-  4: 'Loading Filament',
+  4: 'Unloading Filament',
   5: 'Auto Leveling',
   6: 'PID Calibrating',
   7: 'Resonance Testing',
@@ -155,57 +155,97 @@ export const STATUS_NAMES: Record<number, string> = {
   15: 'Power Loss Recovery',
 };
 
+// Sub-status codes (xe enum from official app)
 export const SUB_STATUS_NAMES: Record<number, string> = {
   0: '',
-  // Preheat
+  // Environment
+  1041: 'Environment Too Cold',
+  // Nozzle / Bed temperature
   1045: 'Preheating Nozzle',
-  1096: 'Preheating Nozzle',
+  1096: 'Cooling Nozzle',
   1405: 'Preheating Bed',
-  1906: 'Preheating Bed',
-  // Printing
+  1906: 'Cooling Bed',
+  // Chamber
+  1070: 'Cooling Chamber',
+  1071: 'Chamber Cooling Complete',
+  1072: 'Chamber Cooling Failed',
+  // PID calibration
+  1053: 'PID Preheating',
+  1054: 'PID Detecting',
+  1055: 'PID Calibration Complete',
+  1056: 'PID Calibration Failed',
+  // Extruder (mono/direct drive)
+  1061: 'Loading Filament',
+  1062: 'Unloading Filament',
+  1063: 'Filament Load Complete',
+  1064: 'Filament Unload Complete',
+  1133: 'Heating Nozzle',
+  1134: 'Insert Filament',
+  1135: 'Biting Filament',
+  1136: 'Bite Filament Done',
+  1143: 'Cutting Filament',
+  1144: 'Ejecting Filament',
+  1145: 'Eject Filament Complete',
+  // Canvas (AMS) — Load
+  1150: 'Canvas: Load Start',
+  1151: 'Canvas: Heating Nozzle',
+  1152: 'Canvas: Insert Filament',
+  1153: 'Canvas: Cutting Filament',
+  1154: 'Canvas: Retracting Filament',
+  1155: 'Canvas: Feeding Filament',
+  1156: 'Canvas: Flushing Filament',
+  1157: 'Canvas: Load Complete',
+  1158: 'Canvas: Load Failed',
+  // Canvas (AMS) — Unload
+  1160: 'Canvas: Unload Start',
+  1161: 'Canvas: Heating Nozzle',
+  1162: 'Canvas: Checking Filament',
+  1163: 'Canvas: Cutting Filament',
+  1164: 'Canvas: Retracting Filament',
+  1165: 'Canvas: Unload Complete',
+  1166: 'Canvas: Unload Failed',
+  // Printing lifecycle
   2075: 'Printing',
-  2077: 'Completed',
+  2077: 'Print Complete',
   // Resume / Pause / Stop
   2401: 'Resuming',
   2402: 'Resume Complete',
+  2405: 'Power Loss Resume',
+  2406: 'Power Loss Resume Complete',
   2501: 'Pausing',
   2502: 'Paused',
   2503: 'Stopping',
   2504: 'Stopped',
-  2505: 'Paused',
+  2505: 'Filament Interruption',
+  // OTA / Firmware
+  2601: 'OTA Info Updating',
+  2603: 'Initialize Complete',
+  2701: 'OTA Downloading',
+  2702: 'OTA Extracting',
+  2703: 'OTA Updating',
+  2704: 'OTA Complete',
+  2705: 'OTA Failed',
   // Homing
   2801: 'Homing',
   2802: 'Homing Done',
   // Leveling
   2901: 'Auto Leveling',
   2902: 'Leveling Done',
-  // Self-check phases
-  3001: 'Self-Check: Auto Level',
-  3002: 'Self-Check: Vibration',
-  3003: 'Self-Check: PID',
-  3004: 'Self-Check Complete',
-  // Vibration / PID
+  // File transfer
+  3000: 'File Sending',
+  3001: 'File Send Complete',
+  3010: 'File Copying',
+  3011: 'File Copy Complete',
+  // Timelapse
+  3020: 'Timelapse Processing',
+  3021: 'Timelapse Complete',
+  3022: 'Timelapse Failed',
+  // Resonance / Vibration
+  5932: 'Accelerometer Normal',
+  5933: 'Accelerometer Error',
+  5934: 'Resonance Optimizing',
   5935: 'Resonance Test Complete',
   5936: 'Resonance Test Failed',
-  1505: 'PID Calibration Complete',
-  1506: 'PID Calibration Failed',
-  // Canvas / AMS
-  4001: 'Canvas: Load Filament',
-  4002: 'Canvas: Unload Filament',
-  4003: 'Canvas: Cut Filament',
-  4004: 'Canvas: Feed Filament',
-  4005: 'Canvas: Retract Filament',
-  4006: 'Canvas: Purge Filament',
-  4007: 'Canvas: Switch Filament',
-  4008: 'Canvas: Ready',
-  // OTA / System
-  6001: 'System Updating',
-  6002: 'Version Checking',
-  // Timelapse
-  7001: 'Timelapse Processing',
-  // File transfer
-  8001: 'File Transferring',
-  8002: 'Preparing File',
 };
 
 export const SPEED_MODE_NAMES: Record<number, string> = {
