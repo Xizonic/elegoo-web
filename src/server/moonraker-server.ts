@@ -696,6 +696,21 @@ export class MoonrakerServer {
             slicer_version: null,
             thumbnails: [],
           }));
+        } else if (filename && this.store.status?.print_status?.filename === filename) {
+          // Synthesize metadata from active print status when file list is unavailable
+          const ps = this.store.status.print_status;
+          client.ws.send(rpcResult(msg.id, {
+            size: 0,
+            modified: Date.now() / 1000,
+            filename,
+            estimated_time: ps.total_duration && ps.remaining_time_sec ? ps.total_duration + ps.remaining_time_sec : null,
+            layer_height: null,
+            first_layer_height: null,
+            object_height: null,
+            slicer: null,
+            slicer_version: null,
+            thumbnails: [],
+          }));
         } else {
           client.ws.send(rpcError(msg.id, 404, 'File not found'));
         }
@@ -1282,19 +1297,36 @@ export class MoonrakerServer {
       const filename = query.filename;
       if (!filename) { jsonError(res, 'filename required'); return; }
       const file = this.store.files.find((f) => f.filename === filename);
-      if (!file) { jsonError(res, 'File not found', 404); return; }
-      jsonResult(res, {
-        size: file.size,
-        modified: file.create_time ?? Date.now() / 1000,
-        filename: file.filename,
-        estimated_time: file.print_time ?? null,
-        layer_height: null,
-        first_layer_height: null,
-        object_height: null,
-        slicer: null,
-        slicer_version: null,
-        thumbnails: [],
-      });
+      if (file) {
+        jsonResult(res, {
+          size: file.size,
+          modified: file.create_time ?? Date.now() / 1000,
+          filename: file.filename,
+          estimated_time: file.print_time ?? null,
+          layer_height: null,
+          first_layer_height: null,
+          object_height: null,
+          slicer: null,
+          slicer_version: null,
+          thumbnails: [],
+        });
+      } else if (this.store.status?.print_status?.filename === filename) {
+        const ps = this.store.status.print_status;
+        jsonResult(res, {
+          size: 0,
+          modified: Date.now() / 1000,
+          filename,
+          estimated_time: ps.total_duration && ps.remaining_time_sec ? ps.total_duration + ps.remaining_time_sec : null,
+          layer_height: null,
+          first_layer_height: null,
+          object_height: null,
+          slicer: null,
+          slicer_version: null,
+          thumbnails: [],
+        });
+      } else {
+        jsonError(res, 'File not found', 404);
+      }
       return;
     }
 

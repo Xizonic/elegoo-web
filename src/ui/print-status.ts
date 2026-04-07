@@ -22,6 +22,7 @@ let _prevETime = 0;
 let _lastExtRate = 0;
 let _lastFlowRate = 0;
 let _lastMassFlow = 0;
+let _lastPulseTime = 0;
 
 function gramsToMeters(grams: number, filamentType: string): number {
   const density = FILAMENT_DENSITY[filamentType.toUpperCase()] ?? FILAMENT_DENSITY.PLA;
@@ -159,10 +160,30 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     badge.className = 'print-status-badge badge-idle';
   }
 
-  // Progress
-  const progress = machineStatus?.progress ?? 0;
-  $('print-progress-text').textContent = isPrinting || isPaused ? `${progress}%` : '';
-  ($('print-progress-bar') as HTMLElement).style.width = `${progress}%`;
+  // Progress — compute from durations in delta updates (available every second)
+  // machine_status.progress only arrives from full 1002 responses (every ~5s)
+  let progress = machineStatus?.progress ?? 0;
+  if ((isPrinting || isPaused) && ps?.print_duration != null && ps?.remaining_time_sec != null) {
+    const total = ps.print_duration + ps.remaining_time_sec;
+    if (total > 0) {
+      progress = Math.min(99, Math.round((ps.print_duration / total) * 100));
+    }
+  }
+  const progressText = $('print-progress-text');
+  progressText.textContent = isPrinting || isPaused ? `${progress}%` : '';
+  const progressBar = $('print-progress-bar') as HTMLElement;
+  progressBar.style.width = `${progress}%`;
+  progressBar.classList.toggle('active', isPrinting && !isPaused);
+  // Pulse progress text every ~2s while printing to show data is live
+  const pulseNow = Date.now();
+  if ((isPrinting || isPaused) && pulseNow - _lastPulseTime >= 2000) {
+    _lastPulseTime = pulseNow;
+    progressText.classList.remove('pulse');
+    void progressText.offsetWidth;
+    progressText.classList.add('pulse');
+  } else if (!isPrinting && !isPaused) {
+    progressText.classList.remove('pulse');
+  }
 
   // Layer info — use fileTotalLayers from method 1046 or fallback to print_status
   const totalLayer = ps?.total_layer ?? state.fileTotalLayers ?? '??';

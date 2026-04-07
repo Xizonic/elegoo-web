@@ -2,7 +2,8 @@
 
 ## High Priority
 
-- [x] ~~Print summary report per print — PDF with stats, charts, camera snapshots, and event log. Auto-generated on print completion. REST API + UI panel + PDFKit generation.~~
+why do AI/telegram send me alerts when there are none, only "OK" messages, like "inside an enclosed 3D printer, thin flat lines of filament are being laid down as the first layer directly on the dark textured build plate surface, the very beginning of a 3D print"
+I dont want these. 
 
 ## Medium Priority
 
@@ -114,3 +115,4 @@
 - [x] Vi trenger en ny tab for Help som dokumenterer API, prom, MCP, octoprint, moonraker, command reference etc
 - [x] thumbnail er vanskelig å se når vi har mørkt filament og mørk bakgrunn. Dette må automatisk justeres basert på fargen på bildet/filamentet i bildet. 
 - [x] Hvorfor har denne logentrien [Camera] prefix: "[svc] 2026-04-07 11:00:57 info [Camera] Download proxy: ECC2_0.4_Elegoo Nameplate_Elegoo PLA _0.2_17m28s.gcode from /download"
+- [x] ~~Print summary report per print — PDF with stats, charts, camera snapshots, and event log. Auto-generated on print completion. REST API + UI panel + PDFKit generation.~~

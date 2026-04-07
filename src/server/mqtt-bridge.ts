@@ -130,6 +130,7 @@ export class MqttBridge extends EventEmitter {
         this.sendCommand(1001, {}); // GET_ATTRIBUTES
         this.sendCommand(1002, {}); // GET_STATUS
         this.sendCommand(2005, {}); // GET_CANVAS_STATUS
+        this.sendCommand(1044, { storage_media: 'udisk', dir: '', offset: 0, limit: 200 }); // GET_FILE_LIST
         this.emit('connected', this.sn);
       } else if ((data.code as number) === 3) {
         log.error('Registration rejected: too many clients (max 2). Disconnect another client and retry.');

@@ -467,22 +467,36 @@ export function createMoonrakerRouter(
         return true;
       }
       const file = store.files.find((f) => f.filename === filename);
-      if (!file) {
+      if (file) {
+        json(res, {
+          size: file.size,
+          modified: file.create_time ?? Date.now() / 1000,
+          filename: file.filename,
+          estimated_time: file.print_time ?? null,
+          layer_height: null,
+          first_layer_height: null,
+          object_height: null,
+          slicer: null,
+          slicer_version: null,
+          thumbnails: [],
+        });
+      } else if (store.status?.print_status?.filename === filename) {
+        const ps = store.status.print_status;
+        json(res, {
+          size: 0,
+          modified: Date.now() / 1000,
+          filename,
+          estimated_time: ps.total_duration && ps.remaining_time_sec ? ps.total_duration + ps.remaining_time_sec : null,
+          layer_height: null,
+          first_layer_height: null,
+          object_height: null,
+          slicer: null,
+          slicer_version: null,
+          thumbnails: [],
+        });
+      } else {
         errorResponse(res, 'File not found', 404);
-        return true;
       }
-      json(res, {
-        size: file.size,
-        modified: file.create_time ?? Date.now() / 1000,
-        filename: file.filename,
-        estimated_time: file.print_time ?? null,
-        layer_height: null,
-        first_layer_height: null,
-        object_height: null,
-        slicer: null,
-        slicer_version: null,
-        thumbnails: [],
-      });
       return true;
     }
 

@@ -93,29 +93,31 @@ function categorizeLabel(label: string): ClassificationGroup {
  *  motion or stalling from a single image. Stall detection now uses the motion
  *  detector (consecutive low-motion frames while printing). */
 const DEFAULT_CLIP_LABELS: readonly string[] = [
-  'a 3D printer actively printing an object on the build plate with filament being extruded',
-  'messy tangled plastic filament spaghetti from a failed 3D print disaster',
-  'a 3D printed object that fell off or unstuck from the print bed',
-  'thin strings of plastic between parts of a 3D print',
-  'a 3D printer with layer shifting or misaligned layers visible',
-  'a 3D print with warping or lifting corners on the build plate',
-  'a large blob of melted plastic accumulated on a 3D print',
-  'an empty 3D printer bed with no objects',
+  'inside an enclosed 3D printer, a solid plastic object with clean uniform horizontal layer lines sits on a dark textured build plate, the metal printhead gantry is above it, normal successful print in progress',
+  'inside an enclosed 3D printer, loose tangled curly strands of plastic filament scattered randomly across the dark textured build plate, no solid object present, failed spaghetti print',
+  'inside an enclosed 3D printer, a messy pile of thin plastic noodles and loops dragged across the dark bed by the printhead, filament not sticking, print failure in progress',
+  'inside an enclosed 3D printer, a knocked over or tilted plastic object lying on its side on the dark textured build plate, the part has detached and fallen from where it was printing',
+  'inside an enclosed 3D printer, thin wispy cobweb-like strings of plastic hanging between parts of a 3D printed object on the dark build plate, stringing defect',
+  'inside an enclosed 3D printer, a 3D printed object on the dark build plate with visibly misaligned layers, the top portion is shifted sideways relative to the bottom, layer shift defect',
+  'inside an enclosed 3D printer, the corners or edges of a flat printed part are curling upward and lifting off the dark textured build plate, warping defect',
+  'inside an enclosed 3D printer, a shapeless irregular mass of melted plastic has accumulated around the nozzle and hotend, no layer structure visible, the blob is engulfing the printhead',
+  'inside an enclosed 3D printer, the dark textured build plate is completely empty with nothing on it, no printed objects and no filament visible, just the bare bed surface',
 ] as const;
 
 /** Map CLIP label indices to issue types and severity */
 const DEFAULT_LABEL_ISSUE_MAP: Record<number, { type: string; severity: 'warning' | 'critical' }> = {
   1: { type: 'spaghetti', severity: 'critical' },
-  2: { type: 'bed_adhesion', severity: 'critical' },
-  3: { type: 'stringing', severity: 'warning' },
-  4: { type: 'layer_shift', severity: 'critical' },
-  5: { type: 'warping', severity: 'warning' },
-  6: { type: 'blob', severity: 'critical' },
-  7: { type: 'empty_bed', severity: 'critical' },
+  2: { type: 'spaghetti', severity: 'critical' },
+  3: { type: 'bed_adhesion', severity: 'critical' },
+  4: { type: 'stringing', severity: 'warning' },
+  5: { type: 'layer_shift', severity: 'critical' },
+  6: { type: 'warping', severity: 'warning' },
+  7: { type: 'blob', severity: 'critical' },
+  8: { type: 'empty_bed', severity: 'critical' },
 };
 
-const DEFAULT_WARN_THRESHOLD = 0.15;
-const DEFAULT_CRIT_THRESHOLD = 0.30;
+const DEFAULT_WARN_THRESHOLD = 0.10;
+const DEFAULT_CRIT_THRESHOLD = 0.22;
 
 // ---- AI Label Configuration (persisted to disk) ----
 

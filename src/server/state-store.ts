@@ -139,6 +139,8 @@ export class StateStore extends EventEmitter {
   private baselineReady = false;
   /** Auto-report sequence tracking for gap detection */
   private lastAutoReportId: number | null = null;
+  /** Periodic full-status poll timer (active during printing) */
+  private statusPollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private bridge: MqttBridge, private progressInterval: number) {
     super();
@@ -157,6 +159,7 @@ export class StateStore extends EventEmitter {
     });
 
     bridge.on('disconnected', () => {
+      this.stopStatusPoll();
       this.emit('print_event', { type: 'disconnected' } satisfies PrintEvent);
     });
 
@@ -181,6 +184,30 @@ export class StateStore extends EventEmitter {
 
     // Sample chart data every second
     this.chartTimer = setInterval(() => this.sampleChart(), CHART_SAMPLE_MS);
+
+    // Start/stop periodic status poll based on print state
+    this.on('print_event', (event: PrintEvent) => {
+      if (event.type === 'print_started') this.startStatusPoll();
+      if (event.type === 'print_completed' || event.type === 'print_failed') this.stopStatusPoll();
+    });
+  }
+
+  /** Poll full status (method 1002) every 5s while printing.
+   *  Delta status events (method 6000) don't include machine_status.progress. */
+  private startStatusPoll(): void {
+    if (this.statusPollTimer) return;
+    this.statusPollTimer = setInterval(() => {
+      if (this.bridge.isConnected) {
+        this.bridge.sendCommand(1002, {});
+      }
+    }, 5000);
+  }
+
+  private stopStatusPoll(): void {
+    if (this.statusPollTimer) {
+      clearInterval(this.statusPollTimer);
+      this.statusPollTimer = null;
+    }
   }
 
   private sampleChart(): void {
@@ -376,6 +403,7 @@ export class StateStore extends EventEmitter {
   /** Clean up timers */
   destroy(): void {
     if (this.chartTimer) clearInterval(this.chartTimer);
+    this.stopStatusPoll();
   }
 
   /** Get recent raw log entries */
