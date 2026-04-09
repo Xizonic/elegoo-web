@@ -14,7 +14,7 @@ import { loadConfig, type ServiceConfig } from './config.js';
 import { MqttBridge } from './mqtt-bridge.js';
 import { StateStore } from './state-store.js';
 import { WebSocketTransport } from './ws-transport.js';
-import { createRestRouter } from './rest-api.js';
+import { createRestRouter, precacheGcode } from './rest-api.js';
 import { handleMcpRequest } from './mcp-server.js';
 import { createOctoPrintRouter } from './octoprint-compat.js';
 import { createMoonrakerRouter } from './moonraker-compat.js';
@@ -47,6 +47,14 @@ const bridge = new MqttBridge(config.printerIp, config.printerPassword);
 
 // --- State Store (shared state for all consumers) ---
 const store = new StateStore(bridge, config.progressInterval);
+
+// Pre-download gcode to cache when a print starts so the preview
+// can be served from cache instead of hitting the busy printer
+store.on('print_event', (event: { type: string; filename?: string }) => {
+  if (event.type === 'print_started' && event.filename) {
+    precacheGcode(event.filename, config);
+  }
+});
 
 // --- State Persistence ---
 const persistence = new StatePersistence(store, config.dataDir);

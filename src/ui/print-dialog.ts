@@ -11,9 +11,16 @@
 import type { PrinterState } from '../printer-state';
 import type { CommandSender } from '../ws-client';
 import type { CanvasInfo, CanvasTray } from '../types';
-import { escapeHtml, escapeAttr, formatTime, applyDarkThumbnailCheck } from './helpers';
+import { escapeHtml, escapeAttr, formatTime, fetchTimeout, applyDarkThumbnailCheck } from './helpers';
 import { toast } from './toast';
 import { currentFileSource } from './files';
+
+/** Format bytes to human-readable size */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
 
 /** Pending dialog state while waiting for 1046 response */
 let pendingPrint: { filename: string; fullPath: string; client: CommandSender; state: PrinterState } | null = null;
@@ -275,7 +282,7 @@ function showDialog(
   });
 
   // Confirm handler
-  document.getElementById('print-dialog-confirm')!.addEventListener('click', () => {
+  document.getElementById('print-dialog-confirm')!.addEventListener('click', async () => {
     // Check all colors are mapped if multi-color
     if (isMultiColor) {
       const unmapped = mappings.filter(m => m.trayId === -1);
@@ -292,6 +299,64 @@ function showDialog(
     const slotMap = isMultiColor
       ? mappings.map(m => ({ t: m.t, canvas_id: m.canvasId, tray_id: m.trayId }))
       : [];
+
+    const confirmBtn = document.getElementById('print-dialog-confirm') as HTMLButtonElement;
+    const cancelBtn = document.getElementById('print-dialog-cancel') as HTMLButtonElement;
+    const cancelXBtn = document.getElementById('print-dialog-cancel-x') as HTMLButtonElement;
+    const footerEl = overlay.querySelector('.print-dialog-footer') as HTMLElement;
+
+    // Show precache progress
+    if (fullPath.toLowerCase().endsWith('.gcode')) {
+      confirmBtn.disabled = true;
+      cancelBtn.disabled = true;
+      cancelXBtn.disabled = true;
+
+      // Insert progress bar before footer
+      const progressEl = document.createElement('div');
+      progressEl.className = 'print-dialog-precache';
+      progressEl.innerHTML = `
+        <div class="print-dialog-precache-bar">
+          <div class="print-dialog-precache-fill"></div>
+        </div>
+        <div class="print-dialog-precache-text">Caching gcode for preview…</div>
+      `;
+      footerEl.before(progressEl);
+
+      const fillEl = progressEl.querySelector('.print-dialog-precache-fill') as HTMLElement;
+      const textEl = progressEl.querySelector('.print-dialog-precache-text') as HTMLElement;
+
+      // Animate indeterminate progress
+      fillEl.style.width = '30%';
+
+      try {
+        const resp = await fetchTimeout('/api/files/precache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: fullPath, source: currentFileSource() }),
+        }, 120_000);
+
+        const result = await resp.json() as { ok: boolean; cached: boolean; size: number; error?: string };
+        fillEl.style.width = '100%';
+
+        if (result.ok) {
+          textEl.textContent = result.cached ? 'Already cached' : `Cached (${formatSize(result.size)})`;
+        } else {
+          // Precache failed — warn but still allow printing
+          textEl.textContent = `Cache failed: ${result.error ?? 'unknown'} — printing anyway`;
+          textEl.style.color = 'var(--warning)';
+        }
+      } catch {
+        // Network error — warn but still allow printing
+        fillEl.style.width = '100%';
+        fillEl.style.background = 'var(--warning)';
+        textEl.textContent = 'Cache unavailable — printing anyway';
+        textEl.style.color = 'var(--warning)';
+      }
+
+      // Brief pause so user sees the result
+      await new Promise(r => setTimeout(r, 400));
+      progressEl.remove();
+    }
 
     client.sendCommand(1020, {
       storage_media: currentFileSource(),

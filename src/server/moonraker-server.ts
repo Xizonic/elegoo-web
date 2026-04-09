@@ -26,6 +26,7 @@ import {
   queryObjects,
 } from './moonraker-compat.js';
 import { getLogger } from './logger.js';
+import { cacheGcodeBuffer } from './rest-api.js';
 
 const log = getLogger('MoonrakerSrv');
 
@@ -2077,6 +2078,11 @@ export class MoonrakerServer {
       }
 
       log.info(`Upload complete: ${fileName} (${formatSize(totalBytes)}, MD5: ${md5})`);
+
+      // Cache the uploaded gcode on the service for preview
+      if (fileName.toLowerCase().endsWith('.gcode')) {
+        void cacheGcodeBuffer(fileName, fileData);
+      }
 
       // Refresh file list from printer
       this.bridge.sendCommand(1044, { storage_media: 'udisk' });

@@ -2507,3 +2507,24 @@ body {
 .print-dialog-footer .btn-primary {
   min-width: 100px;
 }
+/* Precache progress */
+.print-dialog-precache {
+  padding: 8px 16px 4px;
+}
+.print-dialog-precache-bar {
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.print-dialog-precache-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.print-dialog-precache-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}

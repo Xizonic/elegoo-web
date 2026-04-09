@@ -4,7 +4,7 @@
 
 - [ ] **No test suite** — Zero tests in the entire project. Add at minimum: unit tests for state merging (`printer-state.ts` deep merge), time formatting helpers, server state-store logic, and integration tests for MQTT message parsing.
 - [x] error and warnings are not written to the error.log? 
-- [ ] gcode preview still fails on download , error 502 / socket hang up. 
+- [x] gcode preview still fails on download , error 502 / socket hang up. 
 
 ## Medium Priority
 

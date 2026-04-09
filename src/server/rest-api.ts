@@ -56,6 +56,19 @@ async function ensureCacheDir(): Promise<void> {
   await mkdir(GCODE_CACHE_DIR, { recursive: true });
 }
 
+/** Cache a gcode file from a Buffer (e.g. after upload) */
+export async function cacheGcodeBuffer(fileName: string, data: Buffer): Promise<void> {
+  try {
+    await ensureCacheDir();
+    const cachePath = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
+    await writeFile(cachePath, data);
+    await evictOldCache();
+    log.info(`Cached uploaded gcode: ${fileName} (${data.length} bytes)`);
+  } catch (err) {
+    log.warn(`Failed to cache uploaded gcode ${fileName}: ${(err as Error).message}`);
+  }
+}
+
 async function getCachedGcode(fileName: string): Promise<string | null> {
   try {
     const cached = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
@@ -170,6 +183,83 @@ async function handleFileDownload(
     }
   });
   proxyReq.end();
+}
+
+/**
+ * Pre-download a gcode file to cache in the background.
+ * Called on print start so the preview can be served from cache
+ * instead of hitting the printer while it's busy printing.
+ */
+export function precacheGcode(fileName: string, config: ServiceConfig, source = 'local'): void {
+  // Fire and forget — errors are logged but don't affect the caller
+  void precacheGcodeAsync(fileName, config, source);
+}
+
+/**
+ * Pre-download a gcode file to cache. Returns a promise that resolves
+ * with { ok, cached, size } when done.
+ */
+export async function precacheGcodeAsync(
+  fileName: string, config: ServiceConfig, source = 'local',
+): Promise<{ ok: boolean; cached: boolean; size: number; error?: string }> {
+  try {
+    await ensureCacheDir();
+    const existing = await getCachedGcode(fileName);
+    if (existing) {
+      const s = await stat(existing);
+      log.info(`Precache: ${fileName} already cached (${s.size} bytes)`);
+      return { ok: true, cached: true, size: s.size };
+    }
+
+    const pathMap: Record<string, string> = { 'local': '/download', 'u-disk': '/download/udisk', 'sd-card': '/download/sdcard' };
+    const dlPath = pathMap[source] ?? '/download';
+    log.info(`Precache: downloading ${fileName} from ${dlPath}`);
+
+    const cachePath = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
+
+    const size = await new Promise<number>((resolve, reject) => {
+      const proxyReq = httpRequest({
+        hostname: config.printerIp,
+        port: 80,
+        path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
+        method: 'GET',
+        timeout: 120_000,
+        insecureHTTPParser: true,
+      }, (proxyRes) => {
+        if (proxyRes.statusCode !== 200) {
+          proxyRes.resume();
+          reject(new Error(`Printer returned ${proxyRes.statusCode}`));
+          return;
+        }
+        proxyRes.socket?.setTimeout(120_000);
+        const cacheStream = createWriteStream(cachePath);
+        let bytes = 0;
+        proxyRes.on('data', (chunk: Buffer) => { bytes += chunk.length; });
+        proxyRes.pipe(cacheStream);
+        cacheStream.on('finish', () => {
+          evictOldCache().catch(() => {});
+          log.info(`Precache: cached ${fileName} (${bytes} bytes)`);
+          resolve(bytes);
+        });
+        cacheStream.on('error', (err) => {
+          unlink(cachePath).catch(() => {});
+          reject(err);
+        });
+      });
+      proxyReq.on('error', reject);
+      proxyReq.on('timeout', () => {
+        proxyReq.destroy();
+        reject(new Error('Precache download timed out'));
+      });
+      proxyReq.end();
+    });
+
+    return { ok: true, cached: false, size };
+  } catch (err) {
+    const msg = (err as Error).message;
+    log.warn(`Precache failed for ${fileName}: ${msg}`);
+    return { ok: false, cached: false, size: 0, error: msg };
+  }
 }
 
 async function fetchCameraFrame(cameraUrl: string): Promise<Buffer | null> {
@@ -816,6 +906,31 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       return;
     }
 
+    // ── Gcode precache endpoint ──────────────────────────────────────
+    // POST /api/files/precache  { file: string, source?: string }
+    // Downloads gcode from printer to service cache before print start
+    if (url === '/api/files/precache' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      req.on('end', async () => {
+        try {
+          const { file, source } = JSON.parse(body) as { file: string; source?: string };
+          if (!file) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing file parameter' }));
+            return;
+          }
+          const result = await precacheGcodeAsync(file, config, source || 'local');
+          res.writeHead(result.ok ? 200 : 502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: (err as Error).message }));
+        }
+      });
+      return;
+    }
+
     // ── File upload proxy ───────────────────────────────────────────
     // POST /api/files/upload  (multipart/form-data with 'file' field)
     // Query: ?source=local|u-disk|sd-card
@@ -901,6 +1016,12 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
           }
 
           log.info(`Upload complete: ${fileName} (${formatUploadSize(totalBytes)}, MD5: ${md5})`);
+
+          // Cache the uploaded gcode on the service for preview
+          if (fileName.toLowerCase().endsWith('.gcode')) {
+            void cacheGcodeBuffer(fileName, fileData);
+          }
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, fileName, size: totalBytes, md5 }));
         } catch (err) {
