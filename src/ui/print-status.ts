@@ -301,6 +301,15 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     $('pos-z').textContent = pos.z?.toFixed(1) ?? '--';
   }
 
+  // Homing status
+  const homed = s.tool_head?.homed_axes ?? '';
+  for (const a of ['x', 'y', 'z'] as const) {
+    const dot = $(`home-${a}`);
+    const isHomed = homed.includes(a);
+    dot.classList.toggle('homed', isHomed);
+    dot.title = isHomed ? `${a.toUpperCase()} homed` : `${a.toUpperCase()} not homed`;
+  }
+
   // Live speed & flow
   $('live-speed').textContent = pos?.speed ? `${Math.round(pos.speed)} mm/min` : '-- mm/min';
   const currentE = pos?.extruder ?? pos?.e ?? 0;

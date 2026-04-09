@@ -10,6 +10,14 @@ export function esc(text: string): string {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
+/**
+ * Safety-net: catch any MarkdownV2 special chars that slipped through unescaped.
+ * Uses negative lookbehind so already-escaped chars (preceded by \) are untouched.
+ */
+export function safeCaption(text: string): string {
+  return text.replace(/(?<!\\)([|])/g, '\\$1');
+}
+
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);

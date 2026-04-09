@@ -239,6 +239,7 @@ export class MqttBridge extends EventEmitter {
   /** Detect state transitions and emit notification events */
   private detectEvents(): void {
     if (!this.status) return;
+    let printEnded = false;
 
     const ms = this.status.machine_status;
     const ps = this.status.print_status;
@@ -271,6 +272,7 @@ export class MqttBridge extends EventEmitter {
         duration: ps?.print_duration ?? 0,
       } satisfies BridgeEvent);
       this.lastProgressNotified = -1;
+      printEnded = true;
     }
 
     // Print stopped/failed
@@ -283,6 +285,7 @@ export class MqttBridge extends EventEmitter {
         reason,
       } satisfies BridgeEvent);
       this.lastProgressNotified = -1;
+      printEnded = true;
     }
 
     // First layer complete detection + progress updates
@@ -339,14 +342,14 @@ export class MqttBridge extends EventEmitter {
         names,
       } satisfies BridgeEvent);
 
-      // Specifically check filament runout
-      if (newExceptions.includes(109) || newExceptions.includes(1211)) {
+      // Specifically check filament runout — not when print just ended (extruder disengage)
+      if (!printEnded && (newExceptions.includes(109) || newExceptions.includes(1211))) {
         this.emit('event', { type: 'filament_runout' } satisfies BridgeEvent);
       }
     }
 
-    // Also detect filament runout from extruder sensor
-    if (ext && ext.filament_detect_enable) {
+    // Also detect filament runout from extruder sensor — only during active printing
+    if (ext && ext.filament_detect_enable && machineStatus === 2 && !printEnded) {
       if (!ext.filament_detected && this.wasFilamentDetected) {
         this.emit('event', { type: 'filament_runout' } satisfies BridgeEvent);
       }

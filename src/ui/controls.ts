@@ -1,5 +1,6 @@
 import type { CommandSender } from '../ws-client';
 import { $, fetchTimeout } from './helpers';
+import { toast } from './toast';
 
 let controlsBound = false;
 
@@ -129,20 +130,24 @@ export function bindControls(client: CommandSender): void {
       const axis = el.dataset.axis;
       const dir = parseInt(el.dataset.dir ?? '1');
       if (axis) {
+        const homeDot = document.getElementById(`home-${axis}`);
+        if (homeDot && !homeDot.classList.contains('homed')) {
+          toast(`${axis.toUpperCase()} axis is not homed — movement may be ignored`, 'warning');
+        }
         guardedSend(client, 1027, { axes: axis, distance: currentMoveDistance * dir }, el);
       }
     });
   });
 
-  // Separate home buttons
-  const btnHomeXY = $('btn-home-xy') as HTMLButtonElement;
-  const btnHomeZ = $('btn-home-z') as HTMLButtonElement;
-  btnHomeXY.addEventListener('click', () => {
-    guardedSend(client, 1026, { homed_axes: 'xy' }, btnHomeXY);
-  });
-  btnHomeZ.addEventListener('click', () => {
-    guardedSend(client, 1026, { homed_axes: 'z' }, btnHomeZ);
-  });
+  // Home buttons — CC2 firmware homes all axes regardless of parameter,
+  // so both buttons send 'xyz' and are disabled together
+  const btnHomeAll = $('btn-home-all') as HTMLButtonElement;
+  const btnHomeAllZ = $('btn-home-all-z') as HTMLButtonElement;
+  const homeAll = () => {
+    guardedSend(client, 1026, { homed_axes: 'xyz' }, btnHomeAll, btnHomeAllZ);
+  };
+  btnHomeAll.addEventListener('click', homeAll);
+  btnHomeAllZ.addEventListener('click', homeAll);
 
   // Distance buttons
   document.querySelectorAll('.dist-btn').forEach(btn => {

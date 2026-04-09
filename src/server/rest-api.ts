@@ -16,8 +16,10 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
 import { createHash } from 'crypto';
-import { writeFile, readdir, readFile } from 'fs/promises';
+import { writeFile, readdir, readFile, mkdir, stat, unlink, readdir as readdirFs } from 'fs/promises';
+import { createReadStream, createWriteStream } from 'fs';
 import { join } from 'path';
+import { PassThrough } from 'stream';
 import sharp from 'sharp';
 import type { StateStore } from './state-store.js';
 import type { ServiceConfig } from './config.js';
@@ -41,6 +43,134 @@ let fetchInFlight: Promise<Buffer | null> | null = null;
 
 // Debug capture state
 let activeCapture: { file: string } | null = null;
+
+// ── Gcode file cache ────────────────────────────────────────────
+const GCODE_CACHE_DIR = join(process.cwd(), 'data', 'gcode-cache');
+const GCODE_CACHE_MAX = 10; // keep at most N cached files
+
+function gcodeCacheKey(fileName: string): string {
+  return createHash('sha256').update(fileName).digest('hex').slice(0, 16) + '.gcode';
+}
+
+async function ensureCacheDir(): Promise<void> {
+  await mkdir(GCODE_CACHE_DIR, { recursive: true });
+}
+
+async function getCachedGcode(fileName: string): Promise<string | null> {
+  try {
+    const cached = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
+    const s = await stat(cached);
+    if (s.size > 0) return cached;
+  } catch { /* not cached */ }
+  return null;
+}
+
+async function evictOldCache(): Promise<void> {
+  try {
+    const files = await readdir(GCODE_CACHE_DIR);
+    if (files.length <= GCODE_CACHE_MAX) return;
+    const entries = await Promise.all(files.map(async f => {
+      const p = join(GCODE_CACHE_DIR, f);
+      const s = await stat(p).catch(() => null);
+      return { path: p, mtime: s?.mtimeMs ?? 0 };
+    }));
+    entries.sort((a, b) => a.mtime - b.mtime);
+    const toRemove = entries.slice(0, entries.length - GCODE_CACHE_MAX);
+    await Promise.all(toRemove.map(e => unlink(e.path).catch(() => {})));
+  } catch { /* ignore */ }
+}
+
+async function handleFileDownload(
+  res: ServerResponse,
+  fileName: string,
+  baseName: string,
+  source: string,
+  isGcode: boolean,
+  config: ServiceConfig,
+): Promise<void> {
+  // Try serving from cache first (gcode files only)
+  if (isGcode) {
+    try {
+      await ensureCacheDir();
+      const cached = await getCachedGcode(fileName);
+      if (cached) {
+        log.info(`Download proxy: serving ${fileName} from cache`);
+        const s = await stat(cached);
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${baseName}"`,
+          'Content-Length': String(s.size),
+        });
+        createReadStream(cached).pipe(res);
+        return;
+      }
+    } catch { /* cache miss, fall through to printer */ }
+  }
+
+  const pathMap: Record<string, string> = { 'local': '/download', 'u-disk': '/download/udisk', 'sd-card': '/download/sdcard' };
+  const dlPath = pathMap[source] ?? '/download';
+  log.info(`Download proxy: ${fileName} from ${dlPath}`);
+
+  const proxyReq = httpRequest({
+    hostname: config.printerIp,
+    port: 80,
+    path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
+    method: 'GET',
+    timeout: 120_000,
+    // Printer's libhv sends both Content-Length and Transfer-Encoding: chunked,
+    // which is invalid HTTP. Node's strict parser rejects this.
+    insecureHTTPParser: true,
+  }, (proxyRes) => {
+    if (proxyRes.statusCode !== 200) {
+      res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Printer returned ${proxyRes.statusCode}` }));
+      proxyRes.resume();
+      return;
+    }
+    // Keep the socket alive during slow transfers
+    proxyRes.socket?.setTimeout(120_000);
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${baseName}"`,
+      ...(proxyRes.headers['content-length'] ? { 'Content-Length': proxyRes.headers['content-length'] } : {}),
+    });
+
+    // For gcode files, tee the stream to a cache file
+    if (isGcode) {
+      const cachePath = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
+      const cacheStream = createWriteStream(cachePath);
+      const tee = new PassThrough();
+      tee.pipe(res);
+      tee.pipe(cacheStream);
+      proxyRes.pipe(tee);
+      cacheStream.on('finish', () => {
+        evictOldCache().catch(() => {});
+        log.info(`Cached gcode: ${fileName}`);
+      });
+      cacheStream.on('error', () => {
+        unlink(cachePath).catch(() => {});
+      });
+    } else {
+      proxyRes.pipe(res);
+    }
+  });
+  proxyReq.on('error', (err) => {
+    log.error(`Download proxy error: ${(err as NodeJS.ErrnoException).code} ${err.message}`);
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to connect to printer' }));
+    }
+  });
+  proxyReq.on('timeout', () => {
+    log.error('Download proxy timeout');
+    proxyReq.destroy();
+    if (!res.headersSent) {
+      res.writeHead(504, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Download timed out' }));
+    }
+  });
+  proxyReq.end();
+}
 
 async function fetchCameraFrame(cameraUrl: string): Promise<Buffer | null> {
   // Return cached snapshot if fresh
@@ -667,6 +797,7 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
 
     // ── File download proxy ─────────────────────────────────────────
     // GET /api/files/download?file=<path>&source=local|u-disk|sd-card
+    // Gcode files are cached on disk so they can be served even when the printer is busy
     if (url.startsWith('/api/files/download') && req.method === 'GET') {
       const params = new URL(url, 'http://localhost').searchParams;
       const fileName = params.get('file');
@@ -676,50 +807,12 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
         res.end(JSON.stringify({ error: 'Missing file parameter' }));
         return;
       }
-      const pathMap: Record<string, string> = { 'local': '/download', 'u-disk': '/download/udisk', 'sd-card': '/download/sdcard' };
-      const dlPath = pathMap[source] ?? '/download';
-      log.info(`Download proxy: ${fileName} from ${dlPath}`);
 
-      const proxyReq = httpRequest({
-        hostname: config.printerIp,
-        port: 80,
-        path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
-        method: 'GET',
-        timeout: 30_000,
-        // Printer's libhv sends both Content-Length and Transfer-Encoding: chunked,
-        // which is invalid HTTP. Node's strict parser rejects this.
-        insecureHTTPParser: true,
-      }, (proxyRes) => {
-        if (proxyRes.statusCode !== 200) {
-          res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: `Printer returned ${proxyRes.statusCode}` }));
-          proxyRes.resume();
-          return;
-        }
-        const baseName = fileName.split('/').pop() || 'file';
-        res.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Disposition': `attachment; filename="${baseName}"`,
-          ...(proxyRes.headers['content-length'] ? { 'Content-Length': proxyRes.headers['content-length'] } : {}),
-        });
-        proxyRes.pipe(res);
-      });
-      proxyReq.on('error', (err) => {
-        log.error(`Download proxy error: ${(err as NodeJS.ErrnoException).code} ${err.message}`);
-        if (!res.headersSent) {
-          res.writeHead(502, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Failed to connect to printer' }));
-        }
-      });
-      proxyReq.on('timeout', () => {
-        log.error('Download proxy timeout');
-        proxyReq.destroy();
-        if (!res.headersSent) {
-          res.writeHead(504, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Download timed out' }));
-        }
-      });
-      proxyReq.end();
+      const isGcode = fileName.toLowerCase().endsWith('.gcode');
+      const baseName = fileName.split('/').pop() || 'file';
+
+      // Try cache first, then fall through to printer proxy
+      void handleFileDownload(res, fileName, baseName, source, isGcode, config);
       return;
     }
 

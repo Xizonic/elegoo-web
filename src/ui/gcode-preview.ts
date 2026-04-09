@@ -22,11 +22,11 @@ export function renderGcodePreview(state: PrinterState): void {
   const isPrinting = s?.machine_status?.status === 2;
   const filename = ps?.filename || '';
 
-  // Auto-load when a new print starts
+  // Auto-load when a new print starts (delay 3s to let printer settle)
   if (isPrinting && filename && filename !== lastPrinterFile) {
     lastPrinterFile = filename;
     if (filename !== loadedFile) {
-      loadGcode(filename);
+      setTimeout(() => loadGcode(filename), 3000);
     }
   }
 
@@ -88,8 +88,22 @@ export async function loadGcode(filename: string, source = 'local'): Promise<voi
     if (statusEl) statusEl.textContent = 'Downloading gcode…';
 
     const url = `/api/files/download?file=${encodeURIComponent(filename)}&source=${encodeURIComponent(source)}`;
-    const resp = await fetchTimeout(url, undefined, 120_000);
-    if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
+    let resp: Response | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        resp = await fetchTimeout(url, undefined, 120_000);
+        if (resp.ok) break;
+        resp = null;
+      } catch (e) {
+        if (attempt < 3) {
+          if (statusEl) statusEl.textContent = `Retry ${attempt}/2 — download failed`;
+          await new Promise(r => setTimeout(r, 2000));
+        } else {
+          throw e;
+        }
+      }
+    }
+    if (!resp || !resp.ok) throw new Error(`Download failed: ${resp?.status ?? 'no response'}`);
 
     if (statusEl) statusEl.textContent = 'Parsing gcode…';
 

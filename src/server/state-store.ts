@@ -8,7 +8,7 @@
 import { EventEmitter } from 'events';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { PrinterAttributes, PrinterStatus, CanvasInfo, FileEntry } from '../types.js';
-import { getLogger } from './logger.js';
+import { getLogger, getEventLogger } from './logger.js';
 
 const log = getLogger('State');
 import {
@@ -90,6 +90,25 @@ export interface EventLogEntry {
   event: PrintEvent;
 }
 
+/** One-line summary of a PrintEvent for the events.log file */
+function summarizeEvent(e: PrintEvent): string {
+  switch (e.type) {
+    case 'connected': return `[CONNECTED] SN ${e.sn}`;
+    case 'disconnected': return '[DISCONNECTED]';
+    case 'print_started': return `[PRINT ${e.resumed ? 'RESUMED' : 'STARTED'}] ${e.filename}`;
+    case 'print_completed': return `[PRINT COMPLETED] ${e.filename} (${e.duration}s)`;
+    case 'print_failed': return `[PRINT FAILED] ${e.filename} — ${e.reason}`;
+    case 'print_progress': return `[PROGRESS] ${e.progress}% — Layer ${e.layer}/${e.totalLayers} — ${e.filename}`;
+    case 'error': return `[ERROR] ${e.names.join(', ')} (codes: ${e.codes.join(', ')})`;
+    case 'filament_runout': return '[FILAMENT RUNOUT]';
+    case 'layer_change': return `[LAYER] ${e.layer}/${e.totalLayers} (${e.durationSec.toFixed(1)}s)`;
+    case 'first_layer_complete': return `[FIRST LAYER] ${e.filename} — ${e.totalLayers} total (${e.durationSec.toFixed(1)}s)`;
+    case 'status_change': return `[STATUS] ${e.from} → ${e.to}`;
+    case 'sub_status_change': return `[SUB_STATUS] ${e.from} → ${e.to}`;
+    default: return `[EVENT] ${JSON.stringify(e)}`;
+  }
+}
+
 export class StateStore extends EventEmitter {
   // Current state
   attributes: PrinterAttributes | null = null;
@@ -155,6 +174,10 @@ export class StateStore extends EventEmitter {
       this.eventLog.push(entry);
       if (this.eventLog.length > this.maxEventLog) this.eventLog.shift();
       this.emit('event_log', entry);
+
+      // Write to events.log file
+      const evLog = getEventLogger();
+      if (evLog) evLog.info(summarizeEvent(event));
     });
 
     bridge.on('connected', (sn: string) => {
@@ -617,7 +640,7 @@ export class StateStore extends EventEmitter {
     if (this.lastMachineStatus === 2) {
       this.emit('print_event', {
         type: 'print_started',
-        filename: ps?.filename ?? 'unknown',
+        filename: ps?.filename || 'unknown',
         resumed: true,
       } satisfies PrintEvent);
     }
@@ -674,7 +697,7 @@ export class StateStore extends EventEmitter {
       }
       this.emit('print_event', {
         type: 'print_started',
-        filename: ps?.filename ?? 'unknown',
+        filename: ps?.filename || 'unknown',
       } satisfies PrintEvent);
     }
 
@@ -682,7 +705,7 @@ export class StateStore extends EventEmitter {
     if (subStatus === 2077 && this.lastSubStatus !== 2077) {
       this.emit('print_event', {
         type: 'print_completed',
-        filename: ps?.filename ?? 'unknown',
+        filename: ps?.filename || 'unknown',
         duration: ps?.print_duration ?? 0,
       } satisfies PrintEvent);
       this.lastProgressNotified = -1;
@@ -695,7 +718,7 @@ export class StateStore extends EventEmitter {
       const reason = SUB_STATUS_NAMES[subStatus] || `Sub-status ${subStatus}`;
       this.emit('print_event', {
         type: 'print_failed',
-        filename: ps?.filename ?? 'unknown',
+        filename: ps?.filename || 'unknown',
         reason,
       } satisfies PrintEvent);
       this.lastProgressNotified = -1;
@@ -730,7 +753,7 @@ export class StateStore extends EventEmitter {
       const names = newExceptions.map((code: number) => EXCEPTION_NAMES[code] || `Unknown (${code})`);
       this.emit('print_event', { type: 'error', codes: newExceptions, names } satisfies PrintEvent);
 
-      if (newExceptions.includes(109) || newExceptions.includes(1211)) {
+      if (!printEnded && (newExceptions.includes(109) || newExceptions.includes(1211))) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
     }

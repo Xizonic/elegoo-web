@@ -199,6 +199,15 @@ export class PrintReportCollector extends EventEmitter {
     );
     const layerTimes = this.store.layerTimes;
 
+    // Re-read filename from current state if it was empty at start time
+    // (CC2 may send filename in a later delta update after machine_status=2)
+    if (!active.filename || active.filename === 'unknown') {
+      const currentFilename = status?.print_status?.filename;
+      if (currentFilename) {
+        active.filename = currentFilename;
+      }
+    }
+
     const report: PrintReport = {
       version: 1,
       id: active.id,

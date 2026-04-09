@@ -10,7 +10,7 @@ import { Bot, InputFile, InputMediaBuilder } from 'grammy';
 import { loadConfig } from './config.js';
 import { MqttBridge, type BridgeEvent } from './mqtt-bridge.js';
 import { registerCommands } from './commands.js';
-import { formatEvent } from './notifications.js';
+import { formatEvent, safeCaption } from './notifications.js';
 import { fetchSnapshot } from './camera.js';
 
 const config = loadConfig();
@@ -35,14 +35,15 @@ registerCommands(bot, bridge, config);
 let liveMessageId: number | null = null;
 
 async function sendNewMessage(text: string, photo: Buffer | null, urgent: boolean): Promise<number | null> {
+  const caption = safeCaption(text);
   if (photo) {
     const msg = await bot.api.sendPhoto(config.chatId, new InputFile(photo, 'snapshot.jpg'), {
-      caption: text,
+      caption,
       parse_mode: 'MarkdownV2',
     });
     return msg.message_id;
   }
-  const msg = await bot.api.sendMessage(config.chatId, text, {
+  const msg = await bot.api.sendMessage(config.chatId, caption, {
     parse_mode: 'MarkdownV2',
     disable_notification: !urgent,
   });
@@ -51,16 +52,17 @@ async function sendNewMessage(text: string, photo: Buffer | null, urgent: boolea
 
 async function updateLiveMessage(text: string, photo: Buffer | null): Promise<boolean> {
   if (!liveMessageId) return false;
+  const caption = safeCaption(text);
   try {
     if (photo) {
       const media = InputMediaBuilder.photo(new InputFile(photo, 'snapshot.jpg'), {
-        caption: text,
+        caption,
         parse_mode: 'MarkdownV2',
       });
       await bot.api.editMessageMedia(config.chatId, liveMessageId, media);
     } else {
       await bot.api.editMessageCaption(config.chatId, liveMessageId, {
-        caption: text,
+        caption,
         parse_mode: 'MarkdownV2',
       });
     }

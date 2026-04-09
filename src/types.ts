@@ -179,6 +179,8 @@ export const SUB_STATUS_NAMES: Record<number, string> = {
   1062: 'Unloading Filament',
   1063: 'Filament Load Complete',
   1064: 'Filament Unload Complete',
+  1065: 'Filament Load Failed',
+  1066: 'Filament Unload Failed',
   1133: 'Heating Nozzle',
   1134: 'Insert Filament',
   1135: 'Biting Filament',

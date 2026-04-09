@@ -20,6 +20,14 @@ function esc(text: string): string {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
+/**
+ * Safety-net: catch any MarkdownV2 special chars that slipped through unescaped.
+ * Uses negative lookbehind so already-escaped chars (preceded by \) are untouched.
+ */
+function safeCaption(text: string): string {
+  return text.replace(/(?<!\\)([|])/g, '\\$1');
+}
+
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -126,7 +134,7 @@ export class TelegramIntegration {
     });
 
     this.bot.command('status', async (ctx) => {
-      const summary = this.store.getStatusSummary();
+      const summary = safeCaption(this.store.getStatusSummary());
       const photo = await getSnapshot(this.config);
       if (photo) {
         await ctx.replyWithPhoto(new InputFile(photo, 'snapshot.jpg'), {
@@ -199,15 +207,16 @@ export class TelegramIntegration {
 
   private async sendNew(text: string, photo: Buffer | null, urgent: boolean): Promise<number | null> {
     const chatId = this.config.telegramChatId;
+    const caption = safeCaption(text);
     if (photo) {
       const msg = await this.bot.api.sendPhoto(chatId, new InputFile(photo, `snapshot_${Date.now()}.jpg`), {
-        caption: text,
+        caption,
         parse_mode: 'MarkdownV2',
       });
       log.info(`Sent new photo message ${msg.message_id}`);
       return msg.message_id;
     }
-    const msg = await this.bot.api.sendMessage(chatId, text, {
+    const msg = await this.bot.api.sendMessage(chatId, caption, {
       parse_mode: 'MarkdownV2',
       disable_notification: !urgent,
     });
@@ -218,16 +227,17 @@ export class TelegramIntegration {
   private async updateLiveMessage(text: string, photo: Buffer | null): Promise<boolean> {
     if (!this.liveMessageId) return false;
     const chatId = this.config.telegramChatId;
+    const caption = safeCaption(text);
     try {
       if (photo) {
         const media = InputMediaBuilder.photo(new InputFile(photo, `snapshot_${Date.now()}.jpg`), {
-          caption: text,
+          caption,
           parse_mode: 'MarkdownV2',
         });
         await this.bot.api.editMessageMedia(chatId, this.liveMessageId, media);
       } else {
         await this.bot.api.editMessageCaption(chatId, this.liveMessageId, {
-          caption: text,
+          caption,
           parse_mode: 'MarkdownV2',
         });
       }

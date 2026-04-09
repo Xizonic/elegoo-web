@@ -7,6 +7,7 @@ import { InputFile } from 'grammy';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { BotConfig } from './config.js';
 import { fetchSnapshot } from './camera.js';
+import { safeCaption } from './notifications.js';
 
 export function registerCommands(
   bot: { command: (cmd: string, handler: (ctx: Context) => Promise<void>) => void },
@@ -34,7 +35,7 @@ export function registerCommands(
   });
 
   bot.command('status', async (ctx) => {
-    const summary = bridge.getStatusSummary();
+    const summary = safeCaption(bridge.getStatusSummary());
 
     if (config.cameraEnabled) {
       const photo = await fetchSnapshot(config.cameraUrl);

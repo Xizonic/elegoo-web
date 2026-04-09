@@ -5,6 +5,7 @@ import { mkdirSync } from 'fs';
 const { combine, timestamp, printf, colorize, json } = winston.format;
 
 let logger: winston.Logger;
+let eventLogger: winston.Logger | null = null;
 
 const prettyConsole = printf(({ level, message, timestamp: ts, module: mod, ...rest }) => {
   const prefix = mod ? `[${mod}]` : '';
@@ -32,8 +33,24 @@ export function initLogger(dataDir: string): winston.Logger {
       }),
       new winston.transports.File({
         filename: path.join(logDir, 'error.log'),
-        level: 'error',
+        level: 'warn',
         format: combine(json()),
+        maxsize: 2 * 1024 * 1024, // 2 MB
+        maxFiles: 3,
+        tailable: true,
+      }),
+    ],
+  });
+
+  // Separate logger for printer events (print start/stop, errors, layer milestones)
+  const eventLine = printf(({ message, timestamp: ts }) => `${ts} ${message}`);
+  eventLogger = winston.createLogger({
+    level: 'info',
+    format: combine(timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })),
+    transports: [
+      new winston.transports.File({
+        filename: path.join(logDir, 'events.log'),
+        format: combine(eventLine),
         maxsize: 2 * 1024 * 1024, // 2 MB
         maxFiles: 3,
         tailable: true,
@@ -58,4 +75,8 @@ export function getLogger(module?: string): winston.Logger {
     });
   }
   return module ? logger.child({ module }) : logger;
+}
+
+export function getEventLogger(): winston.Logger | null {
+  return eventLogger;
 }

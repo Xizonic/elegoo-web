@@ -2,11 +2,9 @@
 
 ## High Priority
 
-- [X] **Chart draw loop runs when tab is hidden** — `drawLoop()` in charts.ts calls `requestAnimationFrame` unconditionally every frame, even when the browser tab is in the background. Wastes CPU/GPU. Use `document.visibilitychange` to pause/resume the loop.
-- [x] **No timeouts on browser `fetch()` calls** — All `fetch()` in UI code (settings, reports, AI labels, debug capture) lack `AbortController` timeouts. If server hangs, browser waits indefinitely. Add 15–30s timeout with user feedback.
 - [ ] **No test suite** — Zero tests in the entire project. Add at minimum: unit tests for state merging (`printer-state.ts` deep merge), time formatting helpers, server state-store logic, and integration tests for MQTT message parsing.
-- [x] **Command timeout collision for same-method commands** — If a command (e.g. method 1028) is in-flight and the user sends the same method again before timeout, the old timer is cleared but the new one may leave elements disabled if the first response arrives for the wrong entry. Track by request ID, not method.
-- [x] **Server config validation on startup** — `config.ts` reads `PRINTER_IP` from env without validation. Invalid values (empty string, non-IP) silently fail on MQTT connect. Validate IP format, port ranges, and required env vars at startup.
+- [x] error and warnings are not written to the error.log? 
+- [ ] gcode preview still fails on download , error 502 / socket hang up. 
 
 ## Medium Priority
 
@@ -136,3 +134,7 @@
 - [x] thumbnail er vanskelig å se når vi har mørkt filament og mørk bakgrunn. Dette må automatisk justeres basert på fargen på bildet/filamentet i bildet. 
 - [x] Hvorfor har denne logentrien [Camera] prefix: "[svc] 2026-04-07 11:00:57 info [Camera] Download proxy: ECC2_0.4_Elegoo Nameplate_Elegoo PLA _0.2_17m28s.gcode from /download"
 - [x] ~~Print summary report per print — PDF with stats, charts, camera snapshots, and event log. Auto-generated on print completion. REST API + UI panel + PDFKit generation.~~
+- [x] **Command timeout collision for same-method commands** — If a command (e.g. method 1028) is in-flight and the user sends the same method again before timeout, the old timer is cleared but the new one may leave elements disabled if the first response arrives for the wrong entry. Track by request ID, not method.
+- [x] **Server config validation on startup** — `config.ts` reads `PRINTER_IP` from env without validation. Invalid values (empty string, non-IP) silently fail on MQTT connect. Validate IP format, port ranges, and required env vars at startup.
+- [X] **Chart draw loop runs when tab is hidden** — `drawLoop()` in charts.ts calls `requestAnimationFrame` unconditionally every frame, even when the browser tab is in the background. Wastes CPU/GPU. Use `document.visibilitychange` to pause/resume the loop.
+- [x] **No timeouts on browser `fetch()` calls** — All `fetch()` in UI code (settings, reports, AI labels, debug capture) lack `AbortController` timeouts. If server hangs, browser waits indefinitely. Add 15–30s timeout with user feedback.

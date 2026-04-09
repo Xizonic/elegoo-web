@@ -303,7 +303,7 @@
                 <button class="btn btn-sm move-btn" data-axis="y" data-dir="1">Y+</button>
                 <div></div>
                 <button class="btn btn-sm move-btn" data-axis="x" data-dir="-1">X-</button>
-                <button class="btn btn-sm move-btn home-btn" id="btn-home-xy" title="Home XY">⌂</button>
+                <button class="btn btn-sm move-btn home-btn" id="btn-home-all" title="Home All Axes">⌂</button>
                 <button class="btn btn-sm move-btn" data-axis="x" data-dir="1">X+</button>
                 <div></div>
                 <button class="btn btn-sm move-btn" data-axis="y" data-dir="-1">Y-</button>
@@ -311,14 +311,14 @@
               </div>
               <div class="move-z-col">
                 <button class="btn btn-sm move-btn" data-axis="z" data-dir="1">Z↑</button>
-                <button class="btn btn-sm move-btn home-btn" id="btn-home-z" title="Home Z">⌂</button>
+                <button class="btn btn-sm move-btn home-btn" id="btn-home-all-z" title="Home All Axes">⌂</button>
                 <button class="btn btn-sm move-btn" data-axis="z" data-dir="-1">Z↓</button>
               </div>
             </div>
             <div class="position-display">
-              <span class="axis">X:<span id="pos-x">--</span></span>
-              <span class="axis">Y:<span id="pos-y">--</span></span>
-              <span class="axis">Z:<span id="pos-z">--</span></span>
+              <span class="axis" data-home="x"><span class="home-dot" id="home-x" title="X not homed"></span>X:<span id="pos-x">--</span></span>
+              <span class="axis" data-home="y"><span class="home-dot" id="home-y" title="Y not homed"></span>Y:<span id="pos-y">--</span></span>
+              <span class="axis" data-home="z"><span class="home-dot" id="home-z" title="Z not homed"></span>Z:<span id="pos-z">--</span></span>
             </div>
             <div class="move-distance">
               <button class="btn btn-sm dist-btn" data-dist="0.1">0.1mm</button>

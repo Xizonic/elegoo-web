@@ -231,7 +231,8 @@ function buildSettingsHTML(content: HTMLElement): void {
           [currentLayout.order[idx], currentLayout.order[idx - 1]];
         saveCardLayout(currentLayout);
         applyCardLayout();
-        renderSettingsContent(); // Re-render the list
+        settingsRendered = false;
+        renderSettingsContent();
       }
     });
   });

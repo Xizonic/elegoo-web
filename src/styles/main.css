@@ -731,6 +731,20 @@ body {
   font-size: 13px;
 }
 
+.home-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger, #e74c3c);
+  margin-right: 4px;
+  vertical-align: middle;
+  transition: background 0.3s;
+}
+.home-dot.homed {
+  background: var(--success, #2ecc71);
+}
+
 .axis span { color: var(--accent); font-weight: 600; }
 
 .move-distance {
