@@ -753,13 +753,18 @@ export class StateStore extends EventEmitter {
       const names = newExceptions.map((code: number) => EXCEPTION_NAMES[code] || `Unknown (${code})`);
       this.emit('print_event', { type: 'error', codes: newExceptions, names } satisfies PrintEvent);
 
-      if (!printEnded && (newExceptions.includes(109) || newExceptions.includes(1211))) {
+      // Suppress filament runout near print completion — sensor may read empty as print finishes
+      const progress = ms?.progress ?? 0;
+      const nearCompletion = printEnded || progress >= 98;
+      if (!nearCompletion && (newExceptions.includes(109) || newExceptions.includes(1211))) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
     }
 
-    // Filament runout from sensor — only during active printing, not when print just ended
-    if (ext && ext.filament_detect_enable && machineStatus === 2 && !printEnded) {
+    // Filament runout from sensor — only during active printing, not near completion
+    // (sensor may read as empty when print finishes and filament retracts)
+    const progressPct = ms?.progress ?? 0;
+    if (ext && ext.filament_detect_enable && machineStatus === 2 && !printEnded && progressPct < 98) {
       if (!ext.filament_detected && this.wasFilamentDetected) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }

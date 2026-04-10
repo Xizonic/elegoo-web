@@ -3,48 +3,32 @@
 ## High Priority
 
 - [ ] **No test suite** — Zero tests in the entire project. Add at minimum: unit tests for state merging (`printer-state.ts` deep merge), time formatting helpers, server state-store logic, and integration tests for MQTT message parsing.
-- [x] error and warnings are not written to the error.log? 
-- [x] gcode preview still fails on download , error 502 / socket hang up. 
 
 ## Medium Priority
 
-- [x] **No client-side rate limiting on MQTT commands** — User can spam move/temp/fan buttons rapidly, flooding the printer. Add throttle (max 1 command per 100ms per method) or disable button until acknowledgement.
-- [x] **Missing CORS `Access-Control-Max-Age` header** — `/mcp`, `/octoprint`, `/moonraker` CORS preflight responses lack `Access-Control-Max-Age`. Browsers re-preflight every request. Add `Access-Control-Max-Age: 86400` to reduce overhead.
-- [x] **WebSocket broadcast has no backpressure handling** — `WebSocketTransport.broadcast()` sends to all clients without checking if socket is draining. Slow clients accumulate messages in memory. Add `bufferedAmount` check and drop messages for stalled clients.
-- [x] **MJPEG stream upstream fan-out** — Each browser client requesting the camera stream could open a separate upstream MJPEG connection. Should maintain a single upstream connection and fan-out frames to all clients.
-- [x] **Telegram chat ID not validated** — `POST /api/telegram/config` accepts any string for `chatId`. Should validate it is a numeric string (positive or negative integer) before saving.
-- [x] **File upload lacks client-side validation** — No file size limit, MIME type check, or filename sanitization before uploading. Validate `.gcode`/`.3mf` extension and reasonable size limit (~500MB) client-side.
-- [x] **Camera snapshot has no retry on failure** — If snapshot fetch fails (network glitch), user must manually retry. Add automatic retry with exponential backoff (max 3 attempts).
 
 ## Lower Priority / Nice-to-Have
 
 - [ ] **Power loss recovery UI** — Status 15 has no UI handling; show dialog to resume or cancel
 - [ ] **AI detection settings** — Show/configure spaghetti detection and foreign object detection (methods 2010/2011)
 - [ ] **Export MQTT log** — Download log as JSON for offline debugging
-- [x] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting, with filament-to-Canvas slot mapping
 - [ ] **OTA firmware update** — Firmware update UI with progress (method 1064, sub_status OTA* codes)
 - [ ] **Dark/light theme toggle** — CSS custom properties make this straightforward
 - [ ] **Keyboard shortcuts** — Pause (P), Resume (R), Stop (S), Home (H) etc.
 - [ ] **Device rename** — Set printer hostname from UI (method 1060)
-- [x] **Emergency stop button** — Prominent e-stop with confirmation (method 1036)
 - [ ] **History delete** — Remove print history entries (method 1049)
 - [ ] **Print queue** — Queue multiple files for sequential printing
 - [ ] **Notification sound** — Audio alert when print completes or error occurs
 - [ ] **Connection presets** — Save/recall multiple printer IPs
 - [ ] **Multi-printer support** — Connect to multiple printers simultaneously in tabs
-- [x] **WebSocket keep-alive indicator** — Visual heartbeat indicator showing connection health
 - [ ] **Rate limiting UI** — Show when printer returns "busy" (error code) and queue retries
 - [ ] **Localization** — i18n support (English/Norwegian/Chinese at minimum, matching official app)
 - [ ] **Relative time display** — Show "2m ago" / "just now" for log timestamps option
 - [ ] **Broken thumbnail fallback** — If printer returns corrupted/invalid PNG thumbnail, `<img>` shows broken icon. Add `onerror` handler to show placeholder image.
-- [x] **Bed mesh NaN handling** — If mesh data contains NaN or non-square dimensions, 3D/heatmap rendering breaks. Validate and sanitize mesh data before rendering.
-- [x] **XYZ position feedback after move** — Move buttons don't confirm success or show new position. Request position update after move command and display result.
 - [ ] **Duplicate consecutive command protection** — User mashing pause/resume sends many duplicate commands. Deduplicate pending commands of same method before sending.
 - [ ] **Focus trapping in camera fullscreen modal** — Camera overlay doesn't trap keyboard focus. Tab key can escape the modal. Add focus trap and restore focus on close.
 - [ ] **Text overflow inconsistency** — Some UI truncates text in CSS (`text-overflow: ellipsis`), some in JS. Standardize approach across all labels and filenames.
 - [ ] **Dashboard layout reset button** — If user accidentally reorders cards, no easy way to restore default. Add a "Reset layout" button in settings.
-- [x] **Service status "Connecting..." state** — UI shows "Disconnected" briefly on page load before first status message. Show "Connecting…" instead of "Disconnected" during initial connection.
-- [x] **Browser error reporting to server** — Client-side errors only appear in browser console. Ship critical JS errors to server log via `/api/client-error` for post-incident analysis.
 - [ ] **Prometheus endpoint auth** — `/api/metrics/prometheus` has no authentication or rate limiting. Add optional bearer token for scrape protection.
 
 ## Completed
@@ -138,3 +122,19 @@
 - [x] **Server config validation on startup** — `config.ts` reads `PRINTER_IP` from env without validation. Invalid values (empty string, non-IP) silently fail on MQTT connect. Validate IP format, port ranges, and required env vars at startup.
 - [X] **Chart draw loop runs when tab is hidden** — `drawLoop()` in charts.ts calls `requestAnimationFrame` unconditionally every frame, even when the browser tab is in the background. Wastes CPU/GPU. Use `document.visibilitychange` to pause/resume the loop.
 - [x] **No timeouts on browser `fetch()` calls** — All `fetch()` in UI code (settings, reports, AI labels, debug capture) lack `AbortController` timeouts. If server hangs, browser waits indefinitely. Add 15–30s timeout with user feedback.
+- [x] error and warnings are not written to the error.log? 
+- [x] gcode preview still fails on download , error 502 / socket hang up. 
+- [x] **No client-side rate limiting on MQTT commands** — User can spam move/temp/fan buttons rapidly, flooding the printer. Add throttle (max 1 command per 100ms per method) or disable button until acknowledgement.
+- [x] **Missing CORS `Access-Control-Max-Age` header** — `/mcp`, `/octoprint`, `/moonraker` CORS preflight responses lack `Access-Control-Max-Age`. Browsers re-preflight every request. Add `Access-Control-Max-Age: 86400` to reduce overhead.
+- [x] **WebSocket broadcast has no backpressure handling** — `WebSocketTransport.broadcast()` sends to all clients without checking if socket is draining. Slow clients accumulate messages in memory. Add `bufferedAmount` check and drop messages for stalled clients.
+- [x] **MJPEG stream upstream fan-out** — Each browser client requesting the camera stream could open a separate upstream MJPEG connection. Should maintain a single upstream connection and fan-out frames to all clients.
+- [x] **Telegram chat ID not validated** — `POST /api/telegram/config` accepts any string for `chatId`. Should validate it is a numeric string (positive or negative integer) before saving.
+- [x] **File upload lacks client-side validation** — No file size limit, MIME type check, or filename sanitization before uploading. Validate `.gcode`/`.3mf` extension and reasonable size limit (~500MB) client-side.
+- [x] **Camera snapshot has no retry on failure** — If snapshot fetch fails (network glitch), user must manually retry. Add automatic retry with exponential backoff (max 3 attempts).
+- [x] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting, with filament-to-Canvas slot mapping
+- [x] **Emergency stop button** — Prominent e-stop with confirmation (method 1036)
+- [x] **WebSocket keep-alive indicator** — Visual heartbeat indicator showing connection health
+- [x] **Bed mesh NaN handling** — If mesh data contains NaN or non-square dimensions, 3D/heatmap rendering breaks. Validate and sanitize mesh data before rendering.
+- [x] **XYZ position feedback after move** — Move buttons don't confirm success or show new position. Request position update after move command and display result.
+- [x] **Service status "Connecting..." state** — UI shows "Disconnected" briefly on page load before first status message. Show "Connecting…" instead of "Disconnected" during initial connection.
+- [x] **Browser error reporting to server** — Client-side errors only appear in browser console. Ship critical JS errors to server log via `/api/client-error` for post-incident analysis.

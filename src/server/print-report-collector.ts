@@ -112,6 +112,15 @@ export class PrintReportCollector extends EventEmitter {
   }
 
   private handleEvent(event: PrintEvent): void {
+    // Update filename as soon as it becomes available (CC2 may send it in a later delta)
+    if (this.activeReport && (!this.activeReport.filename || this.activeReport.filename === 'unknown')) {
+      const fn = 'filename' in event ? (event as { filename?: string }).filename : undefined;
+      if (fn && fn !== 'unknown') {
+        log.info(`Report filename resolved: ${fn}`);
+        this.activeReport.filename = fn;
+      }
+    }
+
     switch (event.type) {
       case 'print_started':
         if (event.resumed && this.activeReport) {
@@ -265,6 +274,15 @@ export class PrintReportCollector extends EventEmitter {
     const active = this.activeReport;
     if (!active || !this.config.cameraEnabled) return;
     if (active.snapshots.length >= MAX_SNAPSHOTS) return;
+
+    // Try to resolve filename from state if still unknown
+    if (!active.filename || active.filename === 'unknown') {
+      const currentFilename = this.store.status?.print_status?.filename;
+      if (currentFilename) {
+        log.info(`Report filename resolved from state: ${currentFilename}`);
+        active.filename = currentFilename;
+      }
+    }
 
     try {
       const jpeg = await getSnapshot(this.config);
