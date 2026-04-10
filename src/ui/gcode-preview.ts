@@ -125,7 +125,8 @@ export function renderGcodePreview(state: PrinterState): void {
   if (isPrinting && currentLayer > 0 && currentLayer !== lastEndLayer) {
     lastEndLayer = currentLayer;
     preview.singleLayerMode = singleLayerMode;
-    preview.endLayer = currentLayer;
+    // gcode-preview counts preamble as layer 0, so printer layer N = preview layer N+1
+    preview.endLayer = currentLayer + 1;
     preview.render();
 
     // Sync slider
@@ -255,11 +256,13 @@ function updateInfo(state: PrinterState): void {
   const totalLayer = ps?.total_layer ?? state.fileTotalLayers ?? preview.countLayers;
   const zPos = s?.gcode_move?.z ?? 0;
   const progress = s?.machine_status?.progress ?? 0;
+  const displayedLayer = preview.endLayer ?? preview.countLayers;
 
   if (isPrinting) {
-    infoEl.textContent = `Layer ${currentLayer}/${totalLayer} · Z: ${zPos.toFixed(1)}mm · ${progress}%`;
+    const layerLabel = singleLayerMode ? `Showing ${displayedLayer}` : `Layer ${currentLayer}`;
+    infoEl.textContent = `${layerLabel}/${totalLayer} · Z: ${zPos.toFixed(1)}mm · ${progress}%`;
   } else {
-    infoEl.textContent = `${preview.countLayers} layers loaded`;
+    infoEl.textContent = `Layer ${displayedLayer}/${preview.countLayers}`;
   }
 }
 
@@ -271,12 +274,6 @@ function shortName(path: string): string {
 
 /** Bind control event handlers — call once at startup */
 export function bindGcodePreviewControls(): void {
-  // Sync button states from persisted preferences
-  const followBtnInit = $('btn-gcode-follow');
-  if (followBtnInit) followBtnInit.classList.toggle('active', followMode);
-  const singleBtnInit = $('btn-gcode-single-layer');
-  if (singleBtnInit) singleBtnInit.classList.toggle('active', singleLayerMode);
-
   // Layer slider
   const slider = $('gcode-layer-slider') as HTMLInputElement | null;
   if (slider) {
