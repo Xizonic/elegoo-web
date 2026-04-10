@@ -61,6 +61,8 @@ export function requestPrintDialog(
   pendingPrint = { filename, fullPath, client, state };
   // Request file detail to get color_map + thumbnail + metadata
   client.sendCommand(1046, { storage_media: currentFileSource(), filename: fullPath });
+  // Also request thumbnail separately (1046 may not include it)
+  client.sendCommand(1045, { storage_media: currentFileSource(), file_name: fullPath });
 }
 
 /**
@@ -194,6 +196,7 @@ function showDialog(
 
   // Auto-map colors to Canvas trays
   let mappings = isMultiColor ? autoMap(colorMap, canvas) : [];
+  const autoRefill = canvas?.auto_refill ?? false;
 
   // Build dialog HTML
   const overlay = document.createElement('div');
@@ -225,8 +228,8 @@ function showDialog(
       <div class="print-dialog-body">
         <div class="print-dialog-file-info">
           <div class="print-dialog-thumbnail" id="print-dialog-thumb">
-            ${detail?.thumbnail
-              ? `<img src="data:image/png;base64,${detail.thumbnail}" alt="Preview" id="print-dialog-thumb-img">`
+            ${(detail?.thumbnail || state.thumbnail)
+              ? `<img src="data:image/png;base64,${detail?.thumbnail || state.thumbnail}" alt="Preview" id="print-dialog-thumb-img">`
               : '<div class="print-dialog-no-thumb">No preview</div>'}
           </div>
           <div class="print-dialog-meta">
@@ -240,14 +243,15 @@ function showDialog(
           <div class="print-dialog-settings">
             <div class="print-dialog-setting">
               <label>Build Plate</label>
-              <div class="print-dialog-radio-group">
-                <label class="print-dialog-radio"><input type="radio" name="print-bed" value="A" checked><span>Textured (A)</span></label>
-                <label class="print-dialog-radio"><input type="radio" name="print-bed" value="B"><span>Smooth (B)</span></label>
+              <div class="print-dialog-bed-toggle">
+                <button type="button" class="print-bed-btn active" data-bed="A">Textured (A)</button>
+                <button type="button" class="print-bed-btn" data-bed="B">Smooth (B)</button>
               </div>
             </div>
             <div class="print-dialog-checkboxes">
-              <label class="print-dialog-checkbox"><input type="checkbox" id="print-opt-leveling" checked><span>Bed Leveling</span></label>
-              <label class="print-dialog-checkbox"><input type="checkbox" id="print-opt-timelapse"><span>Timelapse</span></label>
+              <label class="print-dialog-checkbox"><input type="checkbox" id="print-opt-timelapse" checked><span>Timelapse</span></label>
+              <label class="print-dialog-checkbox"><input type="checkbox" id="print-opt-leveling"><span>Bed Leveling</span></label>
+              ${isMultiColor ? `<label class="print-dialog-checkbox"><input type="checkbox" id="print-opt-auto-refill" ${autoRefill ? 'checked' : ''}><span>Auto Refill</span></label>` : ''}
             </div>
           </div>
         </div>
@@ -273,6 +277,14 @@ function showDialog(
     bindMappingDropdowns(mappings, trays);
   }
 
+  // Bind bed plate toggle buttons
+  overlay.querySelectorAll('.print-bed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      overlay.querySelectorAll('.print-bed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
   // Close handlers
   const close = () => overlay.remove();
   document.getElementById('print-dialog-cancel')!.addEventListener('click', close);
@@ -292,7 +304,7 @@ function showDialog(
       }
     }
 
-    const bedType = (overlay.querySelector('input[name="print-bed"]:checked') as HTMLInputElement)?.value || 'A';
+    const bedType = (overlay.querySelector('.print-bed-btn.active') as HTMLElement)?.dataset.bed || 'A';
     const leveling = (document.getElementById('print-opt-leveling') as HTMLInputElement).checked;
     const timelapse = (document.getElementById('print-opt-timelapse') as HTMLInputElement).checked;
 
@@ -358,6 +370,14 @@ function showDialog(
       progressEl.remove();
     }
 
+    // Update auto refill setting if changed
+    if (isMultiColor) {
+      const autoRefillEl = document.getElementById('print-opt-auto-refill') as HTMLInputElement | null;
+      if (autoRefillEl && autoRefillEl.checked !== (canvas?.auto_refill ?? false)) {
+        client.sendCommand(2004, { auto_refill: autoRefillEl.checked });
+      }
+    }
+
     client.sendCommand(1020, {
       storage_media: currentFileSource(),
       filename: fullPath,
@@ -375,21 +395,51 @@ function showDialog(
   });
 }
 
-/** Render the filament mapping rows */
+/** Render the filament mapping as gcode color chips + graphical 2×2 spool grids */
 function renderMappings(mappings: ColorMapping[], trays: FlatTray[]): string {
+  // Group trays by canvas unit
+  const canvasUnits = new Map<number, FlatTray[]>();
+  for (const ft of trays) {
+    const list = canvasUnits.get(ft.canvasId) || [];
+    list.push(ft);
+    canvasUnits.set(ft.canvasId, list);
+  }
+
   return mappings.map((m, idx) => {
     const gcColor = m.gcodeColor;
     const gcContrast = contrastColor(gcColor);
-    const mapped = m.trayId !== -1;
-    const mapColor = mapped ? m.mappedColor : '#555';
-    const mapContrast = mapped ? contrastColor(mapColor) : '#aaa';
 
-    // Build tray options for dropdown
-    const options = trays.map(ft => {
-      const tc = ft.tray.filament_color.startsWith('#') ? ft.tray.filament_color : `#${ft.tray.filament_color}`;
-      const selected = ft.canvasId === m.canvasId && ft.tray.tray_id === m.trayId;
-      return `<option value="${ft.canvasId}:${ft.tray.tray_id}" ${selected ? 'selected' : ''} data-color="${escapeAttr(tc)}">${ft.tray.filament_type} (C${ft.canvasId + 1}:T${ft.tray.tray_id + 1})</option>`;
-    }).join('');
+    // Render a 2×2 spool grid for each canvas unit
+    // Physical layout CCW from top-left: tray 0=TL, 1=BL, 2=BR, 3=TR
+    // CSS grid row-major: pos0=TL, pos1=TR, pos2=BL, pos3=BR
+    const gridOrder = [0, 3, 1, 2]; // maps grid position → tray index
+
+    let gridsHtml = '';
+    for (const [canvasId, unitTrays] of canvasUnits) {
+      const spoolsHtml = gridOrder.map(trayIdx => {
+        const ft = unitTrays.find(t => t.tray.tray_id === trayIdx);
+        if (!ft) return '<div class="print-spool print-spool-empty"></div>';
+
+        const color = ft.tray.filament_color.startsWith('#') ? ft.tray.filament_color : `#${ft.tray.filament_color}`;
+        const isEmpty = ft.tray.status === 0;
+        const isSelected = ft.canvasId === m.canvasId && ft.tray.tray_id === m.trayId;
+        const spoolColor = isEmpty ? '#434343' : color;
+        const typeLabel = isEmpty ? '/' : ft.tray.filament_type;
+        const trayNum = ft.tray.tray_id + 1;
+        const labelContrast = contrastColor(spoolColor);
+
+        return `<div class="print-spool ${isEmpty ? 'print-spool-empty' : ''} ${isSelected ? 'print-spool-selected' : ''}"
+          data-idx="${idx}" data-canvas="${ft.canvasId}" data-tray="${ft.tray.tray_id}"
+          style="--spool-color: ${escapeAttr(spoolColor)}"
+          title="${escapeAttr(typeLabel)} (C${canvasId + 1}:T${trayNum})">
+          <div class="print-spool-color"></div>
+          <div class="print-spool-num" style="color:${labelContrast}">${trayNum}</div>
+          <div class="print-spool-type" style="color:${labelContrast}">${escapeHtml(typeLabel)}</div>
+        </div>`;
+      }).join('');
+
+      gridsHtml += `<div class="print-spool-grid" data-canvas="${canvasId}">${spoolsHtml}</div>`;
+    }
 
     return `
       <div class="print-mapping-row" data-idx="${idx}">
@@ -397,51 +447,45 @@ function renderMappings(mappings: ColorMapping[], trays: FlatTray[]): string {
           ${escapeHtml(m.gcodeType)}
         </div>
         <div class="print-mapping-arrow">→</div>
-        <div class="print-mapping-tray">
-          <select class="print-mapping-select" data-idx="${idx}" style="background:${escapeAttr(mapColor)};color:${mapContrast}">
-            <option value="-1:-1" ${!mapped ? 'selected' : ''}>-- Select tray --</option>
-            ${options}
-          </select>
+        <div class="print-mapping-trays">
+          ${gridsHtml}
         </div>
       </div>`;
   }).join('');
 }
 
-/** Bind change events on mapping dropdowns */
+/** Bind click events on spool grid items */
 function bindMappingDropdowns(mappings: ColorMapping[], trays: FlatTray[]): void {
   const container = document.getElementById('print-dialog-mappings');
   if (!container) return;
 
-  container.querySelectorAll('.print-mapping-select').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const select = sel as HTMLSelectElement;
-      const idx = parseInt(select.dataset.idx ?? '-1');
-      if (idx < 0 || idx >= mappings.length) return;
+  container.addEventListener('click', (e) => {
+    const spool = (e.target as HTMLElement).closest('.print-spool[data-idx]') as HTMLElement | null;
+    if (!spool || spool.classList.contains('print-spool-empty')) return;
 
-      const [canvasStr, trayStr] = select.value.split(':');
-      const canvasId = parseInt(canvasStr);
-      const trayId = parseInt(trayStr);
+    const idx = parseInt(spool.dataset.idx ?? '-1');
+    const canvasId = parseInt(spool.dataset.canvas ?? '-1');
+    const trayId = parseInt(spool.dataset.tray ?? '-1');
+    if (idx < 0 || idx >= mappings.length) return;
 
-      if (canvasId === -1) {
-        mappings[idx].canvasId = -1;
-        mappings[idx].trayId = -1;
-        mappings[idx].mappedColor = '';
-        mappings[idx].mappedType = '';
-      } else {
-        const ft = trays.find(t => t.canvasId === canvasId && t.tray.tray_id === trayId);
-        if (ft) {
-          mappings[idx].canvasId = canvasId;
-          mappings[idx].trayId = trayId;
-          mappings[idx].mappedColor = ft.tray.filament_color.startsWith('#')
-            ? ft.tray.filament_color : `#${ft.tray.filament_color}`;
-          mappings[idx].mappedType = ft.tray.filament_type;
-        }
-      }
+    const ft = trays.find(t => t.canvasId === canvasId && t.tray.tray_id === trayId);
+    if (!ft) return;
 
-      // Update select styling
-      const color = mappings[idx].mappedColor || '#555';
-      select.style.background = color;
-      select.style.color = contrastColor(color);
-    });
+    // Toggle: clicking already-selected spool deselects it
+    if (mappings[idx].canvasId === canvasId && mappings[idx].trayId === trayId) {
+      mappings[idx].canvasId = -1;
+      mappings[idx].trayId = -1;
+      mappings[idx].mappedColor = '';
+      mappings[idx].mappedType = '';
+    } else {
+      mappings[idx].canvasId = canvasId;
+      mappings[idx].trayId = trayId;
+      mappings[idx].mappedColor = ft.tray.filament_color.startsWith('#')
+        ? ft.tray.filament_color : `#${ft.tray.filament_color}`;
+      mappings[idx].mappedType = ft.tray.filament_type;
+    }
+
+    // Re-render all mappings to update selection state
+    container.innerHTML = renderMappings(mappings, trays);
   });
 }

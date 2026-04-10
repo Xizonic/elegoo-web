@@ -444,8 +444,8 @@ function connectToService(): void {
           }
         }
       }
-      if (method === 1051) {
-        requestAnimationFrame(() => renderTimelapse(state));
+      if (method === 1051 && state.videoUrl) {
+        showTimelapsePlayer(state.videoUrl);
       }
       if (method === 1050 && state.videoUrl) {
         showTimelapsePlayer(state.videoUrl);
@@ -464,6 +464,7 @@ function connectToService(): void {
       }
       if (method === 1036) {
         requestAnimationFrame(() => renderPrintHistory(state));
+        requestAnimationFrame(() => renderTimelapse(state));
       }
       if (method === 2003) {
         const result = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;

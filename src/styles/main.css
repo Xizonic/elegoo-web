@@ -2423,6 +2423,15 @@ body {
   margin-bottom: 8px;
   font-weight: 600;
 }
+/* Auto refill toggle in print dialog */
+.print-dialog-auto-refill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
 /* Filament mapping rows */
 .print-dialog-mappings {
   display: flex;
@@ -2452,6 +2461,11 @@ body {
   flex: 1;
   min-width: 0;
 }
+.print-mapping-trays {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
 .print-mapping-select {
   width: 100%;
   padding: 4px 8px;
@@ -2465,6 +2479,68 @@ body {
 .print-mapping-select:focus {
   outline: 1px solid var(--accent);
 }
+/* Spool grid for filament mapping */
+.print-spool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.print-spool {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, transform 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+.print-spool:hover:not(.print-spool-empty) {
+  transform: scale(1.1);
+  border-color: var(--text-secondary);
+}
+.print-spool-selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 8px var(--accent);
+  transform: scale(1.05);
+}
+.print-spool-color {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: var(--spool-color, #434343);
+}
+.print-spool-empty {
+  opacity: 0.3;
+  cursor: default;
+}
+.print-spool-empty .print-spool-color {
+  background: #434343;
+}
+.print-spool-num {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 0 4px rgba(0,0,0,0.6);
+}
+.print-spool-type {
+  position: relative;
+  z-index: 1;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 3px rgba(0,0,0,0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
 /* Print settings */
 .print-dialog-settings {
   display: flex;
@@ -2474,27 +2550,84 @@ body {
 .print-dialog-setting label:first-child {
   font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   display: block;
 }
-.print-dialog-radio-group {
+/* Build plate toggle buttons */
+.print-dialog-bed-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.print-bed-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.print-bed-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+.print-bed-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.print-bed-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+/* Styled checkboxes */
+.print-dialog-checkboxes {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
 }
-.print-dialog-radio, .print-dialog-checkbox {
+.print-dialog-checkbox {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
   font-size: 12px;
   color: var(--text-primary);
+  user-select: none;
 }
-.print-dialog-radio input, .print-dialog-checkbox input {
-  accent-color: var(--accent);
+.print-dialog-checkbox input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
 }
-.print-dialog-checkboxes {
-  display: flex;
-  gap: 16px;
+.print-dialog-checkbox input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.print-dialog-checkbox input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 6px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.print-dialog-checkbox input[type="checkbox"]:hover {
+  border-color: var(--accent);
 }
 /* Footer */
 .print-dialog-footer {

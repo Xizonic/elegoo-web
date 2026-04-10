@@ -54,7 +54,7 @@ export class PrinterState {
   videoUrl: string | null = null;
   bedMesh: number[][] | null = null;
   /** Print history from method 1036 */
-  printHistory: Array<{ uuid: string; filename: string; status: string; begin_time: number; end_time: number }> = [];
+  printHistory: Array<{ uuid: string; filename: string; status: string; begin_time: number; end_time: number; timelapse_status: number; timelapse_url: string }> = [];
   printHistoryTotal = 0;
   /** Auto-report sequence tracking for gap detection */
   private lastAutoReportId: number | null = null;
@@ -262,11 +262,11 @@ export class PrinterState {
         }
         break;
       }
-      case 1051: { // GET_TIMELAPSE
+      case 1051: { // EXPORT_TIMELAPSE
         const errorCode = result.error_code as number | undefined;
-        const list = result.file_list as Record<string, unknown>[] | undefined;
-        if (errorCode === 0 && list) {
-          this.timelapseList = list;
+        const url = result.url as string | undefined;
+        if (errorCode === 0 && url) {
+          this.videoUrl = url;
           this.notify();
         }
         break;
@@ -283,8 +283,21 @@ export class PrinterState {
               status: mapTaskStatus(t.status as number | string | undefined),
               begin_time: (t.begin_time as number) || 0,
               end_time: (t.end_time as number) || 0,
+              timelapse_status: (t.time_lapse_video_status as number) || 0,
+              timelapse_url: (t.time_lapse_video_url as string) || '',
             }));
             this.printHistoryTotal = total ?? this.printHistory.length;
+            // Populate timelapse list from history entries with video data
+            // Status: 0=NotCaptured, 1=NotExported, 2=Exported, 3=Failed
+            this.timelapseList = this.printHistory
+              .filter(t => t.timelapse_status === 1 || t.timelapse_status === 2)
+              .map(t => ({
+                filename: t.filename,
+                timelapse_status: t.timelapse_status,
+                timelapse_url: t.timelapse_url,
+                begin_time: t.begin_time,
+                end_time: t.end_time,
+              }));
           }
           this.notify();
         }
