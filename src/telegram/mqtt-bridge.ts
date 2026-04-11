@@ -66,6 +66,8 @@ export class MqttBridge extends EventEmitter {
   private totalLayers = 0;
   private lastLayer = 0;
   private lastLayerTime = 0;
+  private pendingPrintStartTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPrintStartRetries = 0;
 
   constructor(
     private printerIp: string,
@@ -236,6 +238,40 @@ export class MqttBridge extends EventEmitter {
     this.detectEvents();
   }
 
+  /** Emit print_started, deferring up to 5s if filename is not yet available */
+  private emitPrintStarted(): void {
+    // Clear any previous pending timer
+    if (this.pendingPrintStartTimer) {
+      clearTimeout(this.pendingPrintStartTimer);
+      this.pendingPrintStartTimer = null;
+    }
+    this.pendingPrintStartRetries = 0;
+
+    const filename = this.status?.print_status?.filename;
+    if (filename) {
+      this.emit('event', { type: 'print_started', filename } satisfies BridgeEvent);
+      return;
+    }
+
+    // Poll every 500ms for up to 5s (10 retries)
+    const check = () => {
+      this.pendingPrintStartRetries++;
+      const fn = this.status?.print_status?.filename;
+      if (fn) {
+        this.pendingPrintStartTimer = null;
+        this.emit('event', { type: 'print_started', filename: fn } satisfies BridgeEvent);
+        return;
+      }
+      if (this.pendingPrintStartRetries >= 10) {
+        this.pendingPrintStartTimer = null;
+        this.emit('event', { type: 'print_started', filename: 'unknown' } satisfies BridgeEvent);
+        return;
+      }
+      this.pendingPrintStartTimer = setTimeout(check, 500);
+    };
+    this.pendingPrintStartTimer = setTimeout(check, 500);
+  }
+
   /** Detect state transitions and emit notification events */
   private detectEvents(): void {
     if (!this.status) return;
@@ -258,10 +294,8 @@ export class MqttBridge extends EventEmitter {
       if (ps?.filename) {
         this.sendCommand(1046, { filename: ps.filename });
       }
-      this.emit('event', {
-        type: 'print_started',
-        filename: ps?.filename ?? 'unknown',
-      } satisfies BridgeEvent);
+      // Defer print_started event if filename isn't available yet
+      this.emitPrintStarted();
     }
 
     // Print completed

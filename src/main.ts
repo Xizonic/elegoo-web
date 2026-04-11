@@ -16,7 +16,7 @@ import {
   updateServiceStatus, fetchTimeout,
   handleAIAnalysis, handleAIAlert, updateAIStatus,
   openSettings, applyCardLayout, renderSettingsContent, switchToTab,
-  currentFileSource, currentFileDir, handleThumbnailResponse,
+  currentFileSource, currentFileDir, handleThumbnailResponse, handleInlineThumbnail,
   handleEventLog, loadEventLogHistory,
   toggleCameraOverlay,
   renderPrintHistory, bindHistoryControls, setHistoryClient, requestHistory,
@@ -420,6 +420,8 @@ function connectToService(): void {
       }
       if (method === 1045) {
         handleThumbnailResponse(state);
+        // Also feed inline thumbnail queue
+        handleInlineThumbnail(state.thumbnailFailed ? null : state.thumbnail);
       }
       if (method === 1046) {
         handleFileDetailForPrint(state);

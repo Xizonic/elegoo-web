@@ -906,6 +906,31 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       return;
     }
 
+    // ── List cached gcode files ─────────────────────────────────────
+    // GET /api/files/cached — returns array of filenames that have cached gcode
+    if (url.startsWith('/api/files/cached') && req.method === 'GET') {
+      void (async () => {
+        try {
+          await ensureCacheDir();
+          const cacheFiles = await readdir(GCODE_CACHE_DIR);
+          const cacheHashes = new Set(cacheFiles.map(f => f.replace(/\.gcode$/, '')));
+          const params = new URL(req.url || '', 'http://localhost').searchParams;
+          const checkFiles = params.getAll('file');
+          const cached: string[] = [];
+          for (const f of checkFiles) {
+            const hash = createHash('sha256').update(f).digest('hex').slice(0, 16);
+            if (cacheHashes.has(hash)) cached.push(f);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ cached }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ cached: [], error: (err as Error).message }));
+        }
+      })();
+      return;
+    }
+
     // ── Gcode precache endpoint ──────────────────────────────────────
     // POST /api/files/precache  { file: string, source?: string }
     // Downloads gcode from printer to service cache before print start

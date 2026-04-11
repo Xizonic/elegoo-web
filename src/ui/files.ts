@@ -1,13 +1,269 @@
 import type { PrinterState } from '../printer-state';
 import type { CommandSender } from '../ws-client';
+import type { FileEntry } from '../types';
 import { $, escapeHtml, escapeAttr, formatTime, applyDarkThumbnailCheck } from './helpers';
 import { requestPrintDialog } from './print-dialog';
 
 let currentSource: 'local' | 'u-disk' = 'local';
 let currentDir = '/';
 
+/** Set of full file paths that are cached on the server */
+let cachedFiles = new Set<string>();
+/** Map of full file path → base64 thumbnail */
+const thumbnailCache = new Map<string, string>();
+/** Queue of file paths waiting for thumbnail fetch */
+let thumbnailQueue: string[] = [];
+/** Currently fetching thumbnail for this file */
+let thumbnailFetching: string | null = null;
 export function currentFileSource(): string { return currentSource; }
 export function currentFileDir(): string { return currentDir; }
+
+/** Fetch which files are cached on the server and update markers */
+let _fetchingCached = false;
+async function fetchCachedStatus(files: { filename: string; type?: string }[], client: CommandSender): Promise<void> {
+  if (_fetchingCached) return;
+  const gcodeFiles = files
+    .filter(f => f.type !== 'folder' && f.filename.toLowerCase().endsWith('.gcode'))
+    .map(f => currentDir === '/' ? f.filename : currentDir.replace(/^\//, '') + '/' + f.filename);
+  if (!gcodeFiles.length) { cachedFiles = new Set(); return; }
+  _fetchingCached = true;
+  try {
+    const params = gcodeFiles.map(f => `file=${encodeURIComponent(f)}`).join('&');
+    const resp = await fetch(`/api/files/cached?${params}`);
+    if (resp.ok) {
+      const data = await resp.json() as { cached: string[] };
+      const newCached = new Set(data.cached);
+      const changed = newCached.size !== cachedFiles.size || [...newCached].some(f => !cachedFiles.has(f));
+      cachedFiles = newCached;
+      if (changed && cachedFiles.size > 0 && _lastState) {
+        // Re-render to show cache markers in HTML
+        renderFiles(_lastState, client);
+      }
+    }
+  } catch { /* ignore */ }
+  _fetchingCached = false;
+}
+
+let _lastState: PrinterState | null = null;
+
+/** Fetch inline thumbnails for visible gcode files (serialized via queue) */
+let _thumbClient: CommandSender | null = null;
+function fetchInlineThumbnails(files: { filename: string; type?: string }[], client: CommandSender): void {
+  _thumbClient = client;
+  for (const file of files) {
+    if (file.type === 'folder') continue;
+    if (!file.filename.toLowerCase().endsWith('.gcode')) continue;
+    const fullPath = currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
+    if (thumbnailCache.has(fullPath) || thumbnailQueue.includes(fullPath) || thumbnailFetching === fullPath) continue;
+    thumbnailQueue.push(fullPath);
+  }
+  fetchNextThumbnail();
+}
+
+function fetchNextThumbnail(): void {
+  if (thumbnailFetching || !_thumbClient) return;
+  const next = thumbnailQueue.shift();
+  if (!next) return;
+  thumbnailFetching = next;
+  // Method 1045 uses file_name (with underscore!)
+  _thumbClient.sendCommand(1045, { storage_media: currentSource, file_name: next });
+}
+
+/** Called when a thumbnail response arrives — update inline preview if applicable */
+export function handleInlineThumbnail(base64: string | null): void {
+  const fullPath = thumbnailFetching;
+  thumbnailFetching = null;
+  if (fullPath && base64) {
+    thumbnailCache.set(fullPath, base64);
+    // Find the DOM element and insert thumbnail
+    document.querySelectorAll('.file-item[data-type="file"]').forEach(el => {
+      const fn = (el as HTMLElement).dataset.filename;
+      if (!fn) return;
+      const fp = currentDir === '/' ? fn : currentDir.replace(/^\//, '') + '/' + fn;
+      if (fp !== fullPath) return;
+      const iconEl = el.querySelector('.file-icon');
+      if (iconEl && !iconEl.querySelector('img')) {
+        const img = document.createElement('img');
+        img.src = `data:image/png;base64,${base64}`;
+        img.alt = 'Thumbnail';
+        img.className = 'file-inline-thumb';
+        applyDarkThumbnailCheck(img, iconEl as HTMLElement);
+        iconEl.textContent = '';
+        iconEl.appendChild(img);
+      }
+    });
+  }
+  // Fetch next in queue
+  fetchNextThumbnail();
+}
+
+// ── File detail popover on thumbnail hover ──────────────────────
+let filePopover: HTMLElement | null = null;
+let popoverTimeout: ReturnType<typeof setTimeout> | null = null;
+/** Map filename → FileEntry for popover data lookup */
+let _fileMap = new Map<string, FileEntry>();
+let _popoverClient: CommandSender | null = null;
+
+/** Try to extract filament info from ECC2 slicer filename pattern */
+function parseFilamentFromName(filename: string): { types: string[]; count: number } | null {
+  // Pattern: ECC2_nozzle_name_FilamentType_layerHeight_time.gcode
+  // May have multiple filament segments separated by +
+  // Examples: "Elegoo PLA " or "Elegoo PLA + Elegoo PETG "
+  const base = filename.replace(/\.gcode$/i, '');
+  const parts = base.split('_');
+  // Find filament-like segments (contain known type keywords)
+  const typeKeywords = ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'PA', 'PC', 'HIPS', 'PVA', 'Nylon'];
+  const found: string[] = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (typeKeywords.some(kw => trimmed.toUpperCase().includes(kw))) {
+      // Split on + for multi-filament
+      trimmed.split('+').forEach(seg => {
+        const s = seg.trim();
+        if (s) found.push(s);
+      });
+    }
+  }
+  if (found.length === 0) return null;
+  return { types: [...new Set(found)], count: found.length };
+}
+
+function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
+  closeFilePopover();
+  const fullPath = currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
+  const thumb = thumbnailCache.get(fullPath);
+  const isCached = cachedFiles.has(fullPath);
+  const filamentInfo = parseFilamentFromName(file.filename);
+
+  const el = document.createElement('div');
+  el.className = 'file-popover';
+
+  let html = '<div class="file-popover-inner">';
+  if (thumb) {
+    html += `<img class="file-popover-thumb" src="data:image/png;base64,${thumb}" alt="Preview">`;
+  }
+  html += '<div class="file-popover-details">';
+  html += `<div class="file-popover-name">${escapeHtml(file.filename)}</div>`;
+  html += '<table class="file-popover-table">';
+  html += `<tr><td>Size</td><td>${formatBytes(file.size)}</td></tr>`;
+  if (file.print_time) html += `<tr><td>Print time</td><td>${formatTime(file.print_time)}</td></tr>`;
+  if (file.layer) html += `<tr><td>Layers</td><td>${file.layer}</td></tr>`;
+  if (file.total_filament_used) html += `<tr><td>Filament</td><td>${file.total_filament_used.toFixed(1)}g</td></tr>`;
+  if (filamentInfo) {
+    html += `<tr><td>Material</td><td>${escapeHtml(filamentInfo.types.join(', '))}`;
+    if (filamentInfo.count > 1) html += ` (${filamentInfo.count} filaments)`;
+    html += `</td></tr>`;
+  }
+  if (file.create_time) {
+    const d = new Date(file.create_time * 1000);
+    html += `<tr><td>Created</td><td>${d.toLocaleDateString()} ${d.toLocaleTimeString()}</td></tr>`;
+  }
+  if (isCached) html += `<tr><td>Cache</td><td>⚡ Cached on server</td></tr>`;
+  html += '</table>';
+
+  // Action buttons
+  html += '<div class="file-popover-actions">';
+  html += `<button class="btn btn-sm btn-ghost file-popover-preview" title="Full preview">🖼️ Preview</button>`;
+  html += `<button class="btn btn-sm btn-ghost file-popover-download" title="Download">📥 Download</button>`;
+  html += `<button class="btn btn-sm btn-ghost file-popover-delete" title="Delete">🗑️ Delete</button>`;
+  html += '</div>';
+
+  html += '</div></div>';
+  el.innerHTML = html;
+
+  document.body.appendChild(el);
+
+  // Bind popover action buttons
+  const source = currentSource === 'u-disk' ? 'u-disk' : 'local';
+  el.querySelector('.file-popover-preview')?.addEventListener('click', () => {
+    closeFilePopover();
+    pendingThumbnailFile = fullPath;
+    pendingThumbnailAnchor = anchor;
+    _popoverClient?.sendCommand(1045, { storage_media: currentSource, file_name: fullPath });
+  });
+  el.querySelector('.file-popover-download')?.addEventListener('click', () => {
+    closeFilePopover();
+    const a = document.createElement('a');
+    a.href = `/api/files/download?file=${encodeURIComponent(fullPath)}&source=${encodeURIComponent(source)}`;
+    a.download = file.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  el.querySelector('.file-popover-delete')?.addEventListener('click', () => {
+    closeFilePopover();
+    if (confirm(`Delete ${file.filename}?`)) {
+      _popoverClient?.sendCommand(1047, { storage_media: currentSource, file_path: [fullPath] });
+      setTimeout(() => {
+        _popoverClient?.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+        _popoverClient?.sendCommand(1048, { storage_media: currentSource });
+      }, 500);
+    }
+  });
+
+  // Position relative to anchor
+  const rect = anchor.getBoundingClientRect();
+  const popW = 320;
+  const popH = el.offsetHeight || 200;
+  let left = rect.right + 8;
+  let top = rect.top;
+  // Keep within viewport
+  if (left + popW > window.innerWidth) left = rect.left - popW - 8;
+  if (top + popH > window.innerHeight) top = Math.max(8, window.innerHeight - popH - 8);
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+
+  // Apply dark thumbnail check if we have an image
+  const img = el.querySelector('.file-popover-thumb') as HTMLImageElement | null;
+  if (img) applyDarkThumbnailCheck(img, el);
+
+  filePopover = el;
+
+  // Close when mouse leaves the popover (with delay for moving back)
+  el.addEventListener('mouseleave', () => {
+    closePopoverTimeout = setTimeout(() => closeFilePopover(), 150);
+  });
+  el.addEventListener('mouseenter', () => {
+    if (closePopoverTimeout) { clearTimeout(closePopoverTimeout); closePopoverTimeout = null; }
+  });
+}
+
+function closeFilePopover(): void {
+  if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
+  if (filePopover) { filePopover.remove(); filePopover = null; }
+}
+
+let closePopoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function bindFilePopovers(container: HTMLElement): void {
+  container.querySelectorAll('.file-item[data-type="file"]').forEach(item => {
+    const fn = (item as HTMLElement).dataset.filename;
+    if (!fn) return;
+    const file = _fileMap.get(fn);
+    if (!file) return;
+
+    item.addEventListener('mouseenter', (e) => {
+      // Don't trigger on print button
+      if ((e.target as HTMLElement).closest('.file-print-btn')) return;
+      // Cancel any pending close
+      if (closePopoverTimeout) { clearTimeout(closePopoverTimeout); closePopoverTimeout = null; }
+      if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
+      // If popover is already open for a different file, update immediately
+      if (filePopover) {
+        showFilePopover(file, item as HTMLElement);
+      } else {
+        popoverTimeout = setTimeout(() => showFilePopover(file, item as HTMLElement), 300);
+      }
+    });
+    item.addEventListener('mouseleave', () => {
+      if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
+      // Delay closing to allow mouse to move to next item or popover
+      closePopoverTimeout = setTimeout(() => {
+        if (filePopover && !filePopover.matches(':hover')) closeFilePopover();
+      }, 150);
+    });
+  });
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
@@ -94,6 +350,7 @@ export function handleThumbnailResponse(state: PrinterState): void {
 }
 
 export function renderFiles(state: PrinterState, client: CommandSender): void {
+  _lastState = state;
   const container = $('file-list');
   const files = state.files;
 
@@ -128,18 +385,33 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
     const filamentInfo = file.total_filament_used ? `${file.total_filament_used.toFixed(1)}g filament` : '';
     const meta = isFolder ? 'Folder' : [sizeMB + ' MB', timeInfo, layerInfo, filamentInfo].filter(Boolean).join(' · ');
 
+    const fullPath = currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
+    const isCached = cachedFiles.has(fullPath);
+    const cachedThumb = thumbnailCache.get(fullPath);
+    const cacheMarker = isCached ? ' <span class="file-cache-marker" title="Cached on server">⚡</span>' : '';
+
+    let iconHtml: string;
+    if (isFolder) {
+      iconHtml = '📁';
+    } else if (cachedThumb) {
+      iconHtml = `<img src="data:image/png;base64,${cachedThumb}" alt="Thumb" class="file-inline-thumb">`;
+    } else {
+      iconHtml = '📄';
+    }
+
     html += `
       <div class="file-item ${isFolder ? 'file-item-folder' : ''}" data-filename="${escapeAttr(file.filename)}" data-type="${isFolder ? 'folder' : 'file'}">
-        <div class="file-icon">${isFolder ? '📁' : '📄'}</div>
-        <div class="file-details">
-          <div class="file-name">${escapeHtml(file.filename)}</div>
-          <div class="file-size">${meta}</div>
+        <div class="file-name-row">
+          <span class="file-name">${escapeHtml(file.filename)}</span>${cacheMarker}
         </div>
-        <div class="file-actions">
-          ${isFolder ? '' : `<button class="btn btn-sm btn-ghost file-thumbnail-btn" title="Preview">🖼️</button>`}
-          ${isFolder ? '' : `<button class="btn btn-sm btn-ghost file-download-btn" title="Download">📥</button>`}
-          ${isFolder ? '' : `<button class="btn btn-sm btn-primary file-print-btn" title="Print">▶</button>`}
-          ${isFolder ? '' : `<button class="btn btn-sm btn-ghost file-delete-btn" title="Delete">🗑️</button>`}
+        <div class="file-item-body">
+          <div class="file-icon">${iconHtml}</div>
+          <div class="file-details">
+            <div class="file-size">${meta}</div>
+          </div>
+          <div class="file-actions">
+            ${isFolder ? '' : `<button class="btn btn-sm btn-primary file-print-btn" title="Print">▶</button>`}
+          </div>
         </div>
       </div>`;
   }
@@ -147,12 +419,25 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
   container.innerHTML = html;
   bindBreadcrumbNav(container, client);
 
+  // Build file map for popover lookups
+  _fileMap = new Map(sorted.filter(f => f.type !== 'folder').map(f => [f.filename, f]));
+  _popoverClient = client;
+
+  // Fetch cached status and inline thumbnails asynchronously
+  void fetchCachedStatus(sorted, client);
+  fetchInlineThumbnails(sorted, client);
+
+  // Bind thumbnail hover popovers
+  bindFilePopovers(container);
+
   // Folder click → navigate
   container.querySelectorAll('.file-item-folder').forEach(item => {
     item.addEventListener('click', () => {
       const dirname = (item as HTMLElement).dataset.filename;
       if (!dirname) return;
       currentDir = currentDir === '/' ? '/' + dirname : currentDir + '/' + dirname;
+      thumbnailQueue = [];
+      thumbnailFetching = null;
       container.innerHTML = '<div class="loading">Loading...</div>';
       client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
     });
@@ -170,58 +455,6 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
       }
     });
   });
-
-  // Delete button
-  container.querySelectorAll('.file-delete-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const item = (e.target as HTMLElement).closest('.file-item') as HTMLElement;
-      const filename = item?.dataset.filename;
-      if (filename && confirm(`Delete ${filename}?`)) {
-        const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
-        client.sendCommand(1047, { storage_media: currentSource, file_path: [fullPath] });
-        // Refresh file list after delete
-        setTimeout(() => {
-          client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
-          client.sendCommand(1048, { storage_media: currentSource });
-        }, 500);
-      }
-    });
-  });
-
-  // Download button
-  container.querySelectorAll('.file-download-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const item = (e.target as HTMLElement).closest('.file-item') as HTMLElement;
-      const filename = item?.dataset.filename;
-      if (!filename) return;
-      const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
-      const source = currentSource === 'u-disk' ? 'u-disk' : 'local';
-      // Trigger browser download via the server proxy
-      const a = document.createElement('a');
-      a.href = `/api/files/download?file=${encodeURIComponent(fullPath)}&source=${encodeURIComponent(source)}`;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    });
-  });
-
-  // Thumbnail preview button
-  container.querySelectorAll('.file-thumbnail-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const item = (e.target as HTMLElement).closest('.file-item') as HTMLElement;
-      const filename = item?.dataset.filename;
-      if (!filename) return;
-      const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
-      pendingThumbnailFile = fullPath;
-      pendingThumbnailAnchor = btn as HTMLElement;
-      // Method 1045 uses file_name (with underscore!)
-      client.sendCommand(1045, { storage_media: currentSource, file_name: fullPath });
-    });
-  });
 }
 
 function bindBreadcrumbNav(container: HTMLElement, client: CommandSender): void {
@@ -230,6 +463,8 @@ function bindBreadcrumbNav(container: HTMLElement, client: CommandSender): void 
       const dir = (btn as HTMLElement).dataset.dir;
       if (dir == null) return;
       currentDir = dir;
+      thumbnailQueue = [];
+      thumbnailFetching = null;
       container.innerHTML = '<div class="loading">Loading...</div>';
       client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
     });
@@ -247,6 +482,8 @@ export function bindFileControls(client: CommandSender): void {
       const source = (tab as HTMLElement).dataset.source as 'local' | 'u-disk';
       currentSource = source;
       currentDir = '/';
+      thumbnailQueue = [];
+      thumbnailFetching = null;
       document.querySelectorAll('.file-source-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       $('file-list').innerHTML = '<div class="loading">Loading...</div>';

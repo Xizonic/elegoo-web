@@ -4,7 +4,7 @@
  */
 export { renderDashboard, renderHeader, toggleCameraOverlay } from './print-status';
 export { renderCanvas, setCanvasClient } from './canvas';
-export { renderFiles, bindFileControls, currentFileSource, currentFileDir, handleThumbnailResponse } from './files';
+export { renderFiles, bindFileControls, currentFileSource, currentFileDir, handleThumbnailResponse, handleInlineThumbnail } from './files';
 export { bindControls, onCommandResponse } from './controls';
 export { registerChart, initCharts } from './charts';
 export { renderStructuredLog, bindStructuredLogControls } from './structured-log';

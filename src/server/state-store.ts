@@ -157,6 +157,8 @@ export class StateStore extends EventEmitter {
   private lastExceptions: number[] = [];
   private wasFilamentDetected = true;
   private totalLayers = 0;
+  private pendingPrintStartTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPrintStartRetries = 0;
   /** Baseline is ready only after the first full status (method 1002) is processed */
   private baselineReady = false;
   /** Auto-report sequence tracking for gap detection */
@@ -646,6 +648,38 @@ export class StateStore extends EventEmitter {
     }
   }
 
+  /** Emit print_started, deferring up to 5s if filename is not yet available */
+  private emitPrintStarted(): void {
+    if (this.pendingPrintStartTimer) {
+      clearTimeout(this.pendingPrintStartTimer);
+      this.pendingPrintStartTimer = null;
+    }
+    this.pendingPrintStartRetries = 0;
+
+    const filename = this.status?.print_status?.filename;
+    if (filename) {
+      this.emit('print_event', { type: 'print_started', filename } satisfies PrintEvent);
+      return;
+    }
+
+    const check = () => {
+      this.pendingPrintStartRetries++;
+      const fn = this.status?.print_status?.filename;
+      if (fn) {
+        this.pendingPrintStartTimer = null;
+        this.emit('print_event', { type: 'print_started', filename: fn } satisfies PrintEvent);
+        return;
+      }
+      if (this.pendingPrintStartRetries >= 10) {
+        this.pendingPrintStartTimer = null;
+        this.emit('print_event', { type: 'print_started', filename: 'unknown' } satisfies PrintEvent);
+        return;
+      }
+      this.pendingPrintStartTimer = setTimeout(check, 500);
+    };
+    this.pendingPrintStartTimer = setTimeout(check, 500);
+  }
+
   /** Update tracking state silently (before baseline is ready) */
   private updateTrackingState(): void {
     if (!this.status) return;
@@ -695,10 +729,7 @@ export class StateStore extends EventEmitter {
       if (ps?.filename) {
         this.bridge.sendCommand(1046, { filename: ps.filename });
       }
-      this.emit('print_event', {
-        type: 'print_started',
-        filename: ps?.filename || 'unknown',
-      } satisfies PrintEvent);
+      this.emitPrintStarted();
     }
 
     // Print completed
