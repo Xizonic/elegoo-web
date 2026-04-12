@@ -166,27 +166,18 @@ function bindChartInteractions(): void {
   }
 }
 
-/** Throttle chart redraws — data updates at 1Hz, 10 FPS is plenty */
-let lastDrawTime = 0;
-const CHART_DRAW_INTERVAL = 100; // 10 FPS
-
-function drawLoop(): void {
-  if (document.hidden) {
-    animating = false;
-    return;
-  }
-  const now = Date.now();
-  if (now - lastDrawTime >= CHART_DRAW_INTERVAL) {
-    lastDrawTime = now;
+/** Start chart draw timer — 10 FPS is plenty for 1 Hz data */
+function startDrawTimer(): void {
+  if (drawTimer) clearInterval(drawTimer);
+  drawTimer = setInterval(() => {
+    if (document.hidden) return;
     for (const [, config] of charts) {
       const canvas = document.getElementById(config.canvasId);
-      // Skip charts not visible on screen (scrolled away or hidden)
       if (canvas && canvas.offsetParent !== null) {
         drawChart(config);
       }
     }
-  }
-  requestAnimationFrame(drawLoop);
+  }, 100);
 }
 
 function drawChart(config: ChartConfig): void {

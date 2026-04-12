@@ -93,7 +93,7 @@ function updateFilamentColor(state: PrinterState): void {
   loadGcode(loadedFile);
 }
 
-/** Throttle all WebGL renders to max 2 FPS — MQTT data doesn't arrive faster */
+/** Throttle full gcode-preview renders (geometry rebuild) to max 2 FPS */
 let lastRenderTime = 0;
 const RENDER_INTERVAL = 500; // 2 FPS
 
@@ -102,6 +102,30 @@ function throttledRender(): void {
   if (now - lastRenderTime < RENDER_INTERVAL) return;
   lastRenderTime = now;
   preview?.render();
+}
+
+/** Lightweight WebGL-only redraw (no geometry rebuild) — for nozzle moves */
+function lightRender(): void {
+  const now = Date.now();
+  if (now - lastRenderTime < RENDER_INTERVAL) return;
+  lastRenderTime = now;
+  if (!preview) return;
+  preview.renderer.render(preview.scene, preview.camera);
+}
+
+/** Stop the library's internal 60fps rAF animate loop */
+function stopAnimateLoop(p: WebGLPreview): void {
+  // animationFrameId is private but accessible at runtime
+  const id = (p as any).animationFrameId as number | undefined;
+  if (id != null) cancelAnimationFrame(id);
+  // Override animate() so it can't restart
+  (p as any).animate = () => {};
+}
+
+/** Render on orbit control changes (user dragging the 3D view) — throttled */
+function onOrbitChange(): void {
+  if (!preview) return;
+  preview.renderer.render(preview.scene, preview.camera);
 }
 
 /** Exported for main.ts to call on each render frame */
@@ -144,8 +168,8 @@ export function renderGcodePreview(state: PrinterState): void {
     const slider = $('gcode-layer-slider') as HTMLInputElement | null;
     if (slider) slider.value = String(currentLayer);
   } else if (isPrinting && nozzleMesh?.visible) {
-    // Re-render to show updated nozzle position
-    throttledRender();
+    // Re-render to show updated nozzle position (lightweight, no geometry rebuild)
+    lightRender();
   }
 }
 
@@ -228,6 +252,15 @@ export async function loadGcode(filename: string, source = 'local'): Promise<voi
 
     // Process gcode (v3 is async)
     await preview.processGCode(gcode);
+
+    // Stop the library's built-in 60fps animate loop — it calls WebGL render()
+    // every frame, leaking ~23 MB/s. We render on-demand instead.
+    stopAnimateLoop(preview);
+    // Re-render once after stopping the loop (processGCode's last frame may be lost)
+    preview.renderer.render(preview.scene, preview.camera);
+    // Render on orbit control interaction (user dragging)
+    preview.controls.addEventListener('change', onOrbitChange);
+
     loadedFile = filename;
 
     // Set layer slider range
