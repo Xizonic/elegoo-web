@@ -25,6 +25,7 @@ interface PersistedData {
 }
 
 let saveTimer: ReturnType<typeof setInterval> | null = null;
+let unloadListener: (() => void) | null = null;
 
 /** Get current print file name from state, or empty string */
 function getPrintFile(state: PrinterState): string {
@@ -105,7 +106,9 @@ export function startPersistence(state: PrinterState, chartStore: ChartStore): v
   if (saveTimer) return;
   saveTimer = setInterval(() => save(state, chartStore), SAVE_INTERVAL);
   // Also save on page unload
-  window.addEventListener('beforeunload', () => save(state, chartStore));
+  if (unloadListener) window.removeEventListener('beforeunload', unloadListener);
+  unloadListener = () => save(state, chartStore);
+  window.addEventListener('beforeunload', unloadListener);
 }
 
 /** Stop periodic saving (e.g. on disconnect). */
@@ -113,6 +116,10 @@ export function stopPersistence(): void {
   if (saveTimer) {
     clearInterval(saveTimer);
     saveTimer = null;
+  }
+  if (unloadListener) {
+    window.removeEventListener('beforeunload', unloadListener);
+    unloadListener = null;
   }
 }
 

@@ -34,8 +34,9 @@ interface ChartInteraction {
 
 const charts = new Map<string, ChartConfig>();
 const interactions = new Map<string, ChartInteraction>();
+const ctxCache = new Map<string, CanvasRenderingContext2D>();
 let store: ChartStore | null = null;
-let animating = false;
+let drawTimer: ReturnType<typeof setInterval> | null = null;
 let interactionsBound = false;
 
 export function registerChart(config: ChartConfig): void {
@@ -57,15 +58,16 @@ export function initCharts(chartStore: ChartStore): void {
     interactionsBound = true;
     bindChartInteractions();
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && !animating) {
-        animating = true;
-        drawLoop();
+      if (!document.hidden && !drawTimer) {
+        startDrawTimer();
+      } else if (document.hidden && drawTimer) {
+        clearInterval(drawTimer);
+        drawTimer = null;
       }
     });
   }
-  if (!animating) {
-    animating = true;
-    drawLoop();
+  if (!drawTimer) {
+    startDrawTimer();
   }
 }
 
@@ -164,13 +166,25 @@ function bindChartInteractions(): void {
   }
 }
 
+/** Throttle chart redraws — data updates at 1Hz, 10 FPS is plenty */
+let lastDrawTime = 0;
+const CHART_DRAW_INTERVAL = 100; // 10 FPS
+
 function drawLoop(): void {
   if (document.hidden) {
     animating = false;
     return;
   }
-  for (const [, config] of charts) {
-    drawChart(config);
+  const now = Date.now();
+  if (now - lastDrawTime >= CHART_DRAW_INTERVAL) {
+    lastDrawTime = now;
+    for (const [, config] of charts) {
+      const canvas = document.getElementById(config.canvasId);
+      // Skip charts not visible on screen (scrolled away or hidden)
+      if (canvas && canvas.offsetParent !== null) {
+        drawChart(config);
+      }
+    }
   }
   requestAnimationFrame(drawLoop);
 }
@@ -190,7 +204,8 @@ function drawChart(config: ChartConfig): void {
     canvas.height = h * dpr;
   }
 
-  const ctx = canvas.getContext('2d')!;
+  const ctx = ctxCache.get(config.canvasId) ?? canvas.getContext('2d')!;
+  if (!ctxCache.has(config.canvasId)) ctxCache.set(config.canvasId, ctx);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 

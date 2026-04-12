@@ -93,6 +93,17 @@ function updateFilamentColor(state: PrinterState): void {
   loadGcode(loadedFile);
 }
 
+/** Throttle all WebGL renders to max 2 FPS — MQTT data doesn't arrive faster */
+let lastRenderTime = 0;
+const RENDER_INTERVAL = 500; // 2 FPS
+
+function throttledRender(): void {
+  const now = Date.now();
+  if (now - lastRenderTime < RENDER_INTERVAL) return;
+  lastRenderTime = now;
+  preview?.render();
+}
+
 /** Exported for main.ts to call on each render frame */
 export function renderGcodePreview(state: PrinterState): void {
   const s = state.status;
@@ -127,14 +138,14 @@ export function renderGcodePreview(state: PrinterState): void {
     preview.singleLayerMode = singleLayerMode;
     // gcode-preview counts preamble as layer 0, so printer layer N = preview layer N+1
     preview.endLayer = currentLayer + 1;
-    preview.render();
+    throttledRender();
 
     // Sync slider
     const slider = $('gcode-layer-slider') as HTMLInputElement | null;
     if (slider) slider.value = String(currentLayer);
   } else if (isPrinting && nozzleMesh?.visible) {
-    // Re-render to show updated nozzle position even if layer hasn't changed
-    preview.render();
+    // Re-render to show updated nozzle position
+    throttledRender();
   }
 }
 

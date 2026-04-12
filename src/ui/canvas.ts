@@ -4,6 +4,7 @@ import { $, escapeHtml, escapeAttr } from './helpers';
 import { openFilamentEditor } from './filament-editor';
 
 let canvasClient: CommandSender | null = null;
+let canvasDelegationBound = false;
 
 export function setCanvasClient(client: CommandSender): void {
   canvasClient = client;
@@ -103,60 +104,73 @@ export function renderCanvas(state: PrinterState): void {
 
   container.innerHTML = html;
 
-  // Bind auto-refill toggles
-  if (canvasClient) {
-    container.querySelectorAll('.auto-refill-toggle').forEach(toggle => {
-      toggle.addEventListener('change', () => {
-        const on = (toggle as HTMLInputElement).checked;
-        canvasClient!.sendCommand(2004, { auto_refill: on });
-      });
+  // Set cursor on spool slots (no event binding needed — delegation below)
+  container.querySelectorAll('.canvas-spool-slot').forEach(slot => {
+    (slot as HTMLElement).style.cursor = 'pointer';
+  });
+
+  // Bind delegated event listeners once on the container
+  if (!canvasDelegationBound) {
+    canvasDelegationBound = true;
+
+    container.addEventListener('change', (e) => {
+      const target = e.target as HTMLElement;
+      if (!canvasClient) return;
+      // Auto-refill toggle
+      if (target.classList.contains('auto-refill-toggle')) {
+        const on = (target as HTMLInputElement).checked;
+        canvasClient.sendCommand(2004, { auto_refill: on });
+      }
     });
 
-    // Bind spool click for filament editing
-    const isPrinting = state.status?.machine_status?.status === 2;
-    container.querySelectorAll('.canvas-spool-slot').forEach(slot => {
-      slot.addEventListener('click', (e) => {
-        // Don't open editor when clicking load/unload buttons
-        if ((e.target as HTMLElement).closest('.spool-load-btn, .spool-unload-btn')) return;
-        const el = slot as HTMLElement;
-        const canvasId = parseInt(el.dataset.canvasId ?? '0');
-        const trayId = parseInt(el.dataset.trayId ?? '0');
+    container.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (!canvasClient) return;
+
+      // Load button
+      const loadBtn = target.closest('.spool-load-btn') as HTMLElement | null;
+      if (loadBtn) {
+        e.stopPropagation();
+        const canvasId = parseInt(loadBtn.dataset.canvasId ?? '0');
+        const trayId = parseInt(loadBtn.dataset.trayId ?? '0');
+        canvasClient.sendCommand(2001, { canvas_id: canvasId, tray_id: trayId });
+        setTimeout(() => canvasClient!.sendCommand(2005, {}), 1000);
+        return;
+      }
+
+      // Unload button
+      const unloadBtn = target.closest('.spool-unload-btn') as HTMLElement | null;
+      if (unloadBtn) {
+        e.stopPropagation();
+        const canvasId = parseInt(unloadBtn.dataset.canvasId ?? '0');
+        const trayId = parseInt(unloadBtn.dataset.trayId ?? '0');
+        canvasClient.sendCommand(2002, { canvas_id: canvasId, tray_id: trayId });
+        setTimeout(() => canvasClient!.sendCommand(2005, {}), 1000);
+        return;
+      }
+
+      // Spool slot click for filament editing
+      const slot = target.closest('.canvas-spool-slot') as HTMLElement | null;
+      if (slot) {
+        const canvasId = parseInt(slot.dataset.canvasId ?? '0');
+        const trayId = parseInt(slot.dataset.trayId ?? '0');
+        const isPrinting = (container.closest('#canvas-status') ?? container)
+          .getAttribute('data-printing') === '1';
         openFilamentEditor(canvasId, trayId, {
-          type: el.dataset.type || 'PLA',
-          color: el.dataset.color || '#ffffff',
-          name: el.dataset.name || '',
-          brand: el.dataset.brand || 'ELEGOO',
-          minTemp: parseInt(el.dataset.minTemp || '190'),
-          maxTemp: parseInt(el.dataset.maxTemp || '230'),
-        }, canvasClient!, isPrinting);
-      });
-      (slot as HTMLElement).style.cursor = 'pointer';
-    });
-
-    // Bind load/unload buttons
-    container.querySelectorAll('.spool-load-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const el = btn as HTMLElement;
-        const canvasId = parseInt(el.dataset.canvasId ?? '0');
-        const trayId = parseInt(el.dataset.trayId ?? '0');
-        canvasClient!.sendCommand(2001, { canvas_id: canvasId, tray_id: trayId });
-        // Refresh canvas state after a short delay
-        setTimeout(() => canvasClient!.sendCommand(2005, {}), 1000);
-      });
-    });
-
-    container.querySelectorAll('.spool-unload-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const el = btn as HTMLElement;
-        const canvasId = parseInt(el.dataset.canvasId ?? '0');
-        const trayId = parseInt(el.dataset.trayId ?? '0');
-        canvasClient!.sendCommand(2002, { canvas_id: canvasId, tray_id: trayId });
-        setTimeout(() => canvasClient!.sendCommand(2005, {}), 1000);
-      });
+          type: slot.dataset.type || 'PLA',
+          color: slot.dataset.color || '#ffffff',
+          name: slot.dataset.name || '',
+          brand: slot.dataset.brand || 'ELEGOO',
+          minTemp: parseInt(slot.dataset.minTemp || '190'),
+          maxTemp: parseInt(slot.dataset.maxTemp || '230'),
+        }, canvasClient, isPrinting);
+      }
     });
   }
+
+  // Store printing state as data attr for delegation handler
+  const isPrinting = state.status?.machine_status?.status === 2;
+  container.setAttribute('data-printing', isPrinting ? '1' : '0');
 }
 
 function renderMonoFilament(container: HTMLElement, info: Record<string, unknown>): void {

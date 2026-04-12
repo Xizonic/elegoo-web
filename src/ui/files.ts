@@ -236,35 +236,89 @@ function closeFilePopover(): void {
 }
 
 let closePopoverTimeout: ReturnType<typeof setTimeout> | null = null;
+let fileDelegationBound = false;
 
-function bindFilePopovers(container: HTMLElement): void {
-  container.querySelectorAll('.file-item[data-type="file"]').forEach(item => {
-    const fn = (item as HTMLElement).dataset.filename;
+/** Bind delegated event listeners on the file list container (once) */
+function ensureFileDelegation(container: HTMLElement): void {
+  if (fileDelegationBound) return;
+  fileDelegationBound = true;
+
+  // Delegated mouseenter/mouseleave for file popovers (use capture for mouseenter)
+  container.addEventListener('mouseenter', (e) => {
+    const target = e.target as HTMLElement;
+    const item = target.closest('.file-item[data-type="file"]') as HTMLElement | null;
+    if (!item) return;
+    if (target.closest('.file-print-btn')) return;
+    const fn = item.dataset.filename;
     if (!fn) return;
     const file = _fileMap.get(fn);
     if (!file) return;
 
-    item.addEventListener('mouseenter', (e) => {
-      // Don't trigger on print button
-      if ((e.target as HTMLElement).closest('.file-print-btn')) return;
-      // Cancel any pending close
-      if (closePopoverTimeout) { clearTimeout(closePopoverTimeout); closePopoverTimeout = null; }
-      if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
-      // If popover is already open for a different file, update immediately
-      if (filePopover) {
-        showFilePopover(file, item as HTMLElement);
-      } else {
-        popoverTimeout = setTimeout(() => showFilePopover(file, item as HTMLElement), 300);
+    if (closePopoverTimeout) { clearTimeout(closePopoverTimeout); closePopoverTimeout = null; }
+    if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
+    if (filePopover) {
+      showFilePopover(file, item);
+    } else {
+      popoverTimeout = setTimeout(() => showFilePopover(file, item), 300);
+    }
+  }, true);
+
+  container.addEventListener('mouseleave', (e) => {
+    const target = e.target as HTMLElement;
+    const item = target.closest('.file-item[data-type="file"]') as HTMLElement | null;
+    if (!item) return;
+    if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
+    closePopoverTimeout = setTimeout(() => {
+      if (filePopover && !filePopover.matches(':hover')) closeFilePopover();
+    }, 150);
+  }, true);
+
+  // Delegated click for folders, breadcrumbs, and print buttons
+  container.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+
+    // Print button
+    const printBtn = target.closest('.file-print-btn') as HTMLElement | null;
+    if (printBtn) {
+      e.stopPropagation();
+      const item = printBtn.closest('.file-item') as HTMLElement;
+      const filename = item?.dataset.filename;
+      if (filename && _lastState && _popoverClient) {
+        const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
+        requestPrintDialog(filename, fullPath, _popoverClient, _lastState);
       }
-    });
-    item.addEventListener('mouseleave', () => {
-      if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
-      // Delay closing to allow mouse to move to next item or popover
-      closePopoverTimeout = setTimeout(() => {
-        if (filePopover && !filePopover.matches(':hover')) closeFilePopover();
-      }, 150);
-    });
+      return;
+    }
+
+    // Folder click
+    const folder = target.closest('.file-item-folder') as HTMLElement | null;
+    if (folder) {
+      const dirname = folder.dataset.filename;
+      if (!dirname || !_popoverClient) return;
+      currentDir = currentDir === '/' ? '/' + dirname : currentDir + '/' + dirname;
+      thumbnailQueue = [];
+      thumbnailFetching = null;
+      container.innerHTML = '<div class="loading">Loading...</div>';
+      _popoverClient.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+      return;
+    }
+
+    // Breadcrumb nav
+    const navBtn = target.closest('.file-nav-btn') as HTMLElement | null;
+    if (navBtn) {
+      const dir = navBtn.dataset.dir;
+      if (dir == null || !_popoverClient) return;
+      currentDir = dir;
+      thumbnailQueue = [];
+      thumbnailFetching = null;
+      container.innerHTML = '<div class="loading">Loading...</div>';
+      _popoverClient.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+    }
   });
+}
+
+function bindFilePopovers(container: HTMLElement): void {
+  // No-op: popovers now handled by delegation in ensureFileDelegation
 }
 
 function formatBytes(bytes: number): string {
@@ -368,7 +422,8 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
   if (!files.length) {
     html += `<div class="file-empty">No files ${currentDir === '/' ? '' : 'in this folder '}on ${currentSource === 'u-disk' ? 'USB drive' : 'printer'}</div>`;
     container.innerHTML = html;
-    bindBreadcrumbNav(container, client);
+    ensureFileDelegation(container);
+    _popoverClient = client;
     return;
   }
 
@@ -419,58 +474,18 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
   }
 
   container.innerHTML = html;
-  bindBreadcrumbNav(container, client);
+  ensureFileDelegation(container);
 
   // Build file map for popover lookups
   _fileMap = new Map(sorted.filter(f => f.type !== 'folder').map(f => [f.filename, f]));
   _popoverClient = client;
 
+  // Close any stale popover from previous render
+  closeFilePopover();
+
   // Fetch cached status and inline thumbnails asynchronously
   void fetchCachedStatus(sorted, client);
   fetchInlineThumbnails(sorted, client);
-
-  // Bind thumbnail hover popovers
-  bindFilePopovers(container);
-
-  // Folder click → navigate
-  container.querySelectorAll('.file-item-folder').forEach(item => {
-    item.addEventListener('click', () => {
-      const dirname = (item as HTMLElement).dataset.filename;
-      if (!dirname) return;
-      currentDir = currentDir === '/' ? '/' + dirname : currentDir + '/' + dirname;
-      thumbnailQueue = [];
-      thumbnailFetching = null;
-      container.innerHTML = '<div class="loading">Loading...</div>';
-      client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
-    });
-  });
-
-  // Print button
-  container.querySelectorAll('.file-print-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const item = (e.target as HTMLElement).closest('.file-item') as HTMLElement;
-      const filename = item?.dataset.filename;
-      if (filename) {
-        const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
-        requestPrintDialog(filename, fullPath, client, state);
-      }
-    });
-  });
-}
-
-function bindBreadcrumbNav(container: HTMLElement, client: CommandSender): void {
-  container.querySelectorAll('.file-nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const dir = (btn as HTMLElement).dataset.dir;
-      if (dir == null) return;
-      currentDir = dir;
-      thumbnailQueue = [];
-      thumbnailFetching = null;
-      container.innerHTML = '<div class="loading">Loading...</div>';
-      client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
-    });
-  });
 }
 
 let fileControlsBound = false;

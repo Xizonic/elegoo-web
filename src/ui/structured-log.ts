@@ -231,33 +231,6 @@ export function renderStructuredLog(store: LogStore): void {
   container.innerHTML = html;
   $('slog-count').textContent = `${entries.length} messages`;
 
-  // Click to expand/collapse (but not on pin button)
-  container.querySelectorAll('.slog-row').forEach(row => {
-    row.addEventListener('click', (e) => {
-      // Don't expand when clicking pin button
-      if ((e.target as HTMLElement).closest('.slog-pin-btn')) return;
-      const ts = parseInt((row as HTMLElement).dataset.ts ?? '0');
-      if (expandedEntries.has(ts)) expandedEntries.delete(ts);
-      else expandedEntries.add(ts);
-      autoScroll = false;
-      ($('slog-autoscroll') as HTMLInputElement).checked = false;
-      lastRenderedTs = '';
-      renderStructuredLog(store);
-    });
-  });
-
-  // Pin button clicks
-  container.querySelectorAll('.slog-pin-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const ts = parseInt((btn as HTMLElement).dataset.pinTs ?? '0');
-      if (pinnedEntries.has(ts)) pinnedEntries.delete(ts);
-      else pinnedEntries.add(ts);
-      lastRenderedTs = '';
-      renderStructuredLog(store);
-    });
-  });
-
   if (autoScroll) {
     container.scrollTop = container.scrollHeight;
   }
@@ -268,6 +241,34 @@ let slogControlsBound = false;
 export function bindStructuredLogControls(store: LogStore): void {
   if (slogControlsBound) return;
   slogControlsBound = true;
+
+  // Delegated click handler on container (replaces per-row listeners)
+  const container = $('slog-entries');
+  container.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    // Pin button click
+    const pinBtn = target.closest('.slog-pin-btn') as HTMLElement | null;
+    if (pinBtn) {
+      e.stopPropagation();
+      const ts = parseInt(pinBtn.dataset.pinTs ?? '0');
+      if (pinnedEntries.has(ts)) pinnedEntries.delete(ts);
+      else pinnedEntries.add(ts);
+      lastRenderedTs = '';
+      renderStructuredLog(store);
+      return;
+    }
+    // Row click to expand/collapse
+    const row = target.closest('.slog-row') as HTMLElement | null;
+    if (row) {
+      const ts = parseInt(row.dataset.ts ?? '0');
+      if (expandedEntries.has(ts)) expandedEntries.delete(ts);
+      else expandedEntries.add(ts);
+      autoScroll = false;
+      ($('slog-autoscroll') as HTMLInputElement).checked = false;
+      lastRenderedTs = '';
+      renderStructuredLog(store);
+    }
+  });
 
   // Populate method filter dropdown
   const methodSelect = $('slog-method-filter') as HTMLSelectElement;

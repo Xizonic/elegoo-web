@@ -98,6 +98,14 @@ export class ChartStore {
     for (const fn of this.listeners) fn();
   }
 
+  /** Stop the internal sampling interval */
+  destroy(): void {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
   /** Push a single chart_data point from the service */
   pushPoint(t: number, values: Record<string, number>): void {
     for (const [key, value] of Object.entries(values)) {
