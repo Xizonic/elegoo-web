@@ -75,7 +75,7 @@ if (config.aiEnabled) {
 const reportCollector = new PrintReportCollector(store, config);
 
 // --- HTTP Server ---
-const restHandler = createRestRouter(store, config, aiMonitor, reportCollector);
+const restHandler = createRestRouter(store, config, aiMonitor, reportCollector, bridge);
 const octoPrintHandler = createOctoPrintRouter(store, bridge, config);
 const moonrakerHandler = createMoonrakerRouter(store, bridge, config);
 const moonrakerServer = new MoonrakerServer(store, bridge, config);

@@ -28,6 +28,7 @@ export class MqttBridge extends EventEmitter {
   private commandId = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private registerTimer: ReturnType<typeof setInterval> | null = null;
+  private slowRegisterTimer: ReturnType<typeof setInterval> | null = null;
   private _connected = false;
   private _brokerConnected = false;
   private _registerAttempts = 0;
@@ -90,6 +91,7 @@ export class MqttBridge extends EventEmitter {
       this._registerAttempts = 0;
       this.stopHeartbeat();
       this.stopRegisterRetry();
+      this.stopSlowRegisterRetry();
       this.emit('disconnected');
     });
   }
@@ -124,6 +126,7 @@ export class MqttBridge extends EventEmitter {
         this._connected = true;
         this._registerAttempts = 0;
         this.stopRegisterRetry();
+        this.stopSlowRegisterRetry();
         this.subscribeAll();
         this.startHeartbeat();
         // Request initial data
@@ -133,8 +136,9 @@ export class MqttBridge extends EventEmitter {
         this.sendCommand(1044, { storage_media: 'udisk', dir: '', offset: 0, limit: 200 }); // GET_FILE_LIST
         this.emit('connected', this.sn);
       } else if ((data.code as number) === 3) {
-        log.error('Registration rejected: too many clients (max 2). Disconnect another client and retry.');
+        log.warn('Registration rejected: too many clients (max 2). Will retry every 30s...');
         this.stopRegisterRetry();
+        this.startSlowRegisterRetry();
       }
     } else if (topic.includes('/api_response')) {
       const method = data.method as number;
@@ -176,6 +180,27 @@ export class MqttBridge extends EventEmitter {
     }
   }
 
+  /** Slow retry for when registration is rejected (code 3 — too many clients) */
+  private startSlowRegisterRetry(): void {
+    this.stopSlowRegisterRetry();
+    this.slowRegisterTimer = setInterval(() => {
+      if (this._connected) {
+        this.stopSlowRegisterRetry();
+        return;
+      }
+      log.info('Retrying registration (slow)...');
+      this._registerAttempts++;
+      this.sendRegister();
+    }, 30_000);
+  }
+
+  private stopSlowRegisterRetry(): void {
+    if (this.slowRegisterTimer) {
+      clearInterval(this.slowRegisterTimer);
+      this.slowRegisterTimer = null;
+    }
+  }
+
   private subscribeAll(): void {
     if (!this.client || !this.sn) return;
     this.client.subscribe(`elegoo/${this.sn}/api_status`, { qos: 1 });
@@ -189,10 +214,11 @@ export class MqttBridge extends EventEmitter {
       if (this.client && this.sn) {
         this.heartbeatMissed++;
         if (this.heartbeatMissed >= 2) {
-          log.warn('Heartbeat timeout (2 missed) — reconnecting...');
+          log.warn('Heartbeat timeout (2 missed) — forcing reconnect...');
           this.stopHeartbeat();
           this._connected = false;
-          this.client?.end(true);
+          // Reconnect: destroy the dead client and create a fresh one
+          this.reconnect();
           return;
         }
         this.client.publish(
@@ -219,9 +245,23 @@ export class MqttBridge extends EventEmitter {
     this.emit('raw', 'sent', topic, msg);
   }
 
+  /** Force a reconnect by tearing down the old client and calling connect() again */
+  private reconnect(): void {
+    if (this.client) {
+      this.client.removeAllListeners();
+      this.client.end(true);
+      this.client = null;
+    }
+    this.stopSlowRegisterRetry();
+    this._brokerConnected = false;
+    log.info('Reconnecting in 5s...');
+    setTimeout(() => this.connect(), 5000);
+  }
+
   disconnect(): void {
     this.stopHeartbeat();
     this.stopRegisterRetry();
+    this.stopSlowRegisterRetry();
     this._connected = false;
     if (this.client) {
       this.client.end();

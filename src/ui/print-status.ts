@@ -120,6 +120,7 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     state.thumbnail = null;
     state.thumbnailFailed = false;
     state.fileFilamentUsed = null;
+    state.thumbnailRequestQueue.push('print');
     client.sendCommand(1045, { storage_media: 'local', file_name: ps.filename });
     client.sendCommand(1046, { storage_media: 'local', filename: ps.filename });
   }

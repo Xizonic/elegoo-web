@@ -163,7 +163,8 @@ function drawHeader(doc: PDFKit.PDFDocument, report: PrintReport, pageW: number)
   const outcomeText = report.outcome.charAt(0).toUpperCase() + report.outcome.slice(1);
   const badgeY = doc.y;
   const badgeH = 16;
-  const badgeTextW = doc.widthOfString(outcomeText, { fontSize: 11 }) + 16;
+  doc.fontSize(11);
+  const badgeTextW = doc.widthOfString(outcomeText) + 16;
   doc.save()
     .roundedRect(textX, badgeY, badgeTextW, badgeH, 3)
     .fillColor(outcomeColor).fillOpacity(0.15).fill()

@@ -25,6 +25,7 @@ import type { StateStore } from './state-store.js';
 import type { ServiceConfig } from './config.js';
 import type { AIMonitor, AILabelConfig } from './ai-monitor.js';
 import type { PrintReportCollector } from './print-report-collector.js';
+import type { MqttBridge } from './mqtt-bridge.js';
 import { generateReportPDF } from './print-report-pdf.js';
 import { getLogger } from './logger.js';
 import { STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES, EXCEPTION_NAMES } from '../types.js';
@@ -581,8 +582,11 @@ function addOverlayClient(res: ServerResponse, config: ServiceConfig): void {
   startMjpegUpstream(config.cameraUrl);
 }
 
-export function createRestRouter(store: StateStore, config: ServiceConfig, aiMonitor?: AIMonitor | null, reportCollector?: PrintReportCollector | null) {
+let _bridge: MqttBridge | null = null;
+
+export function createRestRouter(store: StateStore, config: ServiceConfig, aiMonitor?: AIMonitor | null, reportCollector?: PrintReportCollector | null, bridge?: MqttBridge | null) {
   overlayStore = store;
+  if (bridge) _bridge = bridge;
   return (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url || '';
 
@@ -603,7 +607,7 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        mqtt: store.attributes ? 'connected' : 'disconnected',
+        mqtt: _bridge?.isConnected ? 'connected' : (_bridge?.brokerConnected ? 'broker_only' : 'disconnected'),
         clients: 0, // filled in by ws-transport if needed
       }));
       return;
@@ -1327,7 +1331,7 @@ function buildMetrics(store: StateStore) {
       ip: a.ip,
       firmware: a.software_version?.ota_version ?? null,
     } : null,
-    connected: !!a,
+    connected: !!_bridge?.isConnected,
     state: {
       status: ms?.status ?? null,
       status_name: STATUS_NAMES[ms?.status ?? -1] ?? 'Unknown',
@@ -1404,7 +1408,7 @@ function buildPrometheusMetrics(store: StateStore): string {
   }
 
   // Connection
-  g('elegoo_connected', 'Printer MQTT connection state (1=connected, 0=disconnected)', a ? 1 : 0);
+  g('elegoo_connected', 'Printer MQTT connection state (1=connected, 0=disconnected)', _bridge?.isConnected ? 1 : 0);
 
   // Machine state
   g('elegoo_machine_status', 'Machine status code', ms?.status);

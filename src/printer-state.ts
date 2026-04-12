@@ -37,6 +37,10 @@ export class PrinterState {
   files: FileEntry[] = [];
   thumbnail: string | null = null; // base64 PNG
   thumbnailFailed = false; // true when printer returns error (e.g. no embedded thumbnail)
+  /** Queue tracking the purpose of each pending 1045 thumbnail request */
+  thumbnailRequestQueue: Array<'print' | 'inline' | 'popup'> = [];
+  /** Raw thumbnail from the most recent 1045 response (for file browser routing) */
+  _lastRawThumbnail: string | null = null;
   fileTotalLayers: number | null = null;
   fileFilamentUsed: number | null = null;
   /** Color map from last file detail (method 1046) for multi-color printing */
@@ -182,13 +186,17 @@ export class PrinterState {
         break;
       }
       case 1045: { // GET_FILE_THUMBNAIL
+        const purpose = this.thumbnailRequestQueue.shift();
         const errorCode = result.error_code as number | undefined;
         const thumb = result.thumbnail as string | undefined;
-        if (thumb && errorCode === 0) {
-          this.thumbnail = thumb;
-          this.thumbnailFailed = false;
-        } else {
-          this.thumbnailFailed = true;
+        this._lastRawThumbnail = (thumb && errorCode === 0) ? thumb : null;
+        if (purpose === 'print') {
+          if (thumb && errorCode === 0) {
+            this.thumbnail = thumb;
+            this.thumbnailFailed = false;
+          } else {
+            this.thumbnailFailed = true;
+          }
         }
         this.notify();
         break;

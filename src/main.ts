@@ -419,9 +419,9 @@ function connectToService(): void {
         requestAnimationFrame(() => renderFiles(state, client!));
       }
       if (method === 1045) {
-        handleThumbnailResponse(state);
+        handleThumbnailResponse(state._lastRawThumbnail);
         // Also feed inline thumbnail queue
-        handleInlineThumbnail(state.thumbnailFailed ? null : state.thumbnail);
+        handleInlineThumbnail(state._lastRawThumbnail);
       }
       if (method === 1046) {
         handleFileDetailForPrint(state);

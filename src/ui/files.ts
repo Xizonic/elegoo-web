@@ -66,6 +66,7 @@ function fetchNextThumbnail(): void {
   if (!next) return;
   thumbnailFetching = next;
   // Method 1045 uses file_name (with underscore!)
+  _lastState?.thumbnailRequestQueue.push('inline');
   _thumbClient.sendCommand(1045, { storage_media: currentSource, file_name: next });
 }
 
@@ -179,6 +180,7 @@ function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
     closeFilePopover();
     pendingThumbnailFile = fullPath;
     pendingThumbnailAnchor = anchor;
+    _lastState?.thumbnailRequestQueue.push('popup');
     _popoverClient?.sendCommand(1045, { storage_media: currentSource, file_name: fullPath });
   });
   el.querySelector('.file-popover-download')?.addEventListener('click', () => {
@@ -341,9 +343,9 @@ document.addEventListener('click', (e) => {
 let pendingThumbnailFile: string | null = null;
 let pendingThumbnailAnchor: HTMLElement | null = null;
 
-export function handleThumbnailResponse(state: PrinterState): void {
-  if (state.thumbnail && pendingThumbnailFile && pendingThumbnailAnchor) {
-    showThumbnailPopup(state.thumbnail, pendingThumbnailAnchor);
+export function handleThumbnailResponse(thumbnail: string | null): void {
+  if (thumbnail && pendingThumbnailFile && pendingThumbnailAnchor) {
+    showThumbnailPopup(thumbnail, pendingThumbnailAnchor);
     pendingThumbnailFile = null;
     pendingThumbnailAnchor = null;
   }

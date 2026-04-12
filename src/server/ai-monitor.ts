@@ -22,6 +22,7 @@ import type { StateStore, PrintEvent } from './state-store.js';
 import { getSnapshot } from './rest-api.js';
 import sharp from 'sharp';
 import { getLogger } from './logger.js';
+import { isFilamentChangeSubStatus } from '../types.js';
 
 const log = getLogger('AI');
 
@@ -552,6 +553,15 @@ export class AIMonitor extends EventEmitter {
 
   private async runAnalysis(): Promise<void> {
     if (!this.isPrinting) return;
+
+    // Skip analysis during warmup/heating/filament change — only analyze when actively printing
+    const subStatus = this.store.status?.machine_status?.sub_status ?? 0;
+    if (subStatus !== 2075) {
+      // Reset stall counter so filament changes don't accumulate as stall evidence
+      this.consecutiveLowMotion = 0;
+      log.debug?.(`Skipping analysis — sub_status ${subStatus} (not actively printing)`);
+      return;
+    }
 
     const snapshot = await getSnapshot(this.config);
     if (!snapshot) {

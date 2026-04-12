@@ -13,7 +13,7 @@ import { getLogger, getEventLogger } from './logger.js';
 const log = getLogger('State');
 import {
   STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES,
-  EXCEPTION_NAMES, CRITICAL_EXCEPTIONS,
+  EXCEPTION_NAMES, CRITICAL_EXCEPTIONS, isFilamentChangeSubStatus,
 } from '../types.js';
 
 /** Chart data point — matches the browser ChartStore format */
@@ -785,18 +785,21 @@ export class StateStore extends EventEmitter {
       this.emit('print_event', { type: 'error', codes: newExceptions, names } satisfies PrintEvent);
 
       // Suppress filament runout near print completion — sensor may read empty as print finishes
+      // Also suppress during filament change operations (Canvas swap, extruder load/unload)
       const progress = ms?.progress ?? 0;
       const nearCompletion = printEnded || progress >= 99.8;
-      if (!nearCompletion && (newExceptions.includes(109) || newExceptions.includes(1211))) {
+      const duringFilamentChange = isFilamentChangeSubStatus(subStatus);
+      if (!nearCompletion && !duringFilamentChange && (newExceptions.includes(109) || newExceptions.includes(1211))) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
     }
 
-    // Filament runout from sensor — only during active printing, not near completion
-    // (sensor may read as empty when print finishes and filament retracts)
+    // Filament runout from sensor — only during active printing, not near completion,
+    // and not during filament change operations (Canvas swap causes sensor to read empty)
     const progressPct = ms?.progress ?? 0;
+    const duringFilamentChange = isFilamentChangeSubStatus(subStatus);
     if (ext && ext.filament_detect_enable && machineStatus === 2 && !printEnded && progressPct < 99.8) {
-      if (!ext.filament_detected && this.wasFilamentDetected) {
+      if (!ext.filament_detected && this.wasFilamentDetected && !duringFilamentChange) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
       this.wasFilamentDetected = !!ext.filament_detected;

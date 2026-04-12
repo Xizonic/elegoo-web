@@ -97,6 +97,8 @@ const MAX_SNAPSHOTS = 60;
 export class PrintReportCollector extends EventEmitter {
   private reportsDir: string;
   private activeReport: ActivePrint | null = null;
+  /** Last progress milestone that triggered a snapshot (0, 10, 20, ...) */
+  private lastProgressMilestone = -1;
 
   constructor(
     private store: StateStore,
@@ -137,6 +139,8 @@ export class PrintReportCollector extends EventEmitter {
         break;
       case 'print_progress':
         this.recordEvent(`Progress ${event.progress}% — Layer ${event.layer}/${event.totalLayers}`);
+        // Capture snapshot at every 10% milestone
+        this.captureProgressMilestone(event.progress);
         break;
       case 'error':
         this.recordEvent(`Error: ${event.names.join(', ')}`);
@@ -146,6 +150,7 @@ export class PrintReportCollector extends EventEmitter {
         break;
       case 'first_layer_complete':
         this.recordEvent(`First layer complete (${event.durationSec.toFixed(1)}s)`);
+        void this.captureSnapshot();
         break;
       case 'layer_change':
         // Only log milestone layers
@@ -177,9 +182,11 @@ export class PrintReportCollector extends EventEmitter {
     };
 
     this.recordEvent('Print started');
+    this.lastProgressMilestone = -1;
 
-    // Start snapshot capture timer
-    this.captureSnapshot();
+    // Delay initial snapshot by 10s to let CC2 send fresh state deltas
+    setTimeout(() => this.captureSnapshot(), 10_000);
+    // Start periodic snapshot timer
     this.activeReport!.snapshotTimer = setInterval(() => this.captureSnapshot(), SNAPSHOT_INTERVAL_MS);
   }
 
@@ -311,6 +318,15 @@ export class PrintReportCollector extends EventEmitter {
   private recordEvent(summary: string): void {
     if (!this.activeReport) return;
     this.activeReport.events.push({ ts: Date.now(), summary });
+  }
+
+  /** Capture a snapshot at 10% progress milestones */
+  private captureProgressMilestone(progress: number): void {
+    const milestone = Math.floor(progress / 10) * 10;
+    if (milestone <= this.lastProgressMilestone) return;
+    this.lastProgressMilestone = milestone;
+    log.info(`Progress milestone ${milestone}% — capturing snapshot`);
+    void this.captureSnapshot();
   }
 
   /** List all saved reports (most recent first) */

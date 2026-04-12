@@ -179,6 +179,7 @@ export const SUB_STATUS_NAMES: Record<number, string> = {
   1062: 'Extruder Unloading',
   1063: 'Extruder Load Complete',
   1064: 'Extruder Unload Complete',
+  1066: 'Filament Change',
   1133: 'Heating Nozzle',
   1134: 'Insert Filament',
   1135: 'Biting Filament',
@@ -254,6 +255,24 @@ export const SPEED_MODE_NAMES: Record<number, string> = {
   2: 'Sport',
   3: 'Ludicrous',
 };
+
+/**
+ * Returns true if the sub_status indicates a filament change operation
+ * (Canvas/AMS load/unload, extruder swap, nozzle preheat for swap, etc.)
+ * Used to suppress false filament-runout alerts and AI stall detection.
+ */
+export function isFilamentChangeSubStatus(subStatus: number): boolean {
+  // Extruder load/unload (1061-1066)
+  if (subStatus >= 1061 && subStatus <= 1066) return true;
+  // Canvas (AMS) load (1150-1158) and unload (1160-1166)
+  if (subStatus >= 1150 && subStatus <= 1166) return true;
+  // Nozzle preheat during filament swap (1045, 1133-1145)
+  if (subStatus === 1045) return true;
+  if (subStatus >= 1133 && subStatus <= 1145) return true;
+  // Filament interruption (2505)
+  if (subStatus === 2505) return true;
+  return false;
+}
 
 // Exception codes from the CC2 protocol
 export const EXCEPTION_NAMES: Record<number, string> = {
