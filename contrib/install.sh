@@ -95,7 +95,7 @@ SERVICE_PORT=${SERVICE_PORT}
 # PROGRESS_INTERVAL=25
 
 # Data persistence directory
-DATA_DIR=/opt/elegoo-web/data
+DATA_DIR=/opt/elegooweb/data
 
 # AI monitoring (optional)
 # AI_ENABLED=false

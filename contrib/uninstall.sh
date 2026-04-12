@@ -6,9 +6,9 @@
 
 set -e
 
-INSTALL_DIR="/opt/elegoo-web"
-SERVICE_NAME="elegoo-web"
-SERVICE_USER="elegoo-web"
+INSTALL_DIR="/opt/elegooweb"
+SERVICE_NAME="elegooweb"
+SERVICE_USER="elegooweb"
 
 # Colors
 RED='\033[0;31m'
