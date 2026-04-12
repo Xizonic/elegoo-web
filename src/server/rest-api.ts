@@ -17,8 +17,8 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
 import { createHash } from 'crypto';
 import { writeFile, readdir, readFile, mkdir, stat, unlink, readdir as readdirFs } from 'fs/promises';
-import { createReadStream, createWriteStream } from 'fs';
-import { join } from 'path';
+import { createReadStream, createWriteStream, existsSync } from 'fs';
+import { join, resolve, extname } from 'path';
 import { PassThrough } from 'stream';
 import sharp from 'sharp';
 import type { StateStore } from './state-store.js';
@@ -583,6 +583,64 @@ function addOverlayClient(res: ServerResponse, config: ServiceConfig): void {
 }
 
 let _bridge: MqttBridge | null = null;
+
+/* ── Static file serving (production) ──────────────────────────── */
+
+const DIST_DIR = resolve(import.meta.dirname ?? '.', '..', '..', 'dist');
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.webmanifest': 'application/manifest+json',
+};
+
+function serveStatic(url: string, res: ServerResponse): void {
+  // Strip query string
+  const pathname = url.split('?')[0];
+  // Prevent directory traversal
+  const safePath = resolve(DIST_DIR, '.' + pathname);
+  if (!safePath.startsWith(DIST_DIR)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
+  // Try exact file, then index.html (SPA fallback)
+  const candidates = [safePath, resolve(DIST_DIR, 'index.html')];
+  if (safePath === DIST_DIR || safePath === DIST_DIR + '/') {
+    candidates.unshift(resolve(DIST_DIR, 'index.html'));
+  }
+
+  for (const filePath of candidates) {
+    if (existsSync(filePath)) {
+      try {
+        const ext = extname(filePath);
+        const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+        // Cache hashed assets (Vite fingerprinted) aggressively
+        const cacheControl = filePath.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+        res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheControl });
+        createReadStream(filePath).pipe(res);
+        return;
+      } catch {
+        break;
+      }
+    }
+  }
+
+  res.writeHead(404);
+  res.end('Not found');
+}
 
 export function createRestRouter(store: StateStore, config: ServiceConfig, aiMonitor?: AIMonitor | null, reportCollector?: PrintReportCollector | null, bridge?: MqttBridge | null) {
   overlayStore = store;
@@ -1200,9 +1258,8 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       return;
     }
 
-    // Not an API route — let ws-transport or 404 handle it
-    res.writeHead(404);
-    res.end('Not found');
+    // Not an API route — serve static files from dist/
+    serveStatic(url, res);
 
     function handleClientError(req: IncomingMessage, res: ServerResponse): void {
       let body = '';

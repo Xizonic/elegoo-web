@@ -24,6 +24,7 @@ A Fluidd-inspired web frontend + backend service for Elegoo Centauri Carbon 2 (C
 The Node.js backend service (`src/server/`) connects to the printer's MQTT broker over TCP:1883 and acts as a bridge:
 - **WebSocket** (`/ws`): Real-time state updates pushed to all connected browsers
 - **REST API** (`/api/*`): Snapshots, file operations, camera proxy, commands
+- **Static files**: Serves the built `dist/` frontend in production (SPA fallback to `index.html`)
 - **Prometheus** (`/api/metrics`): Printer telemetry for monitoring
 
 The CC2 printer runs its own MQTT broker on two ports:
@@ -55,7 +56,7 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:5173`, enter your printer's IP address, and click Connect.
+This starts both the backend service and Vite dev server. Open `http://localhost:5173`.
 
 ## Build
 
@@ -63,7 +64,33 @@ Open `http://localhost:5173`, enter your printer's IP address, and click Connect
 pnpm build
 ```
 
-Output is in `dist/` — serve it with any static file server.
+Production output goes to `dist/`. The service serves it automatically on port 8088.
+
+## Production Deployment
+
+Install as a systemd service:
+
+```bash
+pnpm build
+sudo bash contrib/install.sh
+```
+
+This creates:
+- Service user `elegooweb`
+- Installation at `/opt/elegooweb/`
+- systemd unit `elegooweb.service` (auto-start on boot)
+- Default `.env` config at `/opt/elegooweb/.env`
+
+Edit `/opt/elegooweb/.env` to configure printer IP, Telegram, AI monitoring, etc.
+
+```bash
+sudo systemctl status elegooweb       # Check status
+sudo journalctl -u elegooweb -f       # Tail logs
+sudo systemctl restart elegooweb      # Restart after config changes
+sudo bash contrib/uninstall.sh        # Uninstall
+```
+
+Web UI: `http://<host>:8088`
 
 ## Project Structure
 

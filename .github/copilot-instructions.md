@@ -23,7 +23,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - `src/server/mqtt-bridge.ts` — Singleton MQTT connection to printer (connect, register, heartbeat, commands)
 - `src/server/state-store.ts` — Centralized state with event detection (print events, filament, layers, errors)
 - `src/server/ws-transport.ts` — WebSocket server for browser clients (init, status, raw message relay)
-- `src/server/rest-api.ts` — REST API, camera proxy, Prometheus metrics, file upload/download proxy
+- `src/server/rest-api.ts` — REST API, camera proxy, Prometheus metrics, file upload/download proxy, static file serving (production)
 - `src/server/config.ts` — Environment-based configuration (`.env`)
 - `src/server/telegram.ts` — Telegram bot notifications (print events, progress, snapshots)
 - `src/server/ai-monitor.ts` — AI print monitoring (motion detection, CLIP classification, VLM)
@@ -121,9 +121,23 @@ Reference: [CC2_PROTOCOL.md](https://github.com/danielcherubini/elegoo-homeassis
 
 ```bash
 pnpm install
-pnpm dev        # Start Vite dev server on :5173
+pnpm dev        # Start Vite dev server on :5173 + backend service
 pnpm build      # TypeScript check + Vite production build
 ```
+
+## Production Deployment
+
+```bash
+pnpm build
+sudo bash contrib/install.sh
+```
+
+- Installs to `/opt/elegooweb/` as systemd service `elegooweb`
+- Service user: `elegooweb`, config: `/opt/elegooweb/.env`
+- Single port (default 8088): serves frontend, API, WebSocket, and camera proxy
+- `contrib/install.sh` handles user creation, file copy, dependency install, systemd setup
+- `contrib/uninstall.sh` reverses the installation
+- `tsx` must be in `dependencies` (not devDependencies) — required at runtime to execute TypeScript
 
 ## Printer Details for Testing
 
