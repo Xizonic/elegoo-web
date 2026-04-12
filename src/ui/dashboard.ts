@@ -23,3 +23,4 @@ export { renderPrintHistory, bindHistoryControls, setHistoryClient, requestHisto
 export { renderMaintenance, bindMaintenanceControls, setMaintenanceClient } from './maintenance';
 export { renderReports, refreshReports, bindReportControls } from './print-reports';
 export { requestPrintDialog, handleFileDetailForPrint } from './print-dialog';
+export { renderDebugPanel, bindDebugPanel } from './debug-panel';

@@ -100,13 +100,14 @@ export function openSettings(): void {
   renderSettingsContent();
 }
 
-/** Switch between main tabs (dashboard / settings / tools / help) */
-export function switchToTab(tab: 'dashboard' | 'settings' | 'tools' | 'help'): void {
+/** Switch between main tabs (dashboard / settings / tools / help / debug) */
+export function switchToTab(tab: 'dashboard' | 'settings' | 'tools' | 'help' | 'debug'): void {
   const connectDialog = document.getElementById('connect-dialog');
   const dashboard = document.getElementById('dashboard');
   const settingsPage = document.getElementById('settings-tab-content');
   const toolsPage = document.getElementById('tools-tab-content');
   const helpPage = document.getElementById('help-tab-content');
+  const debugPage = document.getElementById('debug-tab-content');
   const tabs = document.querySelectorAll('.main-tab');
 
   if (!dashboard || !settingsPage) return;
@@ -120,6 +121,7 @@ export function switchToTab(tab: 'dashboard' | 'settings' | 'tools' | 'help'): v
   settingsPage.classList.add('hidden');
   toolsPage?.classList.add('hidden');
   helpPage?.classList.add('hidden');
+  debugPage?.classList.add('hidden');
   dashboard.classList.add('hidden');
   connectDialog?.classList.add('hidden');
 
@@ -139,6 +141,8 @@ export function switchToTab(tab: 'dashboard' | 'settings' | 'tools' | 'help'): v
   } else if (tab === 'help') {
     helpPage?.classList.remove('hidden');
     renderHelp();
+  } else if (tab === 'debug') {
+    debugPage?.classList.remove('hidden');
   }
 }
 

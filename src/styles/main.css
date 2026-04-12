@@ -905,6 +905,15 @@ body {
   border-radius: 2px;
   flex-shrink: 0;
 }
+.filament-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.2);
+  vertical-align: middle;
+  margin-right: 2px;
+}
 .filament-usage-label {
   flex: 1;
   color: var(--text-secondary);
@@ -2693,4 +2702,266 @@ body {
 .print-dialog-precache-text {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+/* ---- Debug Panel ---- */
+.debug-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.debug-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+}
+.debug-controls .log-filter-input {
+  min-width: 200px;
+}
+.debug-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 500px;
+}
+@media (max-width: 900px) {
+  .debug-split {
+    grid-template-columns: 1fr;
+  }
+}
+.debug-state-section,
+.debug-log-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.debug-state-section h3,
+.debug-log-section h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.debug-log-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+.debug-state-tree {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  overflow: auto;
+  max-height: 70vh;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.debug-change-log {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  overflow: auto;
+  max-height: 70vh;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Tree nodes */
+.debug-node {
+  cursor: default;
+  white-space: nowrap;
+}
+.debug-toggle {
+  cursor: pointer;
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  color: var(--text-secondary);
+  user-select: none;
+  font-size: 10px;
+}
+.debug-toggle:hover {
+  color: var(--accent);
+}
+.debug-key {
+  color: #79c0ff;
+  margin-right: 4px;
+}
+.debug-key::after {
+  content: ':';
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+.debug-node > .debug-key::after {
+  content: '';
+}
+.debug-meta {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.debug-leaf {
+  white-space: nowrap;
+  padding: 1px 0;
+  border-radius: 3px;
+  transition: background 0.3s ease;
+}
+
+/* Value type coloring */
+.debug-number { color: #d2a8ff; }
+.debug-string { color: #a5d6ff; }
+.debug-boolean { color: #ff7b72; }
+.debug-null { color: #8b949e; font-style: italic; }
+
+/* Changed highlight */
+.debug-changed {
+  background: rgba(255, 213, 79, 0.15) !important;
+  animation: debug-flash 3s ease-out forwards;
+}
+@keyframes debug-flash {
+  0% { background: rgba(255, 213, 79, 0.3); }
+  100% { background: transparent; }
+}
+
+.debug-empty {
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}
+
+/* Change log entries */
+.debug-log-entry {
+  display: flex;
+  gap: 6px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.debug-log-entry:hover {
+  background: var(--bg-input);
+}
+.debug-log-time {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.debug-log-path {
+  color: #79c0ff;
+  flex-shrink: 0;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.debug-log-old {
+  color: #f85149;
+  text-decoration: line-through;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.debug-log-arrow {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.debug-log-new {
+  color: #3fb950;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Logging badge */
+.debug-controls .log-paused-badge {
+  background: #f85149;
+  color: #fff;
+  animation: debug-pulse 2s ease-in-out infinite;
+}
+@keyframes debug-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+#debug-log-toggle.active {
+  background: #f85149;
+  color: #fff;
+}
+
+/* Watch controls */
+.debug-watch {
+  cursor: pointer;
+  font-size: 10px;
+  opacity: 0.3;
+  margin-left: 4px;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+.debug-leaf:hover .debug-watch,
+.debug-node:hover > .debug-watch {
+  opacity: 1;
+}
+.debug-watch-icon {
+  font-size: 10px;
+  margin-right: 2px;
+}
+.debug-watched {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.debug-watched-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.debug-watched-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.debug-watched-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(88, 166, 255, 0.15);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: #79c0ff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.debug-watched-tag:hover {
+  background: rgba(248, 81, 73, 0.2);
+  border-color: rgba(248, 81, 73, 0.4);
+  color: #f85149;
+}
+.debug-empty-inline {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: italic;
+}
+.debug-hint {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--text-secondary);
+}
+.debug-log-watched {
+  background: rgba(88, 166, 255, 0.05);
+}
+.debug-log-badge {
+  font-size: 10px;
+  flex-shrink: 0;
 }

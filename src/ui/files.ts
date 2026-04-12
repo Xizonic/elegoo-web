@@ -155,6 +155,15 @@ function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
     if (filamentInfo.count > 1) html += ` (${filamentInfo.count} filaments)`;
     html += `</td></tr>`;
   }
+  // Show color map info if available from last file detail matching this file
+  if (_lastState?.lastFileDetail?.filename === fullPath && _lastState.colorMap.length > 0) {
+    const cm = _lastState.colorMap;
+    const swatches = cm.map(c => {
+      const hex = c.color.startsWith('#') ? c.color : `#${c.color}`;
+      return `<span class="filament-swatch" style="background:${escapeAttr(hex)}" title="${escapeAttr(c.name)}"></span>`;
+    }).join(' ');
+    html += `<tr><td>Filaments</td><td>${swatches} (${cm.length})</td></tr>`;
+  }
   if (file.create_time) {
     const d = new Date(file.create_time * 1000);
     html += `<tr><td>Created</td><td>${d.toLocaleDateString()} ${d.toLocaleTimeString()}</td></tr>`;

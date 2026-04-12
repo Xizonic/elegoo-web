@@ -24,6 +24,7 @@ import {
   renderReports, bindReportControls,
   handleFileDetailForPrint,
   bindGcodePreviewControls,
+  renderDebugPanel, bindDebugPanel,
 } from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
 
@@ -117,6 +118,7 @@ function scheduleRender(): void {
       renderReports();
       renderLog(logStore);
       renderStructuredLog(logStore);
+      renderDebugPanel(state);
     }
   });
 }
@@ -161,6 +163,7 @@ function showDashboard(): void {
     bindMaintenanceControls();
     bindReportControls();
     bindGcodePreviewControls();
+    bindDebugPanel();
     $('timelapse-close').addEventListener('click', () => {
       const player = $('timelapse-player') as HTMLVideoElement;
       player.pause();
@@ -419,9 +422,13 @@ function connectToService(): void {
         requestAnimationFrame(() => renderFiles(state, client!));
       }
       if (method === 1045) {
-        handleThumbnailResponse(state._lastRawThumbnail);
-        // Also feed inline thumbnail queue
-        handleInlineThumbnail(state._lastRawThumbnail);
+        const purpose = state._lastThumbnailPurpose;
+        if (purpose === 'popup') {
+          handleThumbnailResponse(state._lastRawThumbnail);
+        } else if (purpose === 'inline') {
+          handleInlineThumbnail(state._lastRawThumbnail);
+        }
+        // 'print' purpose is handled in printer-state.ts directly
       }
       if (method === 1046) {
         handleFileDetailForPrint(state);
@@ -583,7 +590,7 @@ window.addEventListener('unhandledrejection', (e) => {
 // Tab navigation
 document.querySelectorAll('.main-tab').forEach(btn => {
   btn.addEventListener('click', () => {
-    const tab = (btn as HTMLElement).dataset.tab as 'dashboard' | 'settings' | 'tools' | 'help';
+    const tab = (btn as HTMLElement).dataset.tab as 'dashboard' | 'settings' | 'tools' | 'help' | 'debug';
     switchToTab(tab);
   });
 });

@@ -3,9 +3,17 @@
 ## High Priority
 
 - [ ] **No test suite** — Zero tests in the entire project. Add at minimum: unit tests for state merging (`printer-state.ts` deep merge), time formatting helpers, server state-store logic, and integration tests for MQTT message parsing.
-- [ ] tiemlapse module is always empty? it does not show any time lapses. 
-- [ ] we need to ignore "paused"/"stopped" AI analysis while printer is warming up. So unless it has status printing we should ignore the stationary state. 
-- [ ] full debug panel (its own tab) with live status of ALL variables. Option to enable logging so we can see changes for each value. Should have a timeout for autodisabling this if it is very resource intensive. The goal is to log all changes to status/substatus etc. Option to save all to file. same as with the mqtt debug 
+- [ ] we need to ignore "stalled" AI analysis while printer is warming up and changing filament. This is partly implemented, but not working during filamentchange. Now we get both stall messages and filament runout messages while status=printing. We should make the status is not printing (2) before sending runout messages. and we should make sure we are not changing filament when sending stall messages. 
+- [ ] bed mesh is still not working. 
+- [ ] we need a better UI - the different divs are creating a scoll nightmare, and we need a better pattern for having a dashboard. We can then have more details elsewhere? Or something. come with suggestions based on updated research from 2026. also colors and styles should be improved to use current best-practises and patterns. We need to utilize all space when in browser mode, and still have an effective mobile mode, as web or PWA.
+- [x] We need to show the number of filament changes when a print is running and in the file preview popover.
+- [x] we need to show the currently printing filament in the top status panel.
+- [x] print history is empty?
+- [x] in the debug live state we should be able to enable/disable logging on select values. 
+- [x] in the debug live state the filter does not work (it shows all values always)
+- [x] gcode thumbnails in files list is totally wrong? it shows the wrong thumbnail? it seems something is guessing what thumbnail is correct? clicking preview shows the correcet thumbnail.
+- [ ] print history needs to be populated on connect, and cached if this is a good pattern. Now we need to click reload, and that is not good UX. 
+
 
 ## Medium Priority
 
@@ -141,3 +149,4 @@
 - [x] **XYZ position feedback after move** — Move buttons don't confirm success or show new position. Request position update after move command and display result.
 - [x] **Service status "Connecting..." state** — UI shows "Disconnected" briefly on page load before first status message. Show "Connecting…" instead of "Disconnected" during initial connection.
 - [x] **Browser error reporting to server** — Client-side errors only appear in browser console. Ship critical JS errors to server log via `/api/client-error` for post-incident analysis.
+- [x] full debug panel (its own tab) with live status of ALL variables. Option to enable logging so we can see changes for each value. Should have a timeout for autodisabling this if it is very resource intensive. The goal is to log all changes to status/substatus etc. Option to save all to file. same as with the mqtt debug 

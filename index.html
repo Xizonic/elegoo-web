@@ -24,6 +24,7 @@
         <button class="main-tab active" data-tab="dashboard">🖨️ Dashboard</button>
         <button class="main-tab" data-tab="tools">🧮 Tools</button>
         <button class="main-tab" data-tab="settings">⚙️ Settings</button>
+        <button class="main-tab" data-tab="debug">🐛 Debug</button>
         <button class="main-tab" data-tab="help">❓ Help</button>
       </nav>
     </div>
@@ -77,6 +78,10 @@
           <div class="print-meta">
             <span id="print-layer">Layer: --/--</span>
             <span id="print-filament">--</span>
+          </div>
+          <div class="print-meta">
+            <span id="print-active-filament">--</span>
+            <span id="print-color-changes">--</span>
           </div>
           <div class="print-meta">
             <span id="print-elapsed">--</span>
@@ -570,6 +575,49 @@
       <div class="settings-page-inner">
         <h2 class="settings-page-title">⚙️ Settings</h2>
         <div id="settings-content" class="settings-content-full"></div>
+      </div>
+    </div>
+
+    <!-- Debug tab -->
+    <div id="debug-tab-content" class="settings-page hidden">
+      <div class="settings-page-inner" style="max-width: 1400px">
+        <h2 class="settings-page-title">🐛 Debug Panel</h2>
+        <div class="debug-panel">
+          <div class="debug-controls">
+            <input type="text" id="debug-filter" placeholder="Filter fields..." class="log-filter-input">
+            <button class="btn btn-sm" id="debug-log-toggle">▶ Start Logging</button>
+            <select id="debug-log-timeout" class="log-select">
+              <option value="1">Auto-stop: 1m</option>
+              <option value="5" selected>Auto-stop: 5m</option>
+              <option value="15">Auto-stop: 15m</option>
+              <option value="30">Auto-stop: 30m</option>
+              <option value="60">Auto-stop: 60m</option>
+            </select>
+            <span id="debug-logging-badge" class="log-paused-badge hidden">LOGGING</span>
+            <button class="btn btn-sm btn-ghost" id="debug-export-state" title="Export current state as JSON">📤 State</button>
+            <button class="btn btn-sm btn-ghost" id="debug-export-log" title="Export change log as JSON">📥 Changes</button>
+            <button class="btn btn-sm btn-ghost" id="debug-clear-log">🗑 Clear</button>
+          </div>
+          <div class="debug-watched">
+            <span class="debug-watched-label">Watched:</span>
+            <div id="debug-watched-list" class="debug-watched-list">
+              <span class="debug-empty-inline">Click ○ on any value to watch it</span>
+            </div>
+          </div>
+          <div class="debug-split">
+            <div class="debug-state-section">
+              <h3>Live State <span class="debug-hint">(○ = watch, ▶ = expand)</span></h3>
+              <div id="debug-state-tree" class="debug-state-tree"></div>
+            </div>
+            <div class="debug-log-section">
+              <h3>Change Log <span id="debug-log-count" class="debug-log-count">0 changes</span></h3>
+              <label class="log-autoscroll-label">
+                <input type="checkbox" id="debug-log-autoscroll" checked> Auto-scroll
+              </label>
+              <div id="debug-change-log" class="debug-change-log"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

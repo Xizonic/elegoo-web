@@ -49,6 +49,28 @@ function getActiveFilamentType(state: PrinterState): string {
   return 'PLA';
 }
 
+/** Get active filament type + color for display */
+function getActiveFilamentInfo(state: PrinterState): { type: string; color: string } | null {
+  const canvas = state.canvas;
+  if (canvas?.canvas_list?.length) {
+    for (const unit of canvas.canvas_list) {
+      if (unit.canvas_id !== canvas.active_canvas_id) continue;
+      for (const tray of unit.tray_list) {
+        if (tray.tray_id === canvas.active_tray_id && tray.filament_type) {
+          const color = `#${(tray.filament_color || '434343').replace(/^#/, '')}`;
+          return { type: tray.filament_type, color };
+        }
+      }
+    }
+  }
+  const mono = state.monoFilament as Record<string, unknown> | null;
+  if (mono?.filament_type) {
+    const color = `#${((mono.filament_color as string) || '434343').replace(/^#/, '')}`;
+    return { type: mono.filament_type as string, color };
+  }
+  return null;
+}
+
 function updateFan(prefix: string, speed: number, toggleId: string, rpm?: number): void {
   const pct = fanPct(speed);
   ($(`${prefix}-bar`) as HTMLElement).style.width = `${pct}%`;
@@ -224,6 +246,28 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     $('print-filament').textContent = `🧵 ${filamentUsed.toFixed(1)}g (${lengthM.toFixed(1)}m)`;
   } else {
     $('print-filament').textContent = '--';
+  }
+
+  // Active filament display
+  const activeFilamentEl = $('print-active-filament');
+  const colorChangesEl = $('print-color-changes');
+  if (isPrinting || isPaused) {
+    const activeInfo = getActiveFilamentInfo(state);
+    if (activeInfo) {
+      activeFilamentEl.innerHTML = `<span class="filament-swatch" style="background:${escapeHtml(activeInfo.color)}"></span> ${escapeHtml(activeInfo.type)}`;
+    } else {
+      activeFilamentEl.textContent = `🧵 ${getActiveFilamentType(state)}`;
+    }
+    // Color changes from color_map
+    const colorMap = state.colorMap;
+    if (colorMap.length > 1) {
+      colorChangesEl.textContent = `🔄 ${colorMap.length} filaments`;
+    } else {
+      colorChangesEl.textContent = '';
+    }
+  } else {
+    activeFilamentEl.textContent = '--';
+    colorChangesEl.textContent = '';
   }
 
   // Remaining time

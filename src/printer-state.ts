@@ -41,6 +41,8 @@ export class PrinterState {
   thumbnailRequestQueue: Array<'print' | 'inline' | 'popup'> = [];
   /** Raw thumbnail from the most recent 1045 response (for file browser routing) */
   _lastRawThumbnail: string | null = null;
+  /** Purpose of the most recent 1045 response */
+  _lastThumbnailPurpose: 'print' | 'inline' | 'popup' | undefined = undefined;
   fileTotalLayers: number | null = null;
   fileFilamentUsed: number | null = null;
   /** Color map from last file detail (method 1046) for multi-color printing */
@@ -190,6 +192,7 @@ export class PrinterState {
         const errorCode = result.error_code as number | undefined;
         const thumb = result.thumbnail as string | undefined;
         this._lastRawThumbnail = (thumb && errorCode === 0) ? thumb : null;
+        this._lastThumbnailPurpose = purpose;
         if (purpose === 'print') {
           if (thumb && errorCode === 0) {
             this.thumbnail = thumb;

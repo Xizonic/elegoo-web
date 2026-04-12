@@ -3,17 +3,15 @@ import type { PrinterState } from '../printer-state';
 import { $, escapeHtml, formatTime } from './helpers';
 
 let historyClient: CommandSender | null = null;
-let currentPage = 1;
-const PAGE_SIZE = 20;
 
 export function setHistoryClient(client: CommandSender): void {
   historyClient = client;
 }
 
-export function requestHistory(page = 1): void {
+export function requestHistory(): void {
   if (!historyClient) return;
-  currentPage = page;
-  historyClient.sendCommand(1036, { page, page_size: PAGE_SIZE });
+  // Method 1036 takes NO params per CC2 protocol — page/page_size not supported
+  historyClient.sendCommand(1036, {});
 }
 
 export function renderPrintHistory(state: PrinterState): void {
@@ -56,36 +54,13 @@ export function renderPrintHistory(state: PrinterState): void {
 
   container.innerHTML = html;
 
-  // Pagination
+  // Show total count
   const totalEl = $('print-history-total');
   if (totalEl) {
-    const total = state.printHistoryTotal;
-    const pages = Math.ceil(total / PAGE_SIZE);
-    if (pages > 1) {
-      let paginationHtml = '<div class="history-pagination">';
-      if (currentPage > 1) {
-        paginationHtml += `<button class="btn btn-sm btn-ghost history-page-btn" data-page="${currentPage - 1}">◀</button>`;
-      }
-      paginationHtml += `<span class="history-page-info">${currentPage} / ${pages}</span>`;
-      if (currentPage < pages) {
-        paginationHtml += `<button class="btn btn-sm btn-ghost history-page-btn" data-page="${currentPage + 1}">▶</button>`;
-      }
-      paginationHtml += '</div>';
-      totalEl.innerHTML = paginationHtml;
-
-      // Bind page buttons
-      totalEl.querySelectorAll('.history-page-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const page = parseInt((btn as HTMLElement).dataset.page ?? '1');
-          requestHistory(page);
-        });
-      });
-    } else {
-      totalEl.innerHTML = '';
-    }
+    totalEl.textContent = `${state.printHistoryTotal} prints`;
   }
 }
 
 export function bindHistoryControls(): void {
-  $('btn-history-refresh').addEventListener('click', () => requestHistory(1));
+  $('btn-history-refresh').addEventListener('click', () => requestHistory());
 }
