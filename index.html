@@ -29,6 +29,21 @@
       </nav>
     </div>
     <div class="header-right">
+      <button id="sidebar-toggle" class="btn btn-sm btn-ghost" title="Toggle sidebar">◧</button>
+      <div class="svc-header-wrap" id="svc-header-wrap">
+        <button class="svc-header-badge" id="svc-header-badge" title="Service status">
+          <span id="svc-header-dots"></span>
+          <span id="svc-header-count">--</span>
+        </button>
+        <div class="svc-dropdown hidden" id="svc-dropdown">
+          <div class="svc-dropdown-header">Service Status</div>
+          <div id="service-status" class="svc-dropdown-body"></div>
+          <div class="svc-dropdown-header">System Info</div>
+          <div id="system-info" class="svc-dropdown-body svc-system-info">
+            <div class="svc-loading">Connect to view system info</div>
+          </div>
+        </div>
+      </div>
       <span id="connection-status" class="status-badge connecting">Connecting…</span>
     </div>
   </header>
@@ -54,86 +69,96 @@
       <!-- Exception/error banner -->
       <div id="exception-banner" class="exception-banner hidden"></div>
 
-      <!-- Service status panel -->
-      <div class="card svc-status-card" id="service-status-card">
-        <h3 class="card-title">Service Status</h3>
-        <div id="service-status"></div>
-      </div>
-
-      <!-- Top bar: printer info + print progress -->
-      <div id="print-status-bar" class="card print-status-card">
-        <div id="print-thumbnail-wrap" class="print-thumbnail-wrap">
-          <img id="print-thumbnail" class="print-thumbnail hidden" alt="">
-          <div id="print-thumbnail-placeholder" class="print-thumbnail-placeholder">🖨️</div>
-        </div>
-        <div class="print-info">
-          <div class="print-file" id="print-filename">No active print</div>
-          <div class="print-status-badge" id="print-status-badge"></div>
-          <div class="print-progress-wrap">
-            <span class="progress-text-lg" id="print-progress-text">--%</span>
-            <div class="progress-bar">
-              <div class="progress-fill" id="print-progress-bar"></div>
+      <div class="dashboard-panels">
+        <aside class="dashboard-sidebar" id="dashboard-sidebar">
+          <!-- Print status (compact, in sidebar) -->
+          <div id="print-status-bar" class="card print-status-card">
+            <div class="print-status-top">
+              <div id="print-thumbnail-wrap" class="print-thumbnail-wrap">
+                <img id="print-thumbnail" class="print-thumbnail hidden" alt="">
+                <div id="print-thumbnail-placeholder" class="print-thumbnail-placeholder">🖨️</div>
+              </div>
+              <div class="print-info">
+                <div class="print-file" id="print-filename">No active print</div>
+                <div class="print-status-badge" id="print-status-badge"></div>
+              </div>
+            </div>
+            <div class="print-progress-wrap">
+              <span class="progress-text-lg" id="print-progress-text">--%</span>
+              <div class="progress-bar">
+                <div class="progress-fill" id="print-progress-bar"></div>
+              </div>
+            </div>
+            <div class="print-details">
+              <div class="print-meta">
+                <span id="print-layer">Layer: --/--</span>
+                <span id="print-filament">--</span>
+              </div>
+              <div class="print-meta">
+                <span id="print-active-filament">--</span>
+                <span id="print-color-changes">--</span>
+              </div>
+              <div class="print-meta">
+                <span id="print-elapsed">--</span>
+                <span id="print-remaining">--</span>
+              </div>
+              <div class="print-meta">
+                <span id="print-started">--</span>
+                <span id="print-eta">--</span>
+              </div>
+            </div>
+            <div class="print-actions">
+              <button id="btn-pause" class="btn btn-warning btn-icon" title="Pause">⏸</button>
+              <button id="btn-resume" class="btn btn-success btn-icon hidden" title="Resume">▶</button>
+              <button id="btn-stop" class="btn btn-danger btn-icon" title="Stop">⏹</button>
+              <button id="btn-estop" class="btn btn-danger btn-icon" title="Emergency Stop">🛑</button>
             </div>
           </div>
-          <div class="print-meta">
-            <span id="print-layer">Layer: --/--</span>
-            <span id="print-filament">--</span>
-          </div>
-          <div class="print-meta">
-            <span id="print-active-filament">--</span>
-            <span id="print-color-changes">--</span>
-          </div>
-          <div class="print-meta">
-            <span id="print-elapsed">--</span>
-            <span id="print-remaining">--</span>
-          </div>
-          <div class="print-meta">
-            <span id="print-started">--</span>
-            <span id="print-eta">--</span>
-          </div>
 
-        </div>
-        <div class="print-actions">
-          <button id="btn-pause" class="btn btn-warning btn-icon" title="Pause">⏸</button>
-          <button id="btn-resume" class="btn btn-success btn-icon hidden" title="Resume">▶</button>
-          <button id="btn-stop" class="btn btn-danger btn-icon" title="Stop">⏹</button>
-          <button id="btn-estop" class="btn btn-danger btn-icon" title="Emergency Stop">🛑</button>
-        </div>
-      </div>
 
-      <div class="dashboard-grid">
+        </aside>
+        <div class="sidebar-resize-handle" id="sidebar-resize-handle" title="Drag to resize sidebar"></div>
+        <main class="dashboard-main" id="dashboard-main">
         <!-- Temperatures -->
         <div class="card" id="temps-card">
           <h3>🌡️ Temperatures</h3>
           <div class="temp-grid">
             <div class="temp-item">
-              <div class="temp-label">Nozzle</div>
-              <div class="temp-value">
-                <span id="temp-nozzle">--</span>°C
-                <span class="temp-target">/ <span id="temp-nozzle-target">--</span>°C</span>
+              <div class="temp-row">
+                <div>
+                  <div class="temp-label">Nozzle</div>
+                  <div class="temp-value">
+                    <span id="temp-nozzle">--</span>°C
+                    <span class="temp-target">/ <span id="temp-nozzle-target">--</span>°C</span>
+                  </div>
+                </div>
+                <div class="temp-control">
+                  <input type="number" id="set-nozzle-temp" placeholder="210" min="0" max="300" step="5">
+                  <button class="btn btn-sm" id="btn-set-nozzle">Set</button>
+                  <button class="btn btn-sm btn-ghost" id="btn-off-nozzle">Off</button>
+                </div>
               </div>
               <div class="temp-bar-wrap">
                 <div class="temp-bar nozzle-bar" id="temp-nozzle-bar"></div>
               </div>
-              <div class="temp-control">
-                <input type="number" id="set-nozzle-temp" placeholder="210" min="0" max="300" step="5">
-                <button class="btn btn-sm" id="btn-set-nozzle">Set</button>
-                <button class="btn btn-sm btn-ghost" id="btn-off-nozzle">Off</button>
-              </div>
             </div>
             <div class="temp-item">
-              <div class="temp-label">Bed</div>
-              <div class="temp-value">
-                <span id="temp-bed">--</span>°C
-                <span class="temp-target">/ <span id="temp-bed-target">--</span>°C</span>
+              <div class="temp-row">
+                <div>
+                  <div class="temp-label">Bed</div>
+                  <div class="temp-value">
+                    <span id="temp-bed">--</span>°C
+                    <span class="temp-target">/ <span id="temp-bed-target">--</span>°C</span>
+                  </div>
+                </div>
+                <div class="temp-control">
+                  <input type="number" id="set-bed-temp" placeholder="60" min="0" max="120" step="5">
+                  <button class="btn btn-sm" id="btn-set-bed">Set</button>
+                  <button class="btn btn-sm btn-ghost" id="btn-off-bed">Off</button>
+                </div>
               </div>
               <div class="temp-bar-wrap">
                 <div class="temp-bar bed-bar" id="temp-bed-bar"></div>
-              </div>
-              <div class="temp-control">
-                <input type="number" id="set-bed-temp" placeholder="60" min="0" max="120" step="5">
-                <button class="btn btn-sm" id="btn-set-bed">Set</button>
-                <button class="btn btn-sm btn-ghost" id="btn-off-bed">Off</button>
               </div>
             </div>
             <div class="temp-item">
@@ -187,14 +212,6 @@
           </div>
         </div>
 
-        <!-- Camera Fullscreen Overlay -->
-        <div id="camera-modal" class="camera-modal hidden" tabindex="-1">
-          <div class="camera-modal-content">
-            <img id="camera-modal-img" alt="Camera" class="camera-modal-img">
-            <button id="camera-modal-close" class="camera-modal-close" title="Close">&times;</button>
-          </div>
-        </div>
-
         <!-- AI Monitor -->
         <div class="card" id="ai-card">
           <h3>🤖 AI Monitor</h3>
@@ -225,14 +242,6 @@
           </div>
         </div>
 
-        <!-- System Info -->
-        <div class="card" id="system-info-card">
-          <h3>ℹ️ System Info</h3>
-          <div id="system-info" class="system-info">
-            <div class="info-placeholder">Connect to view system info</div>
-          </div>
-        </div>
-
         <!-- Event Log -->
         <div class="card" id="event-log-card">
           <h3>📜 Event Log</h3>
@@ -251,29 +260,6 @@
         </div>
 
         <!-- Maintenance / Self-Check -->
-        <div class="card" id="maintenance-card">
-          <h3>🔧 Maintenance</h3>
-          <div id="maintenance-status"></div>
-          <div class="maintenance-grid">
-            <button id="btn-self-check" class="btn btn-ghost maintenance-btn" title="Run full self-check (auto-level + vibration + PID)">
-              <span class="maintenance-icon">🔍</span>
-              <span>Full Self-Check</span>
-            </button>
-            <button id="btn-maintenance-level" class="btn btn-ghost maintenance-btn" title="Auto-level bed probing">
-              <span class="maintenance-icon">📐</span>
-              <span>Auto Level</span>
-            </button>
-            <button id="btn-maintenance-vibration" class="btn btn-ghost maintenance-btn" title="Input shaper / vibration optimization">
-              <span class="maintenance-icon">〰️</span>
-              <span>Vibration Opt.</span>
-            </button>
-            <button id="btn-maintenance-pid" class="btn btn-ghost maintenance-btn" title="PID auto-tune for nozzle and bed heaters">
-              <span class="maintenance-icon">🌡️</span>
-              <span>PID Calibrate</span>
-            </button>
-          </div>
-        </div>
-
         <!-- Gcode Preview -->
         <div class="card" id="gcode-preview-card">
           <div class="card-header">
@@ -341,6 +327,32 @@
                 <button class="btn btn-sm speed-btn" data-mode="160">Ludicrous</button>
               </div>
             </div>
+            <div class="led-control">
+              <span class="fan-icon">☀️</span>
+              <span>Overhead light</span>
+              <label class="toggle"><input type="checkbox" id="led-toggle" checked><span class="toggle-slider"></span></label>
+            </div>
+            <div class="control-maintenance">
+              <div id="maintenance-status"></div>
+              <div class="maintenance-grid">
+                <button id="btn-self-check" class="btn btn-ghost maintenance-btn" title="Run full self-check (auto-level + vibration + PID)">
+                  <span class="maintenance-icon">🔍</span>
+                  <span>Self-Check</span>
+                </button>
+                <button id="btn-maintenance-level" class="btn btn-ghost maintenance-btn" title="Auto-level bed probing">
+                  <span class="maintenance-icon">📐</span>
+                  <span>Auto Level</span>
+                </button>
+                <button id="btn-maintenance-vibration" class="btn btn-ghost maintenance-btn" title="Input shaper / vibration optimization">
+                  <span class="maintenance-icon">〰️</span>
+                  <span>Vibration</span>
+                </button>
+                <button id="btn-maintenance-pid" class="btn btn-ghost maintenance-btn" title="PID auto-tune for nozzle and bed heaters">
+                  <span class="maintenance-icon">🌡️</span>
+                  <span>PID Tune</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -390,11 +402,6 @@
                 <button class="btn btn-sm fan-inc" data-fan="box_fan" data-step="13">+</button>
               </div>
             </div>
-          </div>
-          <div class="led-control">
-            <span class="fan-icon">☀️</span>
-            <span>Overhead light</span>
-            <label class="toggle"><input type="checkbox" id="led-toggle" checked><span class="toggle-slider"></span></label>
           </div>
           <div class="chart-wrap">
             <div class="chart-time-selector">
@@ -559,6 +566,15 @@
           </div>
         </div>
 
+        </main>
+      </div>
+
+      <!-- Camera Fullscreen Overlay (positioned fixed, outside panels) -->
+      <div id="camera-modal" class="camera-modal hidden" tabindex="-1">
+        <div class="camera-modal-content">
+          <img id="camera-modal-img" alt="Camera" class="camera-modal-img">
+          <button id="camera-modal-close" class="camera-modal-close" title="Close">&times;</button>
+        </div>
       </div>
     </div>
 

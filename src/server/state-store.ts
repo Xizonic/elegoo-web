@@ -14,7 +14,9 @@ const log = getLogger('State');
 import {
   STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES,
   EXCEPTION_NAMES, CRITICAL_EXCEPTIONS, isFilamentChangeSubStatus,
+  detectZone, ZONE_MAX_HISTORY,
 } from '../types.js';
+import type { ZoneName, ZoneState } from '../types.js';
 
 /** Chart data point — matches the browser ChartStore format */
 export interface ChartPoint {
@@ -123,6 +125,14 @@ export class StateStore extends EventEmitter {
   videoUrl: string | null = null;
   bedMesh: number[][] | null = null;
 
+  // Toolhead zone tracking
+  zones: ZoneState = {
+    current: 'outside',
+    previous: 'outside',
+    enteredAt: 0,
+    history: [],
+  };
+
   // Layer time tracking (server-side, survives browser reloads)
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }> = [];
   private _lastLayer = 0;
@@ -155,7 +165,6 @@ export class StateStore extends EventEmitter {
   private lastSubStatus = -1;
   private lastProgressNotified = -1;
   private lastExceptions: number[] = [];
-  private wasFilamentDetected = true;
   private totalLayers = 0;
   private pendingPrintStartTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingPrintStartRetries = 0;
@@ -606,7 +615,6 @@ export class StateStore extends EventEmitter {
     this.lastMachineStatus = ms?.status ?? -1;
     this.lastSubStatus = ms?.sub_status ?? -1;
     this.lastExceptions = [...(ms?.exception_status ?? [])];
-    this.wasFilamentDetected = !!ext?.filament_detected;
 
     if (this.lastMachineStatus === 2) {
       const progress = ms.progress ?? 0;
@@ -683,10 +691,10 @@ export class StateStore extends EventEmitter {
   /** Update tracking state silently (before baseline is ready) */
   private updateTrackingState(): void {
     if (!this.status) return;
-    const ms = this.status.machine_status;
     const ps = this.status.print_status;
-    // Just track layer changes, don't emit any events
+    // Track layer and zone changes even before baseline
     this.trackLayerChange(ps?.current_layer);
+    this.trackZone();
   }
 
   /** Detect state transitions and emit print events */
@@ -786,24 +794,19 @@ export class StateStore extends EventEmitter {
 
       // Suppress filament runout near print completion — sensor may read empty as print finishes
       // Also suppress during filament change operations (Canvas swap, extruder load/unload)
+      // Also suppress when toolhead is not in print area (cutter/purge zones)
       const progress = ms?.progress ?? 0;
       const nearCompletion = printEnded || progress >= 99.8;
       const duringFilamentChange = isFilamentChangeSubStatus(subStatus);
-      if (!nearCompletion && !duringFilamentChange && (newExceptions.includes(109) || newExceptions.includes(1211))) {
+      const notInPrintArea = this.zones.current !== 'print_area';
+      if (!nearCompletion && !duringFilamentChange && !notInPrintArea && (newExceptions.includes(109) || newExceptions.includes(1211))) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
     }
 
-    // Filament runout from sensor — only during active printing, not near completion,
-    // and not during filament change operations (Canvas swap causes sensor to read empty)
-    const progressPct = ms?.progress ?? 0;
-    const duringFilamentChange = isFilamentChangeSubStatus(subStatus);
-    if (ext && ext.filament_detect_enable && machineStatus === 2 && !printEnded && progressPct < 99.8) {
-      if (!ext.filament_detected && this.wasFilamentDetected && !duringFilamentChange) {
-        this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
-      }
-      this.wasFilamentDetected = !!ext.filament_detected;
-    }
+    // NOTE: Sensor-based filament runout detection (filament_detected 1→0) was removed.
+    // While machineStatus === 2 (Printing), sensor=0 is always a filament change, not a runout.
+    // Real runouts trigger printer exceptions (109/1211) which are caught above.
 
     // Status change events
     if (machineStatus !== this.lastMachineStatus) {
@@ -831,8 +834,41 @@ export class StateStore extends EventEmitter {
     this.lastSubStatus = subStatus;
     this.lastExceptions = [...exceptions];
 
+    // Track toolhead zone transitions
+    this.trackZone();
+
     // Track layer changes for layer time chart
     this.trackLayerChange(ps?.current_layer);
+  }
+
+  private trackZone(): void {
+    const gm = this.status?.gcode_move;
+    if (!gm || gm.x == null || gm.y == null) return;
+
+    const zone = detectZone(gm.x, gm.y);
+    if (zone === this.zones.current) return;
+
+    const now = Date.now();
+    const prev = this.zones.current;
+
+    // Record exit from previous zone
+    if (this.zones.enteredAt > 0) {
+      this.zones.history.push({
+        zone: prev,
+        entered: this.zones.enteredAt,
+        exited: now,
+      });
+      if (this.zones.history.length > ZONE_MAX_HISTORY) {
+        this.zones.history.shift();
+      }
+    }
+
+    this.zones.previous = prev;
+    this.zones.current = zone;
+    this.zones.enteredAt = now;
+
+    log.info(`Zone: ${prev} → ${zone} (X=${gm.x.toFixed(1)} Y=${gm.y.toFixed(1)})`);
+    this.emit('zone_change', { from: prev, to: zone, x: gm.x, y: gm.y, timestamp: now });
   }
 
   private trackLayerChange(layer: number | undefined): void {

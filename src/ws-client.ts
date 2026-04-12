@@ -41,6 +41,8 @@ export interface WsClientOptions {
   onLayerClear?: () => void;
   /** Called with filament usage updates per spool */
   onFilamentUsage?: (usage: Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }>) => void;
+  /** Called when toolhead enters a different zone */
+  onZoneChange?: (data: { from: string; to: string; x: number; y: number; timestamp: number }) => void;
 }
 
 export class WsClient {
@@ -201,6 +203,11 @@ export class WsClient {
         if (Array.isArray(usage)) {
           this.opts.onFilamentUsage?.(usage);
         }
+        break;
+      }
+
+      case 'zone_change': {
+        this.opts.onZoneChange?.(msg as unknown as { from: string; to: string; x: number; y: number; timestamp: number });
         break;
       }
     }

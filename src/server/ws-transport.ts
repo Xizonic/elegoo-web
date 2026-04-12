@@ -87,6 +87,10 @@ export class WebSocketTransport {
       this.broadcast({ type: 'filament_usage', usage });
     });
 
+    store.on('zone_change', (data: { from: string; to: string; x: number; y: number; timestamp: number }) => {
+      this.broadcast({ type: 'zone_change', ...data });
+    });
+
     store.on('ai_chart_data', (point: { t: number; motion: number; scores: Record<string, number> }) => {
       this.broadcast({ type: 'ai_chart_data', ...point });
     });
@@ -160,6 +164,7 @@ export class WebSocketTransport {
       timelapseList: this.store.timelapseList,
       videoUrl: this.store.videoUrl,
       bedMesh: this.store.bedMesh,
+      zones: this.store.zones,
       layerTimes: this.store.layerTimes,
       filamentUsage: this.store.getFilamentUsageArray(),
       chartHistory: this.store.getChartHistory(),

@@ -338,3 +338,46 @@ export const CRITICAL_EXCEPTIONS = new Set([
   801, 803, 902, 903,
   1103, 1104, 1105, 1106, 1210,
 ]);
+
+// ─── Toolhead Zone Detection ───────────────────────────────────────
+// CC2 bed: 256×256mm printable area, origin front-left (0,0).
+// Physical head travel extends beyond 0-256 for purge/cutter operations.
+
+export type ZoneName = 'print_area' | 'purge_area' | 'cutter_area' | 'outside';
+
+export interface ZoneBoundary {
+  name: ZoneName;
+  label: string;
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+}
+
+export interface ZoneState {
+  current: ZoneName;
+  previous: ZoneName;
+  enteredAt: number;   // timestamp when entered current zone
+  history: Array<{ zone: ZoneName; entered: number; exited: number }>;
+}
+
+/** CC2 zone boundaries — checked in order, first match wins */
+export const ZONE_DEFINITIONS: ZoneBoundary[] = [
+  // Cutter area: front-right corner, centered ~X=254 Y=3.5
+  { name: 'cutter_area', label: 'Cutter', xMin: 245, xMax: 265, yMin: -5, yMax: 15 },
+  // Purge/poop area: back-left, centered ~X=52.5 Y=264
+  { name: 'purge_area', label: 'Purge', xMin: 40, xMax: 65, yMin: 257, yMax: 275 },
+  // Normal printable area
+  { name: 'print_area', label: 'Print Area', xMin: 0, xMax: 256, yMin: 0, yMax: 256 },
+];
+
+export const ZONE_MAX_HISTORY = 50;
+
+export function detectZone(x: number, y: number): ZoneName {
+  for (const z of ZONE_DEFINITIONS) {
+    if (x >= z.xMin && x <= z.xMax && y >= z.yMin && y <= z.yMax) {
+      return z.name;
+    }
+  }
+  return 'outside';
+}

@@ -135,10 +135,10 @@ log_info "Installing systemd service..."
 cp "$SCRIPT_DIR/contrib/${SERVICE_NAME}.service" /etc/systemd/system/${SERVICE_NAME}.service
 systemctl daemon-reload
 
-# Enable and start service
-log_info "Enabling and starting service..."
+# Enable and (re)start service
+log_info "Enabling and restarting service..."
 systemctl enable "$SERVICE_NAME"
-systemctl start "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 
 # Check status
 sleep 2

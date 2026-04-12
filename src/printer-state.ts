@@ -1,4 +1,4 @@
-import type { PrinterAttributes, PrinterStatus, CanvasInfo, FileEntry } from './types';
+import type { PrinterAttributes, PrinterStatus, CanvasInfo, FileEntry, ZoneState } from './types';
 
 export type StateListener = () => void;
 
@@ -59,6 +59,8 @@ export class PrinterState {
   timelapseList: Record<string, unknown>[] = [];
   videoUrl: string | null = null;
   bedMesh: number[][] | null = null;
+  /** Toolhead zone state (from server) */
+  zones: ZoneState = { current: 'outside', previous: 'outside', enteredAt: 0, history: [] };
   /** Print history from method 1036 */
   printHistory: Array<{ uuid: string; filename: string; status: string; begin_time: number; end_time: number; timelapse_status: number; timelapse_url: string; timelapse_duration: number }> = [];
   printHistoryTotal = 0;

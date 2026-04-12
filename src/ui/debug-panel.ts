@@ -37,7 +37,20 @@ const recentChanges = new Map<string, number>();
 const HIGHLIGHT_DURATION = 3000; // 3 seconds
 
 // Watched paths — these are always logged even when global logging is off
-const watchedPaths = new Set<string>();
+const WATCHED_PATHS_KEY = 'debug-watched-paths';
+const watchedPaths = new Set<string>(loadWatchedPaths());
+
+function loadWatchedPaths(): string[] {
+  try {
+    const raw = localStorage.getItem(WATCHED_PATHS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore corrupt data */ }
+  return [];
+}
+
+function saveWatchedPaths(): void {
+  localStorage.setItem(WATCHED_PATHS_KEY, JSON.stringify([...watchedPaths]));
+}
 
 let debugBound = false;
 let currentFilter = '';
@@ -87,6 +100,7 @@ function getStateSnapshot(state: PrinterState): Record<string, unknown> {
   if (state.systemInfo) snap.systemInfo = state.systemInfo;
   if (state.storageCapacity) snap.storageCapacity = state.storageCapacity;
   if (state.bedMesh) snap.bedMesh = state.bedMesh;
+  snap.zones = state.zones;
   // Scalars
   snap._thumbnail = state.thumbnail ? '(base64 PNG)' : null;
   snap._fileTotalLayers = state.fileTotalLayers;
@@ -245,7 +259,21 @@ function typeClass(val: unknown): string {
   return '';
 }
 
-// ---- Render ----
+// ---- Change detection (runs on EVERY state change, regardless of tab visibility) ----
+
+/** Track state changes — must be called on every state update to avoid missing intermediate values */
+export function trackStateChanges(state: PrinterState): void {
+  const snapshot = getStateSnapshot(state);
+  const flatNew = flattenObject(snapshot);
+
+  // Only detect after we have a baseline
+  if (Object.keys(prevSnapshot).length > 0) {
+    detectChanges(prevSnapshot, flatNew);
+  }
+  prevSnapshot = flatNew;
+}
+
+// ---- Render (only when debug tab is visible) ----
 
 /** Render the debug state tree (called on every state change) */
 export function renderDebugPanel(state: PrinterState): void {
@@ -255,14 +283,6 @@ export function renderDebugPanel(state: PrinterState): void {
   const tabContent = document.getElementById('debug-tab-content');
   if (!tabContent || tabContent.classList.contains('hidden')) return;
 
-  const snapshot = getStateSnapshot(state);
-  const flatNew = flattenObject(snapshot);
-  const flatOld = prevSnapshot;
-
-  // Detect changes
-  detectChanges(flatOld, flatNew);
-  prevSnapshot = flatNew;
-
   // Clean old highlights
   const now = Date.now();
   for (const [key, ts] of recentChanges) {
@@ -270,11 +290,12 @@ export function renderDebugPanel(state: PrinterState): void {
   }
 
   // Simple hash to skip identical renders
-  const hash = JSON.stringify(flatNew);
+  const hash = JSON.stringify(prevSnapshot);
   if (hash === lastRenderedStateHash && recentChanges.size === 0) return;
   lastRenderedStateHash = hash;
 
-  // Build tree
+  // Build tree from current snapshot
+  const snapshot = getStateSnapshot(state);
   const filter = currentFilter.toLowerCase();
   const treeHtml = buildTreeHtml(snapshot, '', filter);
   container.innerHTML = treeHtml || '<div class="debug-empty">No matching fields</div>';
@@ -428,6 +449,7 @@ export function bindDebugPanel(): void {
         } else {
           watchedPaths.add(path);
         }
+        saveWatchedPaths();
         lastRenderedStateHash = ''; // force re-render
         renderWatchedPaths();
         return;
@@ -443,6 +465,7 @@ export function bindDebugPanel(): void {
       if (!tag) return;
       const path = tag.dataset.path ?? '';
       watchedPaths.delete(path);
+      saveWatchedPaths();
       lastRenderedStateHash = '';
       renderWatchedPaths();
     });

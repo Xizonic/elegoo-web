@@ -8,26 +8,37 @@ import { renderHelp } from './help';
 // ---- Card layout settings (localStorage) ----
 
 interface CardLayout {
-  order: string[];
+  sidebar: string[];
+  main: string[];
   hidden: string[];
+  collapsed: string[];
 }
 
-/** All card IDs in default order */
-const DEFAULT_CARD_ORDER = [
+/** Default sidebar cards (always-visible essentials) */
+const DEFAULT_SIDEBAR = [
   'temps-card',
   'canvas-card',
+  'fans-card',
+  'toolhead-card',
+  'speed-flow-card',
+];
+
+/** Default main area cards (detail/reference) */
+const DEFAULT_MAIN = [
   'camera-card',
+  'gcode-preview-card',
+  'files-card',
+  'print-history-card',
+  'print-reports-card',
+  'timelapse-card',
   'ai-card',
-  'system-info-card',
   'event-log-card',
   'bed-mesh-card',
-  'gcode-preview-card',
-  'toolhead-card',
-  'fans-card',
-  'files-card',
-  'timelapse-card',
   'log-card',
 ];
+
+/** All known card IDs */
+const ALL_CARD_IDS = [...DEFAULT_SIDEBAR, ...DEFAULT_MAIN];
 
 /** Human-readable names for cards */
 const CARD_NAMES: Record<string, string> = {
@@ -35,13 +46,15 @@ const CARD_NAMES: Record<string, string> = {
   'canvas-card': '🎨 Canvas / AMS',
   'camera-card': '📷 Camera',
   'ai-card': '🤖 AI Monitor',
-  'system-info-card': 'ℹ️ System Info',
   'event-log-card': '📜 Event Log',
   'bed-mesh-card': '🔲 Bed Mesh',
   'gcode-preview-card': '📐 Layer Preview',
   'toolhead-card': '🎯 Toolhead',
-  'fans-card': '🌀 Fans & LED',
+  'fans-card': '🌀 Fans',
+  'speed-flow-card': '⚡ Speed & Flow',
   'files-card': '📁 Files',
+  'print-history-card': '📜 Print History',
+  'print-reports-card': '📊 Print Reports',
   'timelapse-card': '🎬 Timelapse',
   'log-card': '📋 MQTT Log',
 };
@@ -52,14 +65,38 @@ function loadCardLayout(): CardLayout {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<CardLayout>;
+      const parsed = JSON.parse(raw);
+      // Migrate from old format { order: string[], hidden: string[] }
+      if (Array.isArray(parsed.order)) {
+        return migrateOldLayout(parsed);
+      }
       return {
-        order: Array.isArray(parsed.order) ? parsed.order : [...DEFAULT_CARD_ORDER],
+        sidebar: Array.isArray(parsed.sidebar) ? parsed.sidebar : [...DEFAULT_SIDEBAR],
+        main: Array.isArray(parsed.main) ? parsed.main : [...DEFAULT_MAIN],
         hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
+        collapsed: Array.isArray(parsed.collapsed) ? parsed.collapsed : [],
       };
     }
   } catch { /* ignore */ }
-  return { order: [...DEFAULT_CARD_ORDER], hidden: [] };
+  return { sidebar: [...DEFAULT_SIDEBAR], main: [...DEFAULT_MAIN], hidden: [], collapsed: [] };
+}
+
+/** Migrate from old single-list layout to sidebar+main format */
+function migrateOldLayout(old: { order: string[]; hidden: string[] }): CardLayout {
+  const sidebar: string[] = [];
+  const main: string[] = [];
+  for (const id of old.order) {
+    if (DEFAULT_SIDEBAR.includes(id)) sidebar.push(id);
+    else main.push(id);
+  }
+  // Add any cards missing from old layout
+  for (const id of DEFAULT_SIDEBAR) {
+    if (!sidebar.includes(id)) sidebar.push(id);
+  }
+  for (const id of DEFAULT_MAIN) {
+    if (!main.includes(id)) main.push(id);
+  }
+  return { sidebar, main, hidden: old.hidden || [], collapsed: [] };
 }
 
 function saveCardLayout(layout: CardLayout): void {
@@ -68,25 +105,71 @@ function saveCardLayout(layout: CardLayout): void {
 
 let currentLayout = loadCardLayout();
 
-/** Apply card order and visibility to the DOM */
-export function applyCardLayout(): void {
-  const grid = document.querySelector('.dashboard-grid') as HTMLElement | null;
-  if (!grid) return;
+/** Toggle a card's collapsed state */
+export function toggleCardCollapse(cardId: string): void {
+  const idx = currentLayout.collapsed.indexOf(cardId);
+  if (idx >= 0) {
+    currentLayout.collapsed.splice(idx, 1);
+  } else {
+    currentLayout.collapsed.push(cardId);
+  }
+  const card = document.getElementById(cardId);
+  if (card) card.classList.toggle('collapsed', currentLayout.collapsed.includes(cardId));
+  saveCardLayout(currentLayout);
+}
 
-  // Ensure all card IDs are in the order list (handles new cards added after settings saved)
-  for (const id of DEFAULT_CARD_ORDER) {
-    if (!currentLayout.order.includes(id)) {
-      currentLayout.order.push(id);
+/** Apply card order, panel assignment, visibility, and collapse to the DOM */
+export function applyCardLayout(): void {
+  const sidebar = document.getElementById('dashboard-sidebar');
+  const main = document.getElementById('dashboard-main');
+  if (!sidebar || !main) return;
+
+  // Ensure all known card IDs exist in either sidebar or main
+  for (const id of ALL_CARD_IDS) {
+    if (!currentLayout.sidebar.includes(id) && !currentLayout.main.includes(id)) {
+      if (DEFAULT_SIDEBAR.includes(id)) {
+        currentLayout.sidebar.push(id);
+      } else {
+        currentLayout.main.push(id);
+      }
     }
   }
 
-  // Reorder cards in the DOM
-  for (const id of currentLayout.order) {
+  // Move cards into sidebar in order
+  for (const id of currentLayout.sidebar) {
     const card = document.getElementById(id);
     if (card) {
-      grid.appendChild(card);
+      sidebar.appendChild(card);
       card.style.display = currentLayout.hidden.includes(id) ? 'none' : '';
+      card.classList.toggle('collapsed', currentLayout.collapsed.includes(id));
     }
+  }
+
+  // Move cards into main in order
+  for (const id of currentLayout.main) {
+    const card = document.getElementById(id);
+    if (card) {
+      main.appendChild(card);
+      card.style.display = currentLayout.hidden.includes(id) ? 'none' : '';
+      card.classList.toggle('collapsed', currentLayout.collapsed.includes(id));
+    }
+  }
+
+  // Bind collapse toggle on card headers (idempotent via data attribute)
+  const allCards = [...sidebar.children, ...main.children] as HTMLElement[];
+  for (const card of allCards) {
+    if (!card.id || card.dataset.collapseInit) continue;
+    card.dataset.collapseInit = '1';
+    const header = card.querySelector('.card-header, .card-head, .files-header, .log-header') as HTMLElement
+      || card.querySelector('h3') as HTMLElement;
+    if (!header) continue;
+    header.style.cursor = 'pointer';
+    header.addEventListener('click', (e) => {
+      // Don't collapse when clicking buttons/inputs/selects inside the header
+      const t = e.target as HTMLElement;
+      if (t.closest('button, input, select, label, a, .toggle')) return;
+      toggleCardCollapse(card.id);
+    });
   }
 }
 
@@ -160,31 +243,42 @@ function buildSettingsHTML(content: HTMLElement): void {
 
   currentLayout = loadCardLayout();
 
-  // Build card list with drag handles and visibility toggles
-  const cardListHtml = currentLayout.order.map((id, _idx) => {
-    const name = CARD_NAMES[id] || id;
-    const isHidden = currentLayout.hidden.includes(id);
-    return `
-      <div class="settings-card-row" data-card-id="${id}">
-        <span class="settings-drag-handle" title="Drag to reorder">⠿</span>
-        <label class="settings-card-label">
-          <input type="checkbox" class="settings-card-visible" data-card-id="${id}" ${isHidden ? '' : 'checked'}>
-          <span>${name}</span>
-        </label>
-        <span class="settings-card-move">
-          <button class="btn btn-sm btn-ghost settings-move-up" data-card-id="${id}" title="Move up">▲</button>
-          <button class="btn btn-sm btn-ghost settings-move-down" data-card-id="${id}" title="Move down">▼</button>
-        </span>
-      </div>
-    `;
-  }).join('');
+  // Build card list grouped by panel
+  function buildCardRows(cards: string[], panel: 'sidebar' | 'main'): string {
+    return cards.map(id => {
+      const name = CARD_NAMES[id] || id;
+      const isHidden = currentLayout.hidden.includes(id);
+      return `
+        <div class="settings-card-row" data-card-id="${id}" data-panel="${panel}">
+          <span class="settings-drag-handle" title="Drag to reorder">⠿</span>
+          <label class="settings-card-label">
+            <input type="checkbox" class="settings-card-visible" data-card-id="${id}" ${isHidden ? '' : 'checked'}>
+            <span>${name}</span>
+          </label>
+          <select class="settings-card-panel log-select" data-card-id="${id}">
+            <option value="sidebar" ${panel === 'sidebar' ? 'selected' : ''}>Sidebar</option>
+            <option value="main" ${panel === 'main' ? 'selected' : ''}>Main</option>
+          </select>
+          <span class="settings-card-move">
+            <button class="btn btn-sm btn-ghost settings-move-up" data-card-id="${id}" data-panel="${panel}" title="Move up">▲</button>
+            <button class="btn btn-sm btn-ghost settings-move-down" data-card-id="${id}" data-panel="${panel}" title="Move down">▼</button>
+          </span>
+        </div>
+      `;
+    }).join('');
+  }
 
   content.innerHTML = `
     <section class="settings-section">
       <h3>Panel Layout</h3>
-      <p class="settings-hint">Show/hide panels and change their order.</p>
-      <div id="settings-card-list" class="settings-card-list">
-        ${cardListHtml}
+      <p class="settings-hint">Assign cards to the sidebar (always-visible) or main area. Reorder within each panel.</p>
+      <h4 class="settings-panel-heading">Sidebar</h4>
+      <div id="settings-card-list-sidebar" class="settings-card-list">
+        ${buildCardRows(currentLayout.sidebar, 'sidebar')}
+      </div>
+      <h4 class="settings-panel-heading">Main Area</h4>
+      <div id="settings-card-list-main" class="settings-card-list">
+        ${buildCardRows(currentLayout.main, 'main')}
       </div>
       <div class="settings-actions">
         <button id="settings-reset-layout" class="btn btn-sm btn-ghost">Reset to default</button>
@@ -225,14 +319,37 @@ function buildSettingsHTML(content: HTMLElement): void {
     });
   });
 
-  // Bind move up/down buttons
+  // Bind panel (sidebar/main) selector
+  content.querySelectorAll('.settings-card-panel').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      const select = e.target as HTMLSelectElement;
+      const cardId = select.dataset.cardId!;
+      const newPanel = select.value as 'sidebar' | 'main';
+      // Remove from current panel
+      currentLayout.sidebar = currentLayout.sidebar.filter(id => id !== cardId);
+      currentLayout.main = currentLayout.main.filter(id => id !== cardId);
+      // Add to new panel
+      if (newPanel === 'sidebar') {
+        currentLayout.sidebar.push(cardId);
+      } else {
+        currentLayout.main.push(cardId);
+      }
+      saveCardLayout(currentLayout);
+      applyCardLayout();
+      settingsRendered = false;
+      renderSettingsContent();
+    });
+  });
+
+  // Bind move up/down buttons (works within the card's current panel)
   content.querySelectorAll('.settings-move-up').forEach(btn => {
     btn.addEventListener('click', () => {
       const cardId = (btn as HTMLElement).dataset.cardId!;
-      const idx = currentLayout.order.indexOf(cardId);
+      const panel = (btn as HTMLElement).dataset.panel as 'sidebar' | 'main';
+      const list = panel === 'sidebar' ? currentLayout.sidebar : currentLayout.main;
+      const idx = list.indexOf(cardId);
       if (idx > 0) {
-        [currentLayout.order[idx - 1], currentLayout.order[idx]] =
-          [currentLayout.order[idx], currentLayout.order[idx - 1]];
+        [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]];
         saveCardLayout(currentLayout);
         applyCardLayout();
         settingsRendered = false;
@@ -244,10 +361,11 @@ function buildSettingsHTML(content: HTMLElement): void {
   content.querySelectorAll('.settings-move-down').forEach(btn => {
     btn.addEventListener('click', () => {
       const cardId = (btn as HTMLElement).dataset.cardId!;
-      const idx = currentLayout.order.indexOf(cardId);
-      if (idx < currentLayout.order.length - 1) {
-        [currentLayout.order[idx], currentLayout.order[idx + 1]] =
-          [currentLayout.order[idx + 1], currentLayout.order[idx]];
+      const panel = (btn as HTMLElement).dataset.panel as 'sidebar' | 'main';
+      const list = panel === 'sidebar' ? currentLayout.sidebar : currentLayout.main;
+      const idx = list.indexOf(cardId);
+      if (idx < list.length - 1) {
+        [list[idx], list[idx + 1]] = [list[idx + 1], list[idx]];
         saveCardLayout(currentLayout);
         applyCardLayout();
         settingsRendered = false;
@@ -258,7 +376,7 @@ function buildSettingsHTML(content: HTMLElement): void {
 
   // Reset button
   content.querySelector('#settings-reset-layout')?.addEventListener('click', () => {
-    currentLayout = { order: [...DEFAULT_CARD_ORDER], hidden: [] };
+    currentLayout = { sidebar: [...DEFAULT_SIDEBAR], main: [...DEFAULT_MAIN], hidden: [], collapsed: [] };
     saveCardLayout(currentLayout);
     applyCardLayout();
     settingsRendered = false;

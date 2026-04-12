@@ -556,10 +556,11 @@ export class AIMonitor extends EventEmitter {
 
     // Skip analysis during warmup/heating/filament change — only analyze when actively printing
     const subStatus = this.store.status?.machine_status?.sub_status ?? 0;
-    if (subStatus !== 2075) {
+    const currentZone = this.store.zones?.current ?? 'outside';
+    if (subStatus !== 2075 || currentZone !== 'print_area') {
       // Reset stall counter so filament changes don't accumulate as stall evidence
       this.consecutiveLowMotion = 0;
-      log.debug?.(`Skipping analysis — sub_status ${subStatus} (not actively printing)`);
+      log.debug?.(`Skipping analysis — sub_status ${subStatus}, zone ${currentZone}`);
       return;
     }
 
