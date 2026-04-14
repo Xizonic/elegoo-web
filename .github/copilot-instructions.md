@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers. The Node.js service maintains a single MQTT connection to the printer and exposes state to browsers via WebSocket, REST API, and Prometheus metrics. Integrations: Telegram notifications, AI print monitoring (CLIP + VLM), Moonraker/OctoPrint compatibility APIs, MCP server.
+A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers. The Node.js service maintains a single MQTT connection to the printer and exposes state to browsers via WebSocket, REST API, and Prometheus metrics. Integrations: Telegram notifications, AI print monitoring (CLIP + VLM + motion detection), Moonraker/OctoPrint compatibility APIs, MCP server.
 
 ## Architecture
 
@@ -12,43 +12,79 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - **State**: Service-side `StateStore` with delta merge; browser-side `PrinterState` hydrated from service
 - **Transport**: WebSocket (`/ws`) for real-time state, REST (`/api/*`) for snapshots/actions
 - **Rendering**: Direct DOM manipulation with `requestAnimationFrame` batching
+- **Layout**: Two-panel dashboard — resizable sidebar + main grid, collapsible cards, drag-to-resize
 - **3D Preview**: gcode-preview (Three.js WebGL) for toolpath visualization — on-demand rendering only
 - **Charts**: Canvas 2D live charts via `setInterval` (10 FPS) — no `requestAnimationFrame`
-- **Styling**: Plain CSS with CSS custom properties (dark theme)
+- **Styling**: Plain CSS with CSS custom properties (dark theme), responsive breakpoints at 1200/800/480px
+- **Tabs**: Dashboard, Tools, Settings, Debug, Help
 
 ## Key Files
 
 ### Service (Backend)
 - `src/server/index.ts` — Service entry point, wires all components together
 - `src/server/mqtt-bridge.ts` — Singleton MQTT connection to printer (connect, register, heartbeat, commands)
-- `src/server/state-store.ts` — Centralized state with event detection (print events, filament, layers, errors)
-- `src/server/ws-transport.ts` — WebSocket server for browser clients (init, status, raw message relay)
-- `src/server/rest-api.ts` — REST API, camera proxy, Prometheus metrics, file upload/download proxy, static file serving (production)
+- `src/server/state-store.ts` — Centralized state with event detection (print events, filament, layers, zones, errors)
+- `src/server/ws-transport.ts` — WebSocket server for browser clients (init, status, raw message relay, zone broadcasts)
+- `src/server/rest-api.ts` — REST API, camera proxy (MJPEG fan-out), Prometheus metrics, file upload/download proxy, static file serving
 - `src/server/config.ts` — Environment-based configuration (`.env`)
+- `src/server/logger.ts` — Winston structured logging with rotation
 - `src/server/telegram.ts` — Telegram bot notifications (print events, progress, snapshots)
-- `src/server/ai-monitor.ts` — AI print monitoring (motion detection, CLIP classification, VLM)
+- `src/server/ai-monitor.ts` — AI print monitoring (motion detection, CLIP classification, VLM), zone-aware stall suppression
 - `src/server/moonraker-compat.ts` — Moonraker API compatibility layer
+- `src/server/moonraker-server.ts` — Moonraker standalone server on port 7125
+- `src/server/octoprint-compat.ts` — OctoPrint API compatibility layer
 - `src/server/mcp-server.ts` — Model Context Protocol server
+- `src/server/state-persistence.ts` — Persist/restore state across restarts
+- `src/server/print-report-collector.ts` — Collect print data for PDF reports
+- `src/server/print-report-pdf.ts` — Generate PDF print reports
 
 ### Client (Frontend)
-- `src/main.ts` — Entry point, WsClient connect flow, renders on state change
-- `src/ws-client.ts` — WebSocket client connecting to service (replaces old direct MQTT client)
-- `src/types.ts` — TypeScript types for the CC2 protocol (status codes, data structures, helpers)
+- `src/main.ts` — Entry point, WsClient connect flow, renders on state change, sidebar resize
+- `src/ws-client.ts` — WebSocket client connecting to service (handles init, status, zone_change, etc.)
+- `src/types.ts` — TypeScript types for the CC2 protocol (status codes, zone detection, helpers)
 - `src/printer-state.ts` — Browser-side state with deep-merge delta updates and subscriber pattern
 - `src/log-store.ts` — Ring buffer (500 entries) for MQTT message logging
-- `src/ui/dashboard.ts` — Thin re-export barrel for all UI modules
-- `src/ui/helpers.ts` — Shared DOM helpers (`$`, `formatTime`, `fanPct`, `escapeHtml`)
-- `src/ui/print-status.ts` — Main dashboard rendering (temps, progress, thumbnail, fans, camera)
-- `src/ui/canvas.ts` — Canvas/AMS spool visualization
-- `src/ui/files.ts` — File browser with print start action
-- `src/ui/controls.ts` — All control event handlers (move, temp, fans, LED, speed)
-- `src/ui/log.ts` — MQTT log panel with filter, auto-scroll, click-to-expand
-- `src/ui/charts.ts` — Canvas 2D live line charts (temps, fans, speed, AI, layers) with zoom/pan
-- `src/ui/gcode-preview.ts` — 3D gcode toolpath visualization (Three.js via gcode-preview library)
 - `src/chart-store.ts` — Ring-buffer time-series store for chart data
 - `src/persistence.ts` — Save/restore chart and layer data to localStorage
-- `src/styles/main.css` — Fluidd-inspired dark theme
-- `index.html` — Full page layout (single-page, no routing)
+
+### UI Modules (`src/ui/`)
+- `dashboard.ts` — Thin re-export barrel for all UI modules
+- `helpers.ts` — Shared DOM helpers (`$`, `formatTime`, `fanPct`, `escapeHtml`)
+- `print-status.ts` — Print status card in sidebar (temps, progress, thumbnail, actions)
+- `canvas.ts` — Canvas/AMS spool visualization
+- `files.ts` — File browser with thumbnails, popovers, print start
+- `controls.ts` — Control event handlers (move, temp, fans, LED, speed)
+- `charts.ts` — Canvas 2D live line charts (temps, fans, speed, AI, layers) with zoom/pan
+- `gcode-preview.ts` — 3D gcode toolpath visualization (Three.js via gcode-preview library)
+- `log.ts` — MQTT log panel with filter, auto-scroll, click-to-expand
+- `structured-log.ts` — Structured MQTT log with diff view, pinning, method filtering
+- `service-status.ts` — Service health badge (header dropdown) + system info display
+- `debug-panel.ts` — Live state tree, change tracking with watched paths, export
+- `settings.ts` — Card layout management (sidebar/main/hidden/collapsed), tab switching
+- `event-log.ts` — Event log panel (print events, errors, milestones)
+- `ai-panel.ts` — AI monitor panel (CLIP scores, VLM results, motion)
+- `print-history.ts` — Print history from method 1036
+- `print-reports.ts` — Print report viewer (PDF generation)
+- `print-dialog.ts` — Print start confirmation dialog with settings
+- `maintenance.ts` — Self-check, auto-level, vibration, PID controls (inside toolhead card)
+- `bed-mesh.ts` — Bed mesh heatmap/3D visualization
+- `timelapse.ts` — Timelapse viewer
+- `layer-chart.ts` — Layer time chart
+- `filament-editor.ts` — Canvas tray filament editor
+- `spool-calc.ts` — Spool calculator (remaining weight/meters)
+- `toast.ts` — Toast notification system
+- `help.ts` — Help tab with API documentation
+- `ui-settings.ts` — UI preference persistence to localStorage
+- `styles/main.css` — Full dark theme with two-panel layout, responsive breakpoints
+
+## Dashboard Layout
+
+Two-panel layout with resizable sidebar:
+- **Sidebar** (left, 380px default, 260-600px range): Print status, temperatures, canvas, fans, toolhead, speed
+- **Main** (right, auto-fill grid): Camera, gcode preview, files, history, reports, timelapse, AI, events, bed mesh, log
+- **Header**: Tab navigation, sidebar toggle (◧), service status badge (click for dropdown with system info), connection status
+- Cards are collapsible, draggable between sidebar/main, hideable via Settings
+- Layout persisted in localStorage as `{sidebar[], main[], hidden[], collapsed[]}`
 
 ## CC2 Protocol
 
@@ -79,8 +115,38 @@ Key methods: 1001 (attributes), 1002 (full status), 1020-1023 (print control), 1
 **WARNING**: Canvas/AMS filament swaps cause false positives:
 - The filament sensor reads "empty" during swaps (old filament retracts, new one loads)
 - Exception code 1211 (Canvas Filament Runout) fires during normal swaps
-- Sub-status stays as machine_status=2 (Printing) throughout the swap — only sub_status changes
-- Use `isFilamentChangeSubStatus()` from `types.ts` to suppress false runout/stall events during swap sub-statuses (1045, 1061-1066, 1133-1145, 1150-1166, 2505)
+- Sub-status stays as machine_status=2 (Printing) throughout the swap — only sub_status changes briefly
+- Sub-status flickers to 1045/1066 but spends most time at 2075 (Printing) — `isFilamentChangeSubStatus()` alone is insufficient
+- **Primary suppression**: Use `zones.current !== 'print_area'` — toolhead is in cutter/purge area during swaps
+- **Secondary suppression**: Use `isFilamentChangeSubStatus()` from `types.ts` for the brief sub-status windows
+- Sensor-based filament runout was removed — while `machineStatus === 2`, sensor=0 always means filament change, not runout. Real runouts trigger printer exceptions (109/1211) which are caught and zone-gated.
+
+## Toolhead Zone Detection
+
+Server-side zone tracking based on `gcode_move.x/y` coordinates. Zones are checked in order, first match wins.
+
+| Zone | Center | Boundary | Purpose |
+|------|--------|----------|---------|
+| `cutter_area` | X=254, Y≈3.5 | X:245-265, Y:-5-15 | Filament cutter, front-right |
+| `purge_area` | X=52.5, Y=264 | X:40-65, Y:257-275 | Purge/poop, back-left |
+| `print_area` | — | X:0-256, Y:0-256 | Normal printable bed |
+| `outside` | — | everything else | Fallback |
+
+- Defined in `types.ts` as `ZONE_DEFINITIONS` with `detectZone(x, y)` helper
+- Tracked in `state-store.ts` via `trackZone()` — runs on every status delta (including pre-baseline)
+- Broadcast to clients via `zone_change` WebSocket message and included in `init` snapshot
+- Client state: `state.zones.current`, `state.zones.previous`, `state.zones.enteredAt`, `state.zones.history`
+- Visible in Debug tab live state tree under `zones.*`
+- Used by AI monitor to suppress stall detection when toolhead is outside print area
+- Used by state-store to suppress filament runout exceptions when toolhead is outside print area
+
+## Camera / Snapshot Architecture
+
+- Single upstream MJPEG connection to printer camera (port 8080), fan-out to all browser clients
+- Each extracted JPEG frame is cached in `cachedSnapshot` (5s TTL)
+- `getSnapshot()` returns the cached frame if fresh — zero-cost for AI analysis, Telegram, and `/api/snapshot`
+- Only falls back to a dedicated HTTP fetch if no active MJPEG stream or stale cache
+- Camera can be unreliable during multi-color prints — 503 is expected when camera is unavailable
 
 Reference: [CC2_PROTOCOL.md](https://github.com/danielcherubini/elegoo-homeassistant/blob/main/docs/CC2_PROTOCOL.md)
 
@@ -135,7 +201,7 @@ sudo bash contrib/install.sh
 - Installs to `/opt/elegooweb/` as systemd service `elegooweb`
 - Service user: `elegooweb`, config: `/opt/elegooweb/.env`
 - Single port (default 8088): serves frontend, API, WebSocket, and camera proxy
-- `contrib/install.sh` handles user creation, file copy, dependency install, systemd setup
+- `contrib/install.sh` handles user creation, file copy, dependency install, systemd setup, and **restarts the service**
 - `contrib/uninstall.sh` reverses the installation
 - `tsx` must be in `dependencies` (not devDependencies) — required at runtime to execute TypeScript
 
