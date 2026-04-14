@@ -16,14 +16,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
 import { createHash } from 'crypto';
-import {
-  writeFile,
-  readdir,
-  readFile,
-  mkdir,
-  stat,
-  unlink,
-} from 'fs/promises';
+import { writeFile, readdir, readFile, mkdir, stat, unlink } from 'fs/promises';
 import { createReadStream, createWriteStream, existsSync } from 'fs';
 import { join, resolve, extname } from 'path';
 import { PassThrough } from 'stream';

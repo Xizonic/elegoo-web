@@ -9,12 +9,7 @@
 import { EventEmitter } from 'events';
 import { mkdir, writeFile, readdir, readFile, rm } from 'fs/promises';
 import { join } from 'path';
-import type {
-  StateStore,
-  ChartPoint,
-  PrintEvent,
-  FilamentUsage,
-} from './state-store.js';
+import type { StateStore, ChartPoint, PrintEvent, FilamentUsage } from './state-store.js';
 import type { ServiceConfig } from './config.js';
 import { getSnapshot } from './rest-api.js';
 import { getLogger } from './logger.js';

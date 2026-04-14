@@ -6,12 +6,7 @@
 import mqtt from 'mqtt';
 import { EventEmitter } from 'events';
 import type { PrinterStatus, PrinterAttributes, CanvasInfo } from '../types.js';
-import {
-  STATUS_NAMES,
-  SUB_STATUS_NAMES,
-  SPEED_MODE_NAMES,
-  EXCEPTION_NAMES,
-} from '../types.js';
+import { STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES, EXCEPTION_NAMES } from '../types.js';
 import { esc } from './notifications.js';
 
 export interface PrinterSnapshot {

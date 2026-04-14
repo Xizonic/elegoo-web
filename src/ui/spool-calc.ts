@@ -1,6 +1,5 @@
 /** Spool Calculator — visualizes remaining filament on a spool */
 
-
 // Material densities in g/cm³
 const MATERIALS: Record<string, number> = {
   PLA: 1.24,
