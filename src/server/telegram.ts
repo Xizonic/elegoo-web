@@ -271,13 +271,14 @@ export class TelegramIntegration {
   async sendAIAlert(alert: AIAlert): Promise<void> {
     const esc = (text: string) => text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
     const icon = alert.status === 'critical' ? '🚨' : '⚠️';
+    // Use issue type + confidence — full CLIP labels are too long for Telegram captions (1024 char limit)
     const issueLines = alert.issues.map(i =>
-      `${icon} ${esc(i.type)}: ${esc(i.description)} \\(${Math.round(i.confidence * 100)}%\\)`
+      `${icon}  ${esc(i.type)} \\(${Math.round(i.confidence * 100)}%\\)`
     ).join('\n');
 
     const text = [
       `🤖 *AI Print Alert*`,
-      issueLines || `${icon} ${esc(alert.description)}`,
+      issueLines || `${icon} ${esc(alert.description.slice(0, 80))}`,
       `\n_${esc(`Consecutive warnings: ${alert.consecutiveWarnings}`)}_`,
     ].join('\n');
 
