@@ -1,0 +1,14 @@
+node_modules
+dist
+.cache
+.env
+*.log
+.git
+.github
+data/CentauriCarbon2
+data/raw
+data/gcode-cache
+data/logs
+data/reports
+data/state.json
+data/moonraker-db.json

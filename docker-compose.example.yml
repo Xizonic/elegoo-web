@@ -1,0 +1,56 @@
+services:
+  elegoo-web:
+    image: ghcr.io/runnane/elegoo-web:latest
+    # build: .  # Uncomment to build locally instead of pulling
+    container_name: elegoo-web
+    restart: unless-stopped
+    ports:
+      - "8088:8088"   # Web UI + API + WebSocket
+      - "7125:7125"   # Moonraker compatibility API
+    environment:
+      # ── Required ──────────────────────────────────────
+      PRINTER_IP: "172.20.100.236"
+
+      # ── Optional: Printer ─────────────────────────────
+      # PRINTER_PASSWORD: "123456"       # Access code (default: 123456)
+      # SERVICE_PORT: "8088"             # Web UI port (default: 8088)
+      # MOONRAKER_PORT: "7125"           # Moonraker compat port (default: 7125)
+      # CAMERA_ENABLED: "true"           # Camera proxy (default: true)
+      # CAMERA_URL: ""                   # Override camera URL (default: http://<PRINTER_IP>:8080)
+
+      # ── Optional: Telegram notifications ──────────────
+      # TELEGRAM_BOT_TOKEN: ""
+      # TELEGRAM_CHAT_ID: ""
+      # PROGRESS_INTERVAL: "25"          # Notify every N% (default: 25)
+
+      # ── Optional: AI print monitoring ─────────────────
+      # AI_ENABLED: "false"              # Enable AI monitoring (default: false)
+      # AI_LOCAL_ENABLED: "true"         # Local CLIP/SigLIP model (default: true)
+      # AI_LOCAL_MODEL: "Xenova/siglip-base-patch16-224"
+      # AI_VLM_ENABLED: "true"           # Vision LLM analysis (default: true)
+      # AI_VLM_PROVIDER: "ollama"        # ollama or openai (default: ollama)
+      # AI_VLM_BASE_URL: "http://host.docker.internal:11434"
+      # AI_VLM_MODEL: "llava"
+      # AI_VLM_API_KEY: ""               # Required for openai provider
+      # AI_INTERVAL: "60"                # Seconds between AI checks (default: 60)
+      # AI_ALERT_THRESHOLD: "3"          # Consecutive failures before alert (default: 3)
+      # AI_ALERT_COOLDOWN: "300"         # Seconds between alerts (default: 300)
+
+      # ── Optional: Data persistence ────────────────────
+      # DATA_DIR: "./data"               # Data directory (default: ./data)
+    volumes:
+      # Option A: Single named volume (simplest)
+      #- elegoo-data:/app/data
+
+      # Option B: Host paths for granular access (uncomment and remove Option A)
+      # - ./data/reports:/app/data/reports       # Print reports + snapshots
+      # - ./data/gcode-cache:/app/data/gcode-cache  # Downloaded gcode files
+      # - ./data/logs:/app/data/logs             # MQTT capture logs
+      # - ./data/state.json:/app/data/state.json # Persisted printer state
+      # - ./data/moonraker-db.json:/app/data/moonraker-db.json  # Moonraker database
+
+      # Option C: Single host path for everything (easy to access data)
+      - ./elegoo-data:/app/data
+
+# volumes:
+#   elegoo-data:

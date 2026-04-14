@@ -52,6 +52,99 @@ Communication uses the CC2 MQTT protocol:
 
 See [CC2 Protocol Documentation](https://github.com/danielcherubini/elegoo-homeassistant/blob/main/docs/CC2_PROTOCOL.md) for the full protocol reference.
 
+## Docker
+
+### Quick Start (docker run)
+
+```bash
+docker run -d \
+  --name elegoo-web \
+  --restart unless-stopped \
+  -p 8088:8088 \
+  -p 7125:7125 \
+  -e PRINTER_IP=172.20.100.236 \
+  -v elegoo-data:/app/data \
+  ghcr.io/runnane/elegoo-web:latest
+```
+
+Web UI: `http://localhost:8088` · Moonraker API: `http://localhost:7125`
+
+To mount specific data directories as host paths instead of a named volume:
+
+```bash
+mkdir -p ./elegoo-data/{reports,gcode-cache,logs}
+docker run -d \
+  --name elegoo-web \
+  --restart unless-stopped \
+  -p 8088:8088 \
+  -p 7125:7125 \
+  -e PRINTER_IP=172.20.100.236 \
+  -v ./elegoo-data/reports:/app/data/reports \
+  -v ./elegoo-data/gcode-cache:/app/data/gcode-cache \
+  -v ./elegoo-data/logs:/app/data/logs \
+  -v ./elegoo-data/state.json:/app/data/state.json \
+  -v ./elegoo-data/moonraker-db.json:/app/data/moonraker-db.json \
+  ghcr.io/runnane/elegoo-web:latest
+```
+
+### Docker Compose
+
+Copy the example file and edit your printer IP:
+
+```bash
+cp docker-compose.example.yml docker-compose.yml
+# Edit PRINTER_IP in docker-compose.yml
+docker compose up -d
+```
+
+See [`docker-compose.example.yml`](docker-compose.example.yml) for all available environment variables (Telegram, AI monitoring, camera, etc.).
+
+### Build Locally
+
+```bash
+docker build -t ghcr.io/runnane/elegoo-web:local .
+docker run -d -p 8088:8088 -p 7125:7125 -e PRINTER_IP=172.20.100.236 ghcr.io/runnane/elegoo-web:local
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRINTER_IP` | `172.20.100.236` | Printer IP address (required) |
+| `PRINTER_PASSWORD` | `123456` | Printer access code |
+| `SERVICE_PORT` | `8088` | Web UI / API / WebSocket port |
+| `MOONRAKER_PORT` | `7125` | Moonraker compatibility API port |
+| `CAMERA_ENABLED` | `true` | Enable camera MJPEG proxy |
+| `CAMERA_URL` | `http://<PRINTER_IP>:8080` | Override camera URL |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token (enables notifications) |
+| `TELEGRAM_CHAT_ID` | — | Telegram chat ID |
+| `PROGRESS_INTERVAL` | `25` | Notify every N% progress |
+| `DATA_DIR` | `./data` | Data directory for state, reports, logs |
+
+### Volumes
+
+All persistent data lives under `/app/data` inside the container:
+
+| Path | Contents |
+|------|----------|
+| `/app/data/state.json` | Persisted printer state (survives restarts) |
+| `/app/data/moonraker-db.json` | Moonraker compatibility database |
+| `/app/data/reports/` | Print reports with snapshots and PDFs |
+| `/app/data/gcode-cache/` | Downloaded gcode files for 3D preview |
+| `/app/data/logs/` | MQTT capture logs (from debug panel) |
+| `AI_ENABLED` | `false` | Enable AI print monitoring |
+| `AI_VLM_PROVIDER` | `ollama` | VLM provider: `ollama` or `openai` |
+| `AI_VLM_BASE_URL` | `http://172.20.100.9:3000` | VLM API endpoint |
+| `AI_VLM_MODEL` | `llava` | VLM model name |
+| `AI_INTERVAL` | `60` | Seconds between AI analysis |
+
+### Ports
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 8088 | HTTP/WS | Web UI, REST API, WebSocket, camera proxy, MCP |
+| 7125 | HTTP/WS | Moonraker compatibility API (for Mainsail/Fluidd/KlipperScreen) |
+
 ## Prerequisites
 
 - Node.js 20+
