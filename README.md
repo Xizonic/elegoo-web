@@ -23,7 +23,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - **Timelapse viewer**: Download/play timelapse videos
 - **Spool calculator**: Remaining weight/meters from measured thickness
 - **Moonraker/OctoPrint compatibility**: API layers for Mainsail/Fluidd/KlipperScreen and OctoPrint clients
-- **MCP server**: Model Context Protocol for AI agent integration
+- **MCP server**: Model Context Protocol for AI agent integration — [6 resources, 30 tools](MCP.md)
 - **Prometheus metrics**: `/api/metrics/prometheus` endpoint for monitoring
 - **PWA support**: Installable app with manifest + service worker
 - **Dark theme**: Modern UI with CSS custom properties, responsive at 1200/800/480px breakpoints
