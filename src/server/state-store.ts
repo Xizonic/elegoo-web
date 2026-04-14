@@ -123,8 +123,6 @@ export class StateStore extends EventEmitter {
   systemInfo: Record<string, unknown> | null = null;
   timelapseList: Record<string, unknown>[] = [];
   videoUrl: string | null = null;
-  bedMesh: number[][] | null = null;
-
   // Toolhead zone tracking
   zones: ZoneState = {
     current: 'outside',
@@ -481,8 +479,6 @@ export class StateStore extends EventEmitter {
         break;
       case 1002:
         this.status = result as unknown as PrinterStatus;
-        // Extract bed mesh from full status if present
-        this.extractBedMesh(result);
         // On first full status, establish baseline without emitting events
         if (!this.baselineReady) {
           this.establishBaseline();
@@ -542,18 +538,6 @@ export class StateStore extends EventEmitter {
     }
   }
 
-  /** Extract bed mesh data from any response/status that may contain it */
-  private extractBedMesh(data: Record<string, unknown>): void {
-    const meshData = (data.bed_mesh ?? data.bed_level_info) as Record<string, unknown> | undefined;
-    if (meshData) {
-      const probed = (meshData.probed_matrix ?? meshData.mesh_matrix ?? meshData.data) as number[][] | undefined;
-      if (probed && Array.isArray(probed) && probed.length > 0) {
-        this.bedMesh = probed;
-        log.info(`Bed mesh updated: ${probed.length}x${probed[0].length}`);
-      }
-    }
-  }
-
   private handleStatusEvent(data: Record<string, unknown>): void {
     const result = data.result as Record<string, unknown> | undefined;
     if (!result) return;
@@ -582,9 +566,6 @@ export class StateStore extends EventEmitter {
         result,
       ) as unknown as PrinterStatus;
     }
-
-    // Capture bed mesh data if present (arrives during auto-level)
-    this.extractBedMesh(result);
 
     // Capture canvas info updates from delta (active tray changes, etc.)
     const canvasDelta = result.canvas_info as CanvasInfo | undefined;

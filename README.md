@@ -21,7 +21,6 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - **Print history**: Method 1036 history with auto-load on connect
 - **Print reports**: PDF generation with stats, charts, snapshots
 - **Timelapse viewer**: Download/play timelapse videos
-- **Bed mesh**: Heatmap/3D visualization of auto-leveling data
 - **Spool calculator**: Remaining weight/meters from measured thickness
 - **Moonraker/OctoPrint compatibility**: API layers for Mainsail/Fluidd/KlipperScreen and OctoPrint clients
 - **MCP server**: Model Context Protocol for AI agent integration
@@ -150,7 +149,6 @@ src/
 │   ├── print-reports.ts   # PDF print reports
 │   ├── print-dialog.ts    # Print start confirmation dialog
 │   ├── maintenance.ts     # Self-check, auto-level, vibration, PID
-│   ├── bed-mesh.ts        # Bed mesh visualization
 │   ├── timelapse.ts       # Timelapse viewer
 │   ├── layer-chart.ts     # Layer time chart
 │   ├── filament-editor.ts # Canvas filament editor

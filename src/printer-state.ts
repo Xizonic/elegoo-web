@@ -58,7 +58,6 @@ export class PrinterState {
   filamentUsage: Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }> = [];
   timelapseList: Record<string, unknown>[] = [];
   videoUrl: string | null = null;
-  bedMesh: number[][] | null = null;
   /** Toolhead zone state (from server) */
   zones: ZoneState = { current: 'outside', previous: 'outside', enteredAt: 0, history: [] };
   /** Print history from method 1036 */
@@ -89,19 +88,7 @@ export class PrinterState {
 
   setFullStatus(data: PrinterStatus): void {
     this.status = data;
-    this.extractBedMesh(data as unknown as Record<string, unknown>);
     this.notify();
-  }
-
-  /** Extract bed mesh data from any response/status that may contain it */
-  private extractBedMesh(data: Record<string, unknown>): void {
-    const meshData = (data.bed_mesh ?? data.bed_level_info) as Record<string, unknown> | undefined;
-    if (meshData) {
-      const probed = (meshData.probed_matrix ?? meshData.mesh_matrix ?? meshData.data) as number[][] | undefined;
-      if (probed && Array.isArray(probed) && probed.length > 0) {
-        this.bedMesh = probed;
-      }
-    }
   }
 
   applyDelta(data: Record<string, unknown>): void {
@@ -121,9 +108,6 @@ export class PrinterState {
     }
 
     // Track layer changes for layer-time chart — handled server-side now
-
-    // Capture bed mesh data if present
-    this.extractBedMesh(data);
 
     // Capture mono filament info if present in delta
     const monoInfo = data.mono_filament_info as Record<string, unknown> | undefined;

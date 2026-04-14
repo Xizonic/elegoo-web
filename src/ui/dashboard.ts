@@ -12,7 +12,6 @@ export { toast } from './toast';
 export { fetchTimeout } from './helpers';
 export { renderSystemInfo, updateServiceStatus } from './service-status';
 export { renderTimelapse, setTimelapseClient, requestTimelapseList, showTimelapsePlayer } from './timelapse';
-export { renderBedMesh } from './bed-mesh';
 export { renderGcodePreview, bindGcodePreviewControls, loadGcode } from './gcode-preview';
 export { renderLayerTimeChart } from './layer-chart';
 export { handleAIAnalysis, handleAIAlert, renderAIPanel, updateAIStatus } from './ai-panel';

@@ -33,7 +33,6 @@ const DEFAULT_MAIN = [
   'timelapse-card',
   'ai-card',
   'event-log-card',
-  'bed-mesh-card',
   'log-card',
 ];
 
@@ -47,7 +46,6 @@ const CARD_NAMES: Record<string, string> = {
   'camera-card': '📷 Camera',
   'ai-card': '🤖 AI Monitor',
   'event-log-card': '📜 Event Log',
-  'bed-mesh-card': '🔲 Bed Mesh',
   'gcode-preview-card': '📐 Layer Preview',
   'toolhead-card': '🎯 Toolhead',
   'fans-card': '🌀 Fans',

@@ -67,7 +67,6 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - `print-reports.ts` — Print report viewer (PDF generation)
 - `print-dialog.ts` — Print start confirmation dialog with settings
 - `maintenance.ts` — Self-check, auto-level, vibration, PID controls (inside toolhead card)
-- `bed-mesh.ts` — Bed mesh heatmap/3D visualization
 - `timelapse.ts` — Timelapse viewer
 - `layer-chart.ts` — Layer time chart
 - `filament-editor.ts` — Canvas tray filament editor
@@ -81,7 +80,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 
 Two-panel layout with resizable sidebar:
 - **Sidebar** (left, 380px default, 260-600px range): Print status, temperatures, canvas, fans, toolhead, speed
-- **Main** (right, auto-fill grid): Camera, gcode preview, files, history, reports, timelapse, AI, events, bed mesh, log
+- **Main** (right, auto-fill grid): Camera, gcode preview, files, history, reports, timelapse, AI, events, log
 - **Header**: Tab navigation, sidebar toggle (◧), service status badge (click for dropdown with system info), connection status
 - Cards are collapsible, draggable between sidebar/main, hideable via Settings
 - Layout persisted in localStorage as `{sidebar[], main[], hidden[], collapsed[]}`
@@ -147,8 +146,90 @@ Server-side zone tracking based on `gcode_move.x/y` coordinates. Zones are check
 - `getSnapshot()` returns the cached frame if fresh — zero-cost for AI analysis, Telegram, and `/api/snapshot`
 - Only falls back to a dedicated HTTP fetch if no active MJPEG stream or stale cache
 - Camera can be unreliable during multi-color prints — 503 is expected when camera is unavailable
+- **Firmware camera architecture**: The `ai_camera` daemon (separate process) manages UVC camera (`/dev/video0`) and serves MJPEG on port 8080 (15 FPS, max 4 clients, max 300KB/frame). Auto-starts on daemon boot, auto-restarts on IP changes or crashes.
+- **Method 1054 (CTRL_LIVE_STREAM)**: `{ Enable: 1 }` enables video streaming, `{ Enable: 0 }` disables. Official Elegoo app sends this via SDCP WebSocket (Cmd 386) on every connect. Response includes `VideoUrl`. Our service currently does NOT send this — it directly connects to port 8080.
 
 Reference: [CC2_PROTOCOL.md](https://github.com/danielcherubini/elegoo-homeassistant/blob/main/docs/CC2_PROTOCOL.md)
+
+## Reference Data (`data/`)
+
+- `data/raw/index-unminified.html` — Deobfuscated official Elegoo web interface (Vue.js app). Source of truth for MQTT method IDs, state enums, and command payload structures.
+- `data/CC2_PROTOCOL_REFERENCE.md` — Complete protocol reference extracted from the official app + firmware source: method IDs, state/event/error enums, command payloads, SDCP protocol, file upload mechanism.
+- `data/CC2-OFFICIAL-APP-PATTERNS.md` — Patterns observed in the official app behavior.
+- `data/GAPS-AND-ISSUES.md` — Known protocol gaps and firmware quirks.
+
+## CC2 Firmware Source (`data/CentauriCarbon2/`)
+
+The CC2 firmware source (Klipper fork by Elegoo) is cloned locally for reference. This is in `.gitignore` — NOT shipped. Key files for protocol work:
+
+### Protocol & API
+- `elegoo/common/method.h` — All MQTT method ID definitions (1001–6008)
+- `elegoo/common/exception_handler.h` — Hardware exception codes (101–1302) with severity levels
+- `elegoo/common/event_handler.h/.cpp` — Event dispatch (print start/stop/pause, filament, errors)
+- `elegoo/webhooks.cpp` — Klipper webhooks server (port 34952, closed on stock firmware). Defines `objects/query` with queryable objects including `bed_mesh`.
+
+### Motion & Position
+- `elegoo/extras/gcode_move.h/.cpp` — `GCodeMove` class with `get_status()` returning position data (`gcode_move.x/y/z/extruder`). Source of zone detection coordinates.
+- `elegoo/extras/homing.h/.cpp` — Homing implementation, `homed_axes` state
+- `elegoo/extras/force_move.h/.cpp` — Manual axis movement
+
+### Temperature & Heaters
+- `elegoo/extras/heaters.h/.cpp` — Heater manager, temperature control
+- `elegoo/extras/heater_bed.h/.cpp` — Bed heater with `get_status()` (temperature, target, power)
+- `elegoo/extras/pid_calibrate.h/.cpp` — PID auto-tune (method 1034)
+- `elegoo/extras/verify_heater.h/.cpp` — Thermal runaway protection
+
+### Filament & Canvas
+- `elegoo/extras/filament_switch_sensor.h/.cpp` — Filament presence detection (`filament_detected`)
+- `elegoo/extras/filament_motion_sensor.h/.cpp` — Filament motion/flow sensor
+- `elegoo/extras/canvas_dev.h/.cpp` — Canvas/AMS multi-material unit communication
+- `elegoo/extras/filament_load_unload.h/.cpp` — Feed/retract filament operations
+
+### Bed & Leveling
+- `elegoo/extras/bedmesh/bed_mesh.h` — `ZMesh` class with `get_mesh_matrix()`, `get_probed_matrix()`, `get_mesh_params()`. Bed mesh data exists in Klipper but is NOT exposed via MQTT on stock firmware.
+- `elegoo/extras/z_compensation.h/.cpp` — Z compensation / bed mesh application
+
+### Fans & Output
+- `elegoo/extras/fan.h/.cpp` — Part/model fan control
+- `elegoo/extras/fan_generic.h/.cpp` — Generic fan (aux, chassis)
+- `elegoo/extras/controller_fan.h/.cpp` — Controller board fan
+- `elegoo/extras/heater_fan.h/.cpp` — Hotend heatbreak fan
+- `elegoo/extras/cavity_fan.h/.cpp` — Enclosure fan with temperature control
+- `elegoo/extras/led.h/.cpp` — LED light control
+- `elegoo/extras/output_pin.h/.cpp` — GPIO output pins
+
+### Print Management
+- `elegoo/extras/print_stats.h/.cpp` — Print statistics, `get_status()` returns `machine_status`, `sub_status`, progress, filament used. Only exposes `bed_mesh_detected` (boolean), not mesh point data.
+- `elegoo/extras/virtual_sdcard.h/.cpp` — G-code file streaming from storage
+- `elegoo/extras/pause_resume.h/.cpp` — Print pause/resume state machine
+- `elegoo/extras/idle_timeout.h/.cpp` — Idle timeout handler
+
+### Camera
+- `elegoo/extras/ai_camera/module/camera/ai_camera.h/.cpp` — `ai_camera` daemon: UVC camera management, MJPEG streaming on port 8080 (15 FPS, max 4 clients, 300KB/frame max)
+- `elegoo/extras/ai_camera/module/camera/aiCamera_cmd.h` — Camera command definitions
+- `elegoo/extras/ai_camera/module/camera/aiCamera_status.h` — Camera status codes
+
+### System
+- `elegoo/extras/por.h/.cpp` — Power-off recovery, triggers `system("reboot")`
+- `elegoo/extras/resonance_tester.h/.cpp` — Input shaper / vibration compensation (method 1033)
+- `elegoo/extras/input_shaper.h/.cpp` — Input shaper algorithm
+- `elegoo/extras/auto_detect.h/.cpp` — Auto-detection / self-check (method 1035)
+- `elegoo/extras/statistics.h/.cpp` — Runtime statistics
+- `elegoo/gcode.h/.cpp` — G-code parser, `RESTART`/`FIRMWARE_RESTART` commands
+
+### Important Limitations
+- **No arbitrary G-code via MQTT**: The MQTT service is a proprietary layer that only exposes predefined method IDs. Klipper's full G-code interface is not accessible.
+- **No bed mesh data via MQTT**: `bed_mesh.get_status()` exists internally but the MQTT service only passes `bed_mesh_detected` (boolean) through `print_stats`.
+- **Webhooks port closed**: Klipper's webhooks (port 34952) could expose `objects/query` with full `bed_mesh` data, but the port is firewalled on stock firmware.
+- **Camera daemon is separate**: `ai_camera` runs as its own process, independent of the Klipper host. Camera failures don't affect printing.
+
+## Reboot / Restart
+
+- **No MQTT method exists** for rebooting or shutting down the printer. The full method enum (`elegoo/common/method.h`) has no reboot/shutdown command.
+- **OTA auto-reboot**: After successful OTA firmware update (method 1039), firmware calls `system("reboot")` (in `update_ota.cpp`).
+- **Power-off recovery**: POR circuit triggers `system("reboot")` automatically (in `extras/por.cpp`).
+- **GCode RESTART/FIRMWARE_RESTART**: Available via Moonraker REST endpoints on the printer (`POST /printer/restart`). Restarts the Klipper host software only — NOT the Linux system. Defined in `gcode.cpp` → `request_restart()` → `printer->request_exit()`.
+- Our Moonraker compat stubs (`moonraker-server.ts`) respond with `ok` but don't proxy to the printer's actual endpoints.
 
 ## MQTT Bridge Pitfalls
 

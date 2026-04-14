@@ -3,7 +3,6 @@
 ## High Priority
 
 - [ ] **No test suite** — Zero tests in the entire project. Add at minimum: unit tests for state merging (`printer-state.ts` deep merge), time formatting helpers, server state-store logic, and integration tests for MQTT message parsing.
-- [ ] bed mesh is still not working. 
 
 
 ## Medium Priority
@@ -68,7 +67,7 @@
 - [x] **Canvas filament load/unload** — Buttons to load/unload filament via Canvas/AMS panel (methods 2001/2002)
 - [x] **Timelapse viewer** — Download/play timelapse videos from history (method 1051)
 - [x] **System info panel** — Display firmware versions, hardware info, network details (method 1062)
-- [x] **Bed mesh visualization** — 3D/heatmap view of auto-leveling bed mesh data
+- [x] ~~**Bed mesh visualization**~~ — Removed: CC2 stock firmware does not expose bed mesh point data via MQTT (only `bed_mesh_detect` boolean). Klipper webhooks port (34952) is closed.
 - [x] **Gcode preview** — 3D toolpath visualization using gcode-preview lib (Three.js WebGL), auto-loads from printer on print start, layer slider, follow mode
 - [x] **PWA support** — Add manifest + service worker for installable app experience
 - [x] **Temperature presets** — Quick-set buttons for common materials (PLA 210/60, PETG 240/80, ABS 250/100)
@@ -136,7 +135,7 @@
 - [x] **Print start confirmation dialog** — Preview thumbnail + settings (bed mesh detect, filament detect, storage source) before starting, with filament-to-Canvas slot mapping
 - [x] **Emergency stop button** — Prominent e-stop with confirmation (method 1036)
 - [x] **WebSocket keep-alive indicator** — Visual heartbeat indicator showing connection health
-- [x] **Bed mesh NaN handling** — If mesh data contains NaN or non-square dimensions, 3D/heatmap rendering breaks. Validate and sanitize mesh data before rendering.
+- [x] ~~**Bed mesh NaN handling**~~ — Removed with bed mesh feature (data not available from CC2 firmware).
 - [x] **XYZ position feedback after move** — Move buttons don't confirm success or show new position. Request position update after move command and display result.
 - [x] **Service status "Connecting..." state** — UI shows "Disconnected" briefly on page load before first status message. Show "Connecting…" instead of "Disconnected" during initial connection.
 - [x] **Browser error reporting to server** — Client-side errors only appear in browser console. Ship critical JS errors to server log via `/api/client-error` for post-incident analysis.

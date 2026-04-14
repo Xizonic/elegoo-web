@@ -164,7 +164,6 @@ export class WebSocketTransport {
       systemInfo: this.store.systemInfo,
       timelapseList: this.store.timelapseList,
       videoUrl: this.store.videoUrl,
-      bedMesh: this.store.bedMesh,
       zones: this.store.zones,
       layerTimes: this.store.layerTimes,
       filamentUsage: this.store.getFilamentUsageArray(),

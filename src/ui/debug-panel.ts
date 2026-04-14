@@ -99,7 +99,6 @@ function getStateSnapshot(state: PrinterState): Record<string, unknown> {
   if (state.monoFilament) snap.monoFilament = state.monoFilament;
   if (state.systemInfo) snap.systemInfo = state.systemInfo;
   if (state.storageCapacity) snap.storageCapacity = state.storageCapacity;
-  if (state.bedMesh) snap.bedMesh = state.bedMesh;
   snap.zones = state.zones;
   // Scalars
   snap._thumbnail = state.thumbnail ? '(base64 PNG)' : null;

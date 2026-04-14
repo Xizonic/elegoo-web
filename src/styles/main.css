@@ -781,13 +781,6 @@ body {
 .info-value { color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; text-align: right; word-break: break-all; }
 .info-placeholder { color: var(--text-muted); font-style: italic; text-align: center; padding: 20px; }
 
-/* === Bed Mesh === */
-.bed-mesh-canvas {
-  width: 100%;
-  height: 260px;
-  display: block;
-}
-
 /* === Gcode Preview === */
 .gcode-preview-wrap {
   position: relative;

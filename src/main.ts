@@ -10,7 +10,6 @@ import {
   bindFileControls, toast, setCanvasClient,
   renderSystemInfo,
   renderTimelapse, setTimelapseClient, requestTimelapseList, showTimelapsePlayer,
-  renderBedMesh,
   renderGcodePreview,
   renderLayerTimeChart,
   updateServiceStatus, fetchTimeout,
@@ -110,7 +109,6 @@ function scheduleRender(): void {
       renderCanvas(state);
       renderSystemInfo(state);
       renderTimelapse(state);
-      renderBedMesh(state);
       renderGcodePreview(state);
       renderLayerTimeChart(state);
       renderPrintHistory(state);
@@ -170,11 +168,6 @@ function showDashboard(): void {
       player.pause();
       player.src = '';
       $('timelapse-player-wrap').classList.add('hidden');
-    });
-    $('bed-mesh-refresh').addEventListener('click', () => {
-      if (!confirm('Run auto-level? This will probe the bed and may take a minute.\nThe printer must be idle (not printing).')) return;
-      toast('Starting auto-level...', 'info');
-      client!.sendCommand(1032, {}); // AutoLevel — mesh data arrives via status events
     });
     $('btn-reset-layer-data').addEventListener('click', async () => {
       if (!confirm('Reset all layer duration data?')) return;
@@ -337,9 +330,6 @@ function connectToService(): void {
       }
       if (initData.systemInfo) {
         state.systemInfo = initData.systemInfo as Record<string, unknown>;
-      }
-      if (initData.bedMesh) {
-        state.bedMesh = initData.bedMesh as number[][];
       }
       if (initData.layerTimes && Array.isArray(initData.layerTimes)) {
         const lt = initData.layerTimes as Array<{ layer: number; duration: number; timestamp: number }>;
