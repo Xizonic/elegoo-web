@@ -16,8 +16,13 @@ export default tseslint.config(
         ...globals.browser,
         ...globals.node,
       },
+      parserOptions: {
+        project: ['./tsconfig.json', './tsconfig.server.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
+      "@typescript-eslint/no-deprecated": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
