@@ -13,6 +13,8 @@ RUN pnpm build
 # ── Production stage ──────────────────────────────────────
 FROM node:22-slim
 
+LABEL org.opencontainers.image.source=https://github.com/runnane/elegoo-web
+
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
