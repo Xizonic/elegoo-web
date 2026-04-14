@@ -336,6 +336,13 @@ async function doFetch(cameraUrl: string): Promise<Buffer | null> {
 /** Shared snapshot fetcher — used by both REST API, Telegram, and AI monitor.
  *  Prefers the cached frame from the active MJPEG fan-out stream (zero-cost).
  *  Only falls back to a dedicated HTTP fetch if no recent frame is available. */
+/** Check actual camera stream health (fresh cached frame or active upstream). */
+export function getCameraHealth(): 'available' | 'unavailable' {
+  if (cachedSnapshot && Date.now() - cacheTime < CACHE_TTL_MS) return 'available';
+  if (upstreamActive) return 'available';
+  return 'unavailable';
+}
+
 export async function getSnapshot(config: ServiceConfig): Promise<Buffer | null> {
   if (!config.cameraEnabled) return null;
   // Use cached frame from MJPEG stream if fresh (within TTL)

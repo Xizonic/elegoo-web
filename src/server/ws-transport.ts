@@ -18,6 +18,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import type { StateStore, EventLogEntry } from './state-store.js';
+import { getCameraHealth } from './rest-api.js';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { TelegramIntegration } from './telegram.js';
 import type { AIMonitor } from './ai-monitor.js';
@@ -143,7 +144,7 @@ export class WebSocketTransport {
         ? (this.services.aiMonitor.monitoring ? 'monitoring' : (this.services.aiMonitor.isRunning ? 'idle' : 'stopped'))
         : 'disabled',
       aiConfig: this.services.aiMonitor?.getConfigSummary() ?? null,
-      camera: this.store.status?.external_device?.camera ? 'available' : 'unavailable',
+      camera: getCameraHealth(),
     };
   }
 
