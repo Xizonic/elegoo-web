@@ -12,11 +12,15 @@ import { getLogger, getEventLogger } from './logger.js';
 
 const log = getLogger('State');
 import {
-  STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES,
-  EXCEPTION_NAMES, CRITICAL_EXCEPTIONS, isFilamentChangeSubStatus,
-  detectZone, ZONE_MAX_HISTORY,
+  STATUS_NAMES,
+  SUB_STATUS_NAMES,
+  SPEED_MODE_NAMES,
+  EXCEPTION_NAMES,
+  isFilamentChangeSubStatus,
+  detectZone,
+  ZONE_MAX_HISTORY,
 } from '../types.js';
-import type { ZoneName, ZoneState } from '../types.js';
+import type { ZoneState } from '../types.js';
 
 /** Chart data point — matches the browser ChartStore format */
 export interface ChartPoint {
@@ -38,8 +42,15 @@ const AI_CHART_MAX_POINTS = 300_000; // safety valve matching chart data
 
 /** Filament densities (g/cm³) for weight calculation */
 const FILAMENT_DENSITY: Record<string, number> = {
-  PLA: 1.24, ABS: 1.04, ASA: 1.07, PETG: 1.27, TPU: 1.21,
-  PA: 1.14, PC: 1.20, PVA: 1.23, HIPS: 1.04,
+  PLA: 1.24,
+  ABS: 1.04,
+  ASA: 1.07,
+  PETG: 1.27,
+  TPU: 1.21,
+  PA: 1.14,
+  PC: 1.2,
+  PVA: 1.23,
+  HIPS: 1.04,
 };
 const FILAMENT_RADIUS_MM = 1.75 / 2;
 const CROSS_SECTION_MM2 = Math.PI * FILAMENT_RADIUS_MM * FILAMENT_RADIUS_MM; // ~2.405 mm²
@@ -47,21 +58,30 @@ const CROSS_SECTION_CM2 = Math.PI * (0.175 / 2) ** 2; // in cm² for g/cm³ dens
 
 /** Per-spool filament usage tracking */
 export interface FilamentUsage {
-  trayKey: string;       // 'mono' or 'canvas_<canvasId>_tray_<trayId>'
-  filamentType: string;  // PLA, PETG, etc.
-  color: string;         // hex color
-  extruded_mm: number;   // total mm of filament pushed through extruder
-  grams: number;         // computed from extruded_mm + density
-  meters: number;        // extruded_mm / 1000
+  trayKey: string; // 'mono' or 'canvas_<canvasId>_tray_<trayId>'
+  filamentType: string; // PLA, PETG, etc.
+  color: string; // hex color
+  extruded_mm: number; // total mm of filament pushed through extruder
+  grams: number; // computed from extruded_mm + density
+  meters: number; // extruded_mm / 1000
 }
 
 /** Deep-merge delta into base */
-function deepMerge(base: Record<string, unknown>, update: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  base: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...base };
   for (const key of Object.keys(update)) {
     const bVal = result[key];
     const uVal = update[key];
-    if (bVal && uVal && typeof bVal === 'object' && typeof uVal === 'object' && !Array.isArray(uVal)) {
+    if (
+      bVal &&
+      uVal &&
+      typeof bVal === 'object' &&
+      typeof uVal === 'object' &&
+      !Array.isArray(uVal)
+    ) {
       result[key] = deepMerge(bVal as Record<string, unknown>, uVal as Record<string, unknown>);
     } else {
       result[key] = uVal;
@@ -70,15 +90,20 @@ function deepMerge(base: Record<string, unknown>, update: Record<string, unknown
   return result;
 }
 
-
-
 export type PrintEvent =
   | { type: 'connected'; sn: string }
   | { type: 'disconnected' }
   | { type: 'print_started'; filename: string; resumed?: boolean }
   | { type: 'print_completed'; filename: string; duration: number }
   | { type: 'print_failed'; filename: string; reason: string }
-  | { type: 'print_progress'; filename: string; progress: number; layer: number; totalLayers: number; remaining: number }
+  | {
+      type: 'print_progress';
+      filename: string;
+      progress: number;
+      layer: number;
+      totalLayers: number;
+      remaining: number;
+    }
   | { type: 'error'; codes: number[]; names: string[] }
   | { type: 'filament_runout' }
   | { type: 'layer_change'; layer: number; totalLayers: number; durationSec: number }
@@ -95,19 +120,32 @@ export interface EventLogEntry {
 /** One-line summary of a PrintEvent for the events.log file */
 function summarizeEvent(e: PrintEvent): string {
   switch (e.type) {
-    case 'connected': return `[CONNECTED] SN ${e.sn}`;
-    case 'disconnected': return '[DISCONNECTED]';
-    case 'print_started': return `[PRINT ${e.resumed ? 'RESUMED' : 'STARTED'}] ${e.filename}`;
-    case 'print_completed': return `[PRINT COMPLETED] ${e.filename} (${e.duration}s)`;
-    case 'print_failed': return `[PRINT FAILED] ${e.filename} — ${e.reason}`;
-    case 'print_progress': return `[PROGRESS] ${e.progress}% — Layer ${e.layer}/${e.totalLayers} — ${e.filename}`;
-    case 'error': return `[ERROR] ${e.names.join(', ')} (codes: ${e.codes.join(', ')})`;
-    case 'filament_runout': return '[FILAMENT RUNOUT]';
-    case 'layer_change': return `[LAYER] ${e.layer}/${e.totalLayers} (${e.durationSec.toFixed(1)}s)`;
-    case 'first_layer_complete': return `[FIRST LAYER] ${e.filename} — ${e.totalLayers} total (${e.durationSec.toFixed(1)}s)`;
-    case 'status_change': return `[STATUS] ${e.from} → ${e.to}`;
-    case 'sub_status_change': return `[SUB_STATUS] ${e.from} → ${e.to}`;
-    default: return `[EVENT] ${JSON.stringify(e)}`;
+    case 'connected':
+      return `[CONNECTED] SN ${e.sn}`;
+    case 'disconnected':
+      return '[DISCONNECTED]';
+    case 'print_started':
+      return `[PRINT ${e.resumed ? 'RESUMED' : 'STARTED'}] ${e.filename}`;
+    case 'print_completed':
+      return `[PRINT COMPLETED] ${e.filename} (${e.duration}s)`;
+    case 'print_failed':
+      return `[PRINT FAILED] ${e.filename} — ${e.reason}`;
+    case 'print_progress':
+      return `[PROGRESS] ${e.progress}% — Layer ${e.layer}/${e.totalLayers} — ${e.filename}`;
+    case 'error':
+      return `[ERROR] ${e.names.join(', ')} (codes: ${e.codes.join(', ')})`;
+    case 'filament_runout':
+      return '[FILAMENT RUNOUT]';
+    case 'layer_change':
+      return `[LAYER] ${e.layer}/${e.totalLayers} (${e.durationSec.toFixed(1)}s)`;
+    case 'first_layer_complete':
+      return `[FIRST LAYER] ${e.filename} — ${e.totalLayers} total (${e.durationSec.toFixed(1)}s)`;
+    case 'status_change':
+      return `[STATUS] ${e.from} → ${e.to}`;
+    case 'sub_status_change':
+      return `[SUB_STATUS] ${e.from} → ${e.to}`;
+    default:
+      return `[EVENT] ${JSON.stringify(e)}`;
   }
 }
 
@@ -173,7 +211,10 @@ export class StateStore extends EventEmitter {
   /** Periodic full-status poll timer (active during printing) */
   private statusPollTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private bridge: MqttBridge, private progressInterval: number) {
+  constructor(
+    private bridge: MqttBridge,
+    private progressInterval: number,
+  ) {
     super();
 
     // Wire up MQTT bridge events
@@ -314,7 +355,9 @@ export class StateStore extends EventEmitter {
         }
       }
     }
-    const mono = (this.status as unknown as Record<string, unknown>)?.mono_filament_info as Record<string, unknown> | undefined;
+    const mono = (this.status as unknown as Record<string, unknown>)?.mono_filament_info as
+      | Record<string, unknown>
+      | undefined;
     if (mono?.filament_type) return mono.filament_type as string;
     return 'PLA';
   }
@@ -334,7 +377,9 @@ export class StateStore extends EventEmitter {
         }
       }
     }
-    const mono2 = (this.status as unknown as Record<string, unknown>)?.mono_filament_info as Record<string, unknown> | undefined;
+    const mono2 = (this.status as unknown as Record<string, unknown>)?.mono_filament_info as
+      | Record<string, unknown>
+      | undefined;
     return {
       key: 'mono',
       color: (mono2?.filament_color as string) || '#888888',
@@ -424,8 +469,12 @@ export class StateStore extends EventEmitter {
     }
   }
 
-  getLastLayer(): number { return this._lastLayer; }
-  getLastLayerTime(): number { return this._lastLayerTime; }
+  getLastLayer(): number {
+    return this._lastLayer;
+  }
+  getLastLayerTime(): number {
+    return this._lastLayerTime;
+  }
 
   /** Clear layer data and notify WS clients */
   clearLayerData(): void {
@@ -442,7 +491,9 @@ export class StateStore extends EventEmitter {
   }
 
   /** Get recent raw log entries */
-  getRecentLogs(count = 100): Array<{ direction: string; topic: string; data: unknown; ts: number }> {
+  getRecentLogs(
+    count = 100,
+  ): Array<{ direction: string; topic: string; data: unknown; ts: number }> {
     return this.rawLog.slice(-count);
   }
 
@@ -507,7 +558,9 @@ export class StateStore extends EventEmitter {
         break;
       }
       case 1046: {
-        const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as number | undefined;
+        const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as
+          | number
+          | undefined;
         if (layers != null && layers > 0) {
           this.fileTotalLayers = layers;
           this.totalLayers = layers;
@@ -546,7 +599,9 @@ export class StateStore extends EventEmitter {
     const reportId = data.auto_report_id as number | undefined;
     if (reportId != null) {
       if (this.lastAutoReportId != null && reportId !== this.lastAutoReportId + 1) {
-        log.warn(`Auto-report gap: expected ${this.lastAutoReportId + 1}, got ${reportId}. Requesting full refresh.`);
+        log.warn(
+          `Auto-report gap: expected ${this.lastAutoReportId + 1}, got ${reportId}. Requesting full refresh.`,
+        );
         this.bridge.sendCommand(1002, {});
       }
       this.lastAutoReportId = reportId;
@@ -573,7 +628,7 @@ export class StateStore extends EventEmitter {
       if (this.canvas) {
         this.canvas = deepMerge(
           this.canvas as unknown as Record<string, unknown>,
-          canvasDelta as unknown as Record<string, unknown>
+          canvasDelta as unknown as Record<string, unknown>,
         ) as unknown as CanvasInfo;
       } else {
         this.canvas = canvasDelta;
@@ -591,7 +646,7 @@ export class StateStore extends EventEmitter {
     if (!this.status) return;
     const ms = this.status.machine_status;
     const ps = this.status.print_status;
-    const ext = this.status.extruder;
+    const _ext = this.status.extruder;
 
     this.lastMachineStatus = ms?.status ?? -1;
     this.lastSubStatus = ms?.sub_status ?? -1;
@@ -599,7 +654,8 @@ export class StateStore extends EventEmitter {
 
     if (this.lastMachineStatus === 2) {
       const progress = ms.progress ?? 0;
-      this.lastProgressNotified = Math.floor(progress / this.progressInterval) * this.progressInterval;
+      this.lastProgressNotified =
+        Math.floor(progress / this.progressInterval) * this.progressInterval;
       this.totalLayers = ps?.total_layer ?? 0;
       if (ps?.filename) {
         this.bridge.sendCommand(1046, { filename: ps.filename });
@@ -609,15 +665,24 @@ export class StateStore extends EventEmitter {
       // restart, keep the accumulated data and just fix the timing baseline so
       // the next layer transition doesn't produce a bogus duration.
       const currentLayer = ps?.current_layer ?? 0;
-      if (this._lastLayer > 0 && currentLayer > 0 && this._lastLayer <= currentLayer && this.layerTimes.length > 0) {
+      if (
+        this._lastLayer > 0 &&
+        currentLayer > 0 &&
+        this._lastLayer <= currentLayer &&
+        this.layerTimes.length > 0
+      ) {
         // Data looks consistent with the current print — keep it, just reset
         // the timestamp so the first layer after restart isn't bogus
         this._lastLayer = currentLayer;
         this._lastLayerTime = Date.now();
-        log.info(`Baseline from full status — printing at ${progress}%, kept ${this.layerTimes.length} layer entries, rebased timing at L${currentLayer}`);
+        log.info(
+          `Baseline from full status — printing at ${progress}%, kept ${this.layerTimes.length} layer entries, rebased timing at L${currentLayer}`,
+        );
       } else {
         this.clearLayerData();
-        log.info(`Baseline from full status — printing at ${progress}%, layer data reset (stale or empty)`);
+        log.info(
+          `Baseline from full status — printing at ${progress}%, layer data reset (stale or empty)`,
+        );
       }
     } else {
       log.info(`Baseline from full status — idle (status ${this.lastMachineStatus})`);
@@ -661,7 +726,10 @@ export class StateStore extends EventEmitter {
       }
       if (this.pendingPrintStartRetries >= 10) {
         this.pendingPrintStartTimer = null;
-        this.emit('print_event', { type: 'print_started', filename: 'unknown' } satisfies PrintEvent);
+        this.emit('print_event', {
+          type: 'print_started',
+          filename: 'unknown',
+        } satisfies PrintEvent);
         return;
       }
       this.pendingPrintStartTimer = setTimeout(check, 500);
@@ -688,7 +756,7 @@ export class StateStore extends EventEmitter {
 
     const ms = this.status.machine_status;
     const ps = this.status.print_status;
-    const ext = this.status.extruder;
+    const _ext = this.status.extruder;
 
     const machineStatus = ms?.status ?? -1;
     const subStatus = ms?.sub_status ?? -1;
@@ -698,8 +766,12 @@ export class StateStore extends EventEmitter {
     // Print started — either machine_status transitions to 2,
     // or sub_status transitions from completed/stopped to active while already printing
     const ENDED_SUBSTATUS = new Set([2077, 2503, 2504]);
-    const isNewPrint = (machineStatus === 2 && this.lastMachineStatus !== 2) ||
-      (machineStatus === 2 && ENDED_SUBSTATUS.has(this.lastSubStatus) && !ENDED_SUBSTATUS.has(subStatus) && subStatus !== 0);
+    const isNewPrint =
+      (machineStatus === 2 && this.lastMachineStatus !== 2) ||
+      (machineStatus === 2 &&
+        ENDED_SUBSTATUS.has(this.lastSubStatus) &&
+        !ENDED_SUBSTATUS.has(subStatus) &&
+        subStatus !== 0);
 
     if (isNewPrint) {
       this.lastProgressNotified = -1;
@@ -733,8 +805,11 @@ export class StateStore extends EventEmitter {
     }
 
     // Print stopped/failed
-    if ((subStatus === 2503 || subStatus === 2504) &&
-        this.lastSubStatus !== 2503 && this.lastSubStatus !== 2504) {
+    if (
+      (subStatus === 2503 || subStatus === 2504) &&
+      this.lastSubStatus !== 2503 &&
+      this.lastSubStatus !== 2504
+    ) {
       const reason = SUB_STATUS_NAMES[subStatus] || `Sub-status ${subStatus}`;
       this.emit('print_event', {
         type: 'print_failed',
@@ -752,7 +827,9 @@ export class StateStore extends EventEmitter {
       if (progress >= nextThreshold && progress < 100) {
         const notifyAt = Math.floor(progress / this.progressInterval) * this.progressInterval;
         if (notifyAt > this.lastProgressNotified) {
-          log.info(`Progress ${progress}% → notify at ${notifyAt}% (next threshold was ${nextThreshold}%)`);
+          log.info(
+            `Progress ${progress}% → notify at ${notifyAt}% (next threshold was ${nextThreshold}%)`,
+          );
           this.lastProgressNotified = notifyAt;
           this.emit('print_event', {
             type: 'print_progress',
@@ -770,7 +847,9 @@ export class StateStore extends EventEmitter {
     const exceptions = ms?.exception_status ?? [];
     const newExceptions = exceptions.filter((e: number) => !this.lastExceptions.includes(e));
     if (newExceptions.length > 0) {
-      const names = newExceptions.map((code: number) => EXCEPTION_NAMES[code] || `Unknown (${code})`);
+      const names = newExceptions.map(
+        (code: number) => EXCEPTION_NAMES[code] || `Unknown (${code})`,
+      );
       this.emit('print_event', { type: 'error', codes: newExceptions, names } satisfies PrintEvent);
 
       // Suppress filament runout near print completion — sensor may read empty as print finishes
@@ -780,7 +859,12 @@ export class StateStore extends EventEmitter {
       const nearCompletion = printEnded || progress >= 99.8;
       const duringFilamentChange = isFilamentChangeSubStatus(subStatus);
       const notInPrintArea = this.zones.current !== 'print_area';
-      if (!nearCompletion && !duringFilamentChange && !notInPrintArea && (newExceptions.includes(109) || newExceptions.includes(1211))) {
+      if (
+        !nearCompletion &&
+        !duringFilamentChange &&
+        !notInPrintArea &&
+        (newExceptions.includes(109) || newExceptions.includes(1211))
+      ) {
         this.emit('print_event', { type: 'filament_runout' } satisfies PrintEvent);
       }
     }
@@ -861,7 +945,9 @@ export class StateStore extends EventEmitter {
         // Sanity check: reject bogus durations (> 10 min per layer is implausible,
         // likely caused by stale timestamp across restart or print boundary)
         if (durationSec > 600) {
-          log.warn(`Discarding bogus layer duration: L${this._lastLayer} = ${durationSec.toFixed(0)}s`);
+          log.warn(
+            `Discarding bogus layer duration: L${this._lastLayer} = ${durationSec.toFixed(0)}s`,
+          );
         } else {
           const entry = { layer: this._lastLayer, duration: durationSec, timestamp: now };
           this.layerTimes.push(entry);
@@ -895,7 +981,7 @@ export class StateStore extends EventEmitter {
 
   /** Get human-readable status summary (used by Telegram) */
   getStatusSummary(): string {
-    const esc = (text: string) => text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+    const esc = (text: string) => text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
     const s = this.status;
     if (!s) return 'Printer status unknown \\(not connected\\)';
 
@@ -936,8 +1022,8 @@ export class StateStore extends EventEmitter {
     }
 
     if (s.fans) {
-      const partFan = Math.round((s.fans.fan?.speed ?? 0) / 255 * 100);
-      const auxFan = Math.round((s.fans.aux_fan?.speed ?? 0) / 255 * 100);
+      const partFan = Math.round(((s.fans.fan?.speed ?? 0) / 255) * 100);
+      const auxFan = Math.round(((s.fans.aux_fan?.speed ?? 0) / 255) * 100);
       summary += `\n🌀 *Part fan:* ${partFan}%  *Aux fan:* ${auxFan}%\n`;
     }
 

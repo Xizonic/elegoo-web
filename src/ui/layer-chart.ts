@@ -138,8 +138,10 @@ function drawLayerChart(canvas: HTMLCanvasElement, state: PrinterState): void {
   for (const lt of visible) {
     const x = xMap(lt.layer);
     const y = yMap(lt.duration);
-    if (!started) { ctx.moveTo(x, y); started = true; }
-    else ctx.lineTo(x, y);
+    if (!started) {
+      ctx.moveTo(x, y);
+      started = true;
+    } else ctx.lineTo(x, y);
   }
   ctx.stroke();
 
@@ -177,7 +179,7 @@ function drawLayerChart(canvas: HTMLCanvasElement, state: PrinterState): void {
   ctx.fillText(
     `L${last.layer}: ${last.duration.toFixed(1)}s`,
     xMap(last.layer) + 6,
-    yMap(last.duration)
+    yMap(last.duration),
   );
 
   // Average line
@@ -206,7 +208,10 @@ function drawLayerChart(canvas: HTMLCanvasElement, state: PrinterState): void {
     let bestDist = Infinity;
     for (const lt of visible) {
       const dist = Math.abs(lt.layer - hoverLayer);
-      if (dist < bestDist) { bestDist = dist; best = lt; }
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = lt;
+      }
     }
 
     if (best && bestDist < xRange * 0.05 + 1) {

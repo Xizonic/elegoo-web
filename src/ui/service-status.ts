@@ -88,12 +88,12 @@ export function renderServiceStatus(): void {
     { label: 'Printer', state: s.printerSn ? 'ok' : 'err', okValues: ['ok'] },
   ];
 
-  const healthy = checks.filter(c => isOk(c.state, c.okValues)).length;
+  const healthy = checks.filter((c) => isOk(c.state, c.okValues)).length;
   const total = checks.length;
 
   // Header badge: colored dots + count
   const allOk = healthy === total;
-  dotsEl.innerHTML = checks.map(c => dotHtml(isOk(c.state, c.okValues))).join('');
+  dotsEl.innerHTML = checks.map((c) => dotHtml(isOk(c.state, c.okValues))).join('');
   countEl.textContent = `${healthy}/${total}`;
   badge.classList.toggle('svc-all-ok', allOk);
   badge.classList.toggle('svc-has-err', !allOk);
@@ -165,7 +165,7 @@ export function renderSystemInfo(state: PrinterState): void {
   if (sysInfo) {
     for (const [k, v] of Object.entries(sysInfo)) {
       if (typeof v === 'string' || typeof v === 'number') {
-        const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const label = k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
         rows.push([label, String(v)]);
       }
     }

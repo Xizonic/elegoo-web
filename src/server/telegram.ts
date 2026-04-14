@@ -17,7 +17,7 @@ const log = getLogger('Telegram');
 
 /** Escape special chars for Telegram MarkdownV2 */
 function esc(text: string): string {
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+  return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
 /**
@@ -49,14 +49,26 @@ function formatEvent(event: PrintEvent): { text: string; urgent: boolean } {
     case 'print_started':
       return { text: `🚀 *Print Started*\n📄 ${esc(event.filename)}`, urgent: false };
     case 'print_completed':
-      return { text: `✅ *Print Completed\\!*\n📄 ${esc(event.filename)}\n⏱ Duration: ${esc(formatDuration(event.duration))}`, urgent: false };
+      return {
+        text: `✅ *Print Completed\\!*\n📄 ${esc(event.filename)}\n⏱ Duration: ${esc(formatDuration(event.duration))}`,
+        urgent: false,
+      };
     case 'print_failed':
-      return { text: `❌ *Print Failed/Stopped*\n📄 ${esc(event.filename)}\n💬 ${esc(event.reason)}`, urgent: true };
+      return {
+        text: `❌ *Print Failed/Stopped*\n📄 ${esc(event.filename)}\n💬 ${esc(event.reason)}`,
+        urgent: true,
+      };
     case 'print_progress': {
       const bar = progressBar(event.progress);
-      const layerStr = event.totalLayers ? `Layer ${event.layer} of ${event.totalLayers}` : `Layer ${event.layer}`;
+      const layerStr = event.totalLayers
+        ? `Layer ${event.layer} of ${event.totalLayers}`
+        : `Layer ${event.layer}`;
       const now = new Date();
-      const updatedAt = now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const updatedAt = now.toLocaleTimeString('nb-NO', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
       const eta = new Date(now.getTime() + event.remaining * 1000);
       const etaStr = eta.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
       return {
@@ -73,17 +85,28 @@ function formatEvent(event: PrintEvent): { text: string; urgent: boolean } {
       };
     }
     case 'error': {
-      const hasCritical = event.codes.some(c => CRITICAL_EXCEPTIONS.has(c));
+      const hasCritical = event.codes.some((c) => CRITICAL_EXCEPTIONS.has(c));
       const lines = event.names.map((name, i) => {
         const code = event.codes[i];
         const icon = CRITICAL_EXCEPTIONS.has(code) ? '🚨' : '⚠️';
         return `${icon} ${esc(name)} \\(${code}\\)`;
       });
-      return { text: `${hasCritical ? '🚨' : '⚠️'} *Printer Error*\n${lines.join('\n')}`, urgent: hasCritical };
+      return {
+        text: `${hasCritical ? '🚨' : '⚠️'} *Printer Error*\n${lines.join('\n')}`,
+        urgent: hasCritical,
+      };
     }
     case 'filament_runout':
-      return { text: '🧵 *Filament Runout Detected\\!*\nPrinter is paused, please load new filament\\.', urgent: true };    case 'first_layer_complete':
-      return { text: `🥇 *First Layer Complete\!*\n📄 ${esc(event.filename)}\n⏱ Layer took: ${esc(formatDuration(event.durationSec))}`, urgent: false };    default:
+      return {
+        text: '🧵 *Filament Runout Detected\\!*\nPrinter is paused, please load new filament\\.',
+        urgent: true,
+      };
+    case 'first_layer_complete':
+      return {
+        text: `🥇 *First Layer Complete\\!*\n📄 ${esc(event.filename)}\n⏱ Layer took: ${esc(formatDuration(event.durationSec))}`,
+        urgent: false,
+      };
+    default:
       return { text: '', urgent: false };
   }
 }
@@ -116,10 +139,10 @@ export class TelegramIntegration {
     this.bot.command('start', async (ctx) => {
       await ctx.reply(
         '🖨 *Elegoo CC2 Telegram Bot*\n\n' +
-        'Commands:\n' +
-        '/status — Current printer status\n' +
-        '/photo — Camera snapshot\n' +
-        '/help — Show this message',
+          'Commands:\n' +
+          '/status — Current printer status\n' +
+          '/photo — Camera snapshot\n' +
+          '/help — Show this message',
         { parse_mode: 'MarkdownV2' },
       );
     });
@@ -127,8 +150,8 @@ export class TelegramIntegration {
     this.bot.command('help', async (ctx) => {
       await ctx.reply(
         '🖨 *Elegoo CC2 Telegram Bot*\n\n' +
-        '/status — Current printer status\n' +
-        '/photo — Camera snapshot',
+          '/status — Current printer status\n' +
+          '/photo — Camera snapshot',
         { parse_mode: 'MarkdownV2' },
       );
     });
@@ -167,9 +190,15 @@ export class TelegramIntegration {
     if (!text) return;
 
     try {
-      const wantPhoto = this.config.cameraEnabled && [
-        'print_started', 'print_completed', 'print_failed', 'print_progress', 'first_layer_complete',
-      ].includes(event.type);
+      const wantPhoto =
+        this.config.cameraEnabled &&
+        [
+          'print_started',
+          'print_completed',
+          'print_failed',
+          'print_progress',
+          'first_layer_complete',
+        ].includes(event.type);
       const photo = wantPhoto ? await getSnapshot(this.config) : null;
 
       // Progress: update live message in place
@@ -205,14 +234,22 @@ export class TelegramIntegration {
     }
   }
 
-  private async sendNew(text: string, photo: Buffer | null, urgent: boolean): Promise<number | null> {
+  private async sendNew(
+    text: string,
+    photo: Buffer | null,
+    urgent: boolean,
+  ): Promise<number | null> {
     const chatId = this.config.telegramChatId;
     const caption = safeCaption(text);
     if (photo) {
-      const msg = await this.bot.api.sendPhoto(chatId, new InputFile(photo, `snapshot_${Date.now()}.jpg`), {
-        caption,
-        parse_mode: 'MarkdownV2',
-      });
+      const msg = await this.bot.api.sendPhoto(
+        chatId,
+        new InputFile(photo, `snapshot_${Date.now()}.jpg`),
+        {
+          caption,
+          parse_mode: 'MarkdownV2',
+        },
+      );
       log.info(`Sent new photo message ${msg.message_id}`);
       return msg.message_id;
     }
@@ -255,7 +292,9 @@ export class TelegramIntegration {
 
   private _running = false;
 
-  get isRunning(): boolean { return this._running; }
+  get isRunning(): boolean {
+    return this._running;
+  }
 
   async start(): Promise<void> {
     log.info('Starting bot...');
@@ -269,12 +308,12 @@ export class TelegramIntegration {
 
   /** Send an AI alert with optional snapshot */
   async sendAIAlert(alert: AIAlert): Promise<void> {
-    const esc = (text: string) => text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+    const esc = (text: string) => text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
     const icon = alert.status === 'critical' ? '🚨' : '⚠️';
     // Use issue type + confidence — full CLIP labels are too long for Telegram captions (1024 char limit)
-    const issueLines = alert.issues.map(i =>
-      `${icon}  ${esc(i.type)} \\(${Math.round(i.confidence * 100)}%\\)`
-    ).join('\n');
+    const issueLines = alert.issues
+      .map((i) => `${icon}  ${esc(i.type)} \\(${Math.round(i.confidence * 100)}%\\)`)
+      .join('\n');
 
     const text = [
       `🤖 *AI Print Alert*`,

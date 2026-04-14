@@ -3,7 +3,11 @@ export function $(id: string): HTMLElement {
 }
 
 /** Fetch with AbortController timeout (default 15s). Throws on timeout. */
-export function fetchTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 15_000): Promise<Response> {
+export function fetchTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs = 15_000,
+): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
@@ -33,7 +37,11 @@ export function escapeHtml(s: string): string {
 }
 
 export function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /** Analyze thumbnail brightness and toggle a CSS class for dark images */

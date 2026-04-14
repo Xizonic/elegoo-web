@@ -7,7 +7,7 @@ import { CRITICAL_EXCEPTIONS } from '../types.js';
 
 /** Escape special chars for Telegram MarkdownV2 (outside of code blocks) */
 export function esc(text: string): string {
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+  return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
 /**
@@ -52,7 +52,7 @@ export function formatEvent(event: BridgeEvent): { text: string; urgent: boolean
 
     case 'print_completed':
       return {
-        text: `✅ *Print Completed\!*\n📄 ${esc(event.filename)}\n⏱ Duration: ${esc(formatDuration(event.duration))}`,
+        text: `✅ *Print Completed\\!*\n📄 ${esc(event.filename)}\n⏱ Duration: ${esc(formatDuration(event.duration))}`,
         urgent: false,
       };
 
@@ -80,11 +80,11 @@ export function formatEvent(event: BridgeEvent): { text: string; urgent: boolean
     }
 
     case 'error': {
-      const hasCritical = event.codes.some(c => CRITICAL_EXCEPTIONS.has(c));
+      const hasCritical = event.codes.some((c) => CRITICAL_EXCEPTIONS.has(c));
       const lines = event.names.map((name, i) => {
         const code = event.codes[i];
         const icon = CRITICAL_EXCEPTIONS.has(code) ? '🚨' : '⚠️';
-        return `${icon} ${esc(name)} \(${code}\)`;
+        return `${icon} ${esc(name)} \\(${code}\\)`;
       });
       return {
         text: `${hasCritical ? '🚨' : '⚠️'} *Printer Error*\n${lines.join('\n')}`,
@@ -94,13 +94,13 @@ export function formatEvent(event: BridgeEvent): { text: string; urgent: boolean
 
     case 'filament_runout':
       return {
-        text: '🧵 *Filament Runout Detected\!*\nPrinter is paused, please load new filament\.',
+        text: '🧵 *Filament Runout Detected\\!*\nPrinter is paused, please load new filament\\.',
         urgent: true,
       };
 
     case 'first_layer_complete':
       return {
-        text: `🥇 *First Layer Complete\!*\n📄 ${esc(event.filename)}\n⏱ Layer took: ${esc(formatDuration(event.durationSec))}`,
+        text: `🥇 *First Layer Complete\\!*\n📄 ${esc(event.filename)}\n⏱ Layer took: ${esc(formatDuration(event.durationSec))}`,
         urgent: false,
       };
 

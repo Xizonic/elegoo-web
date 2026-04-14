@@ -29,10 +29,11 @@ async function loadReports(): Promise<void> {
   try {
     const res = await fetchTimeout('/api/reports');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as { reports: ReportSummary[]; active: boolean };
+    const data = (await res.json()) as { reports: ReportSummary[]; active: boolean };
 
     if (data.reports.length === 0 && !data.active) {
-      container.innerHTML = '<div class="file-empty">No print reports yet. Reports are automatically generated when prints complete.</div>';
+      container.innerHTML =
+        '<div class="file-empty">No print reports yet. Reports are automatically generated when prints complete.</div>';
       reportsLoaded = true;
       return;
     }
@@ -43,10 +44,9 @@ async function loadReports(): Promise<void> {
     }
 
     for (const r of data.reports) {
-      const statusIcon = r.outcome === 'completed' ? '✅'
-        : r.outcome === 'failed' ? '❌' : '⏹';
-      const statusClass = r.outcome === 'completed' ? 'success'
-        : r.outcome === 'failed' ? 'danger' : 'warning';
+      const statusIcon = r.outcome === 'completed' ? '✅' : r.outcome === 'failed' ? '❌' : '⏹';
+      const statusClass =
+        r.outcome === 'completed' ? 'success' : r.outcome === 'failed' ? 'danger' : 'warning';
       const date = new Date(r.startedAt).toLocaleString();
       const duration = formatTime(r.duration);
 
@@ -71,17 +71,21 @@ async function loadReports(): Promise<void> {
     reportsLoaded = true;
 
     // Bind delete buttons
-    container.querySelectorAll('.report-delete-btn').forEach(btn => {
+    container.querySelectorAll('.report-delete-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = (btn as HTMLElement).dataset.reportId;
         if (!id || !confirm(`Delete report for this print?`)) return;
         try {
-          const res = await fetchTimeout(`/api/reports/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          const res = await fetchTimeout(`/api/reports/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+          });
           if (res.ok) {
             reportsLoaded = false;
             loadReports();
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       });
     });
   } catch {

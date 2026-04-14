@@ -12,7 +12,13 @@
 import { writeFile, readFile, rename, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { StateStore, ChartPoint, AIChartPoint, FilamentUsage, EventLogEntry } from './state-store.js';
+import type {
+  StateStore,
+  ChartPoint,
+  AIChartPoint,
+  FilamentUsage,
+  EventLogEntry,
+} from './state-store.js';
 import { getLogger } from './logger.js';
 
 const log = getLogger('Persistence');
@@ -53,7 +59,8 @@ export class StatePersistence {
       const raw = await readFile(this.filePath, 'utf-8');
       const data: PersistedState = JSON.parse(raw);
 
-      if (data.version !== 1 && data.version !== 2 && data.version !== 3 && data.version !== 4) return false;
+      if (data.version !== 1 && data.version !== 2 && data.version !== 3 && data.version !== 4)
+        return false;
 
       // Only restore if data is less than 24 hours old
       const age = Date.now() - data.savedAt;
@@ -78,7 +85,9 @@ export class StatePersistence {
       const layerCount = data.layerTimes?.length ?? 0;
       const aiCount = data.aiChartData?.length ?? 0;
       const eventCount = data.eventLog?.length ?? 0;
-      log.info(`Restored ${chartCount} chart points, ${layerCount} layer entries, ${aiCount} AI points, ${eventCount} events (age: ${Math.round(age / 1000)}s)`);
+      log.info(
+        `Restored ${chartCount} chart points, ${layerCount} layer entries, ${aiCount} AI points, ${eventCount} events (age: ${Math.round(age / 1000)}s)`,
+      );
       return true;
     } catch (err) {
       log.warn(`Failed to load: ${(err as Error).message}`);

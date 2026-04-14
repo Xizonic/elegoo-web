@@ -29,9 +29,11 @@ let unloadListener: (() => void) | null = null;
 
 /** Get current print file name from state, or empty string */
 function getPrintFile(state: PrinterState): string {
-  return (state.status?.print_status as Record<string, unknown> | undefined)?.filename as string
-    ?? (state.status?.print_status as Record<string, unknown> | undefined)?.file_name as string
-    ?? '';
+  return (
+    ((state.status?.print_status as Record<string, unknown> | undefined)?.filename as string) ??
+    ((state.status?.print_status as Record<string, unknown> | undefined)?.file_name as string) ??
+    ''
+  );
 }
 
 /** Save state + chart data to localStorage */

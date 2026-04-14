@@ -10,7 +10,7 @@
  * - Search/filter across all fields
  */
 
-import { $, fetchTimeout } from './helpers';
+import { fetchTimeout } from './helpers';
 import { PrinterState } from '../printer-state';
 import { STATUS_NAMES, SUB_STATUS_NAMES, EXCEPTION_NAMES, SPEED_MODE_NAMES } from '../types';
 
@@ -44,7 +44,9 @@ function loadWatchedPaths(): string[] {
   try {
     const raw = localStorage.getItem(WATCHED_PATHS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch { /* ignore corrupt data */ }
+  } catch {
+    /* ignore corrupt data */
+  }
   return [];
 }
 
@@ -54,7 +56,7 @@ function saveWatchedPaths(): void {
 
 let debugBound = false;
 let currentFilter = '';
-let collapsedPaths = new Set<string>();
+const collapsedPaths = new Set<string>();
 let autoScrollLog = true;
 let lastRenderedStateHash = '';
 let lastRenderedLogCount = 0;
@@ -171,11 +173,15 @@ function isPathWatched(path: string): boolean {
 function buildTreeHtml(obj: unknown, path: string, filter: string, depth = 0): string {
   const now = Date.now();
   if (obj === null || obj === undefined) {
-    const changed = recentChanges.has(path) && (now - recentChanges.get(path)!) < HIGHLIGHT_DURATION;
+    const changed = recentChanges.has(path) && now - recentChanges.get(path)! < HIGHLIGHT_DURATION;
     const watched = isPathWatched(path);
     const cls = changed ? ' debug-changed' : '';
     // Apply filter to null/undefined leaves too
-    if (filter && !path.toLowerCase().includes(filter) && !String(obj).toLowerCase().includes(filter)) {
+    if (
+      filter &&
+      !path.toLowerCase().includes(filter) &&
+      !String(obj).toLowerCase().includes(filter)
+    ) {
       return '';
     }
     return `<div class="debug-leaf${cls}" style="padding-left:${depth * 16}px">
@@ -187,10 +193,15 @@ function buildTreeHtml(obj: unknown, path: string, filter: string, depth = 0): s
   }
   if (typeof obj !== 'object') {
     const display = formatValue(path, obj);
-    const changed = recentChanges.has(path) && (now - recentChanges.get(path)!) < HIGHLIGHT_DURATION;
+    const changed = recentChanges.has(path) && now - recentChanges.get(path)! < HIGHLIGHT_DURATION;
     const watched = isPathWatched(path);
     const cls = changed ? ' debug-changed' : '';
-    if (filter && !path.toLowerCase().includes(filter) && !String(obj).toLowerCase().includes(filter) && !display.toLowerCase().includes(filter)) {
+    if (
+      filter &&
+      !path.toLowerCase().includes(filter) &&
+      !String(obj).toLowerCase().includes(filter) &&
+      !display.toLowerCase().includes(filter)
+    ) {
       return '';
     }
     return `<div class="debug-leaf${cls}" style="padding-left:${depth * 16}px">
@@ -202,12 +213,13 @@ function buildTreeHtml(obj: unknown, path: string, filter: string, depth = 0): s
   }
   if (Array.isArray(obj)) {
     const collapsed = collapsedPaths.has(path);
-    const childrenHtml = collapsed ? '' : obj.map((item, i) =>
-      buildTreeHtml(item, `${path}[${i}]`, filter, depth + 1)
-    ).join('');
+    const childrenHtml = collapsed
+      ? ''
+      : obj.map((item, i) => buildTreeHtml(item, `${path}[${i}]`, filter, depth + 1)).join('');
     // If filtering and no children matched and the path doesn't match, hide
     const hasVisibleChildren = childrenHtml.replace(/\s/g, '').length > 0;
-    if (filter && !hasVisibleChildren && !collapsed && !path.toLowerCase().includes(filter)) return '';
+    if (filter && !hasVisibleChildren && !collapsed && !path.toLowerCase().includes(filter))
+      return '';
     const watched = watchedPaths.has(path);
     const arrow = collapsed ? '▶' : '▼';
     return `<div class="debug-node" style="padding-left:${depth * 16}px">
@@ -220,11 +232,12 @@ function buildTreeHtml(obj: unknown, path: string, filter: string, depth = 0): s
   const rec = obj as Record<string, unknown>;
   const keys = Object.keys(rec);
   const collapsed = collapsedPaths.has(path);
-  const childrenHtml = collapsed ? '' : keys.map(k =>
-    buildTreeHtml(rec[k], path ? `${path}.${k}` : k, filter, depth + 1)
-  ).join('');
+  const childrenHtml = collapsed
+    ? ''
+    : keys.map((k) => buildTreeHtml(rec[k], path ? `${path}.${k}` : k, filter, depth + 1)).join('');
   const hasVisibleChildren = childrenHtml.replace(/\s/g, '').length > 0;
-  if (filter && !hasVisibleChildren && !collapsed && !path.toLowerCase().includes(filter)) return '';
+  if (filter && !hasVisibleChildren && !collapsed && !path.toLowerCase().includes(filter))
+    return '';
   const watched = watchedPaths.has(path);
   const arrow = collapsed ? '▶' : '▼';
   const label = path ? lastSegment(path) : '{root}';
@@ -248,7 +261,11 @@ function escapeKey(s: string): string {
 }
 
 function escapeHtmlStr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function typeClass(val: unknown): string {
@@ -316,7 +333,12 @@ function renderChangeLog(): void {
   const visible = changeLog.slice(-200);
   let html = '';
   for (const entry of visible) {
-    const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions);
+    const time = new Date(entry.timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      fractionalSecondDigits: 3,
+    } as Intl.DateTimeFormatOptions);
     const oldStr = formatValue(entry.path, entry.oldValue);
     const newStr = formatValue(entry.path, entry.newValue);
     const watched = isPathWatched(entry.path);
@@ -329,7 +351,9 @@ function renderChangeLog(): void {
       <span class="debug-log-new">${escapeHtmlStr(newStr)}</span>
     </div>`;
   }
-  container.innerHTML = html || '<div class="debug-empty">No changes logged yet. Enable logging or watch specific values to start recording.</div>';
+  container.innerHTML =
+    html ||
+    '<div class="debug-empty">No changes logged yet. Enable logging or watch specific values to start recording.</div>';
 
   if (autoScrollLog) {
     container.scrollTop = container.scrollHeight;
@@ -341,7 +365,8 @@ function renderWatchedPaths(): void {
   const container = document.getElementById('debug-watched-list');
   if (!container) return;
   if (watchedPaths.size === 0) {
-    container.innerHTML = '<span class="debug-empty-inline">Click ○ on any value to watch it</span>';
+    container.innerHTML =
+      '<span class="debug-empty-inline">Click ○ on any value to watch it</span>';
     return;
   }
   let html = '';
@@ -364,7 +389,10 @@ function startLogging(): void {
 
 function stopLogging(): void {
   changeLoggingEnabled = false;
-  if (changeLogTimer) { clearTimeout(changeLogTimer); changeLogTimer = null; }
+  if (changeLogTimer) {
+    clearTimeout(changeLogTimer);
+    changeLogTimer = null;
+  }
   updateLoggingUI();
 }
 
@@ -387,7 +415,7 @@ function updateLoggingUI(): void {
 /** Export change log as JSON file */
 function exportChangeLog(): void {
   if (changeLog.length === 0) return;
-  const data = changeLog.map(e => ({
+  const data = changeLog.map((e) => ({
     time: new Date(e.timestamp).toISOString(),
     path: e.path,
     old: e.oldValue,
@@ -540,9 +568,10 @@ export function bindDebugPanel(): void {
       try {
         const resp = await fetchTimeout('/api/debug/videostream/sdcp', { method: 'POST' }, 15_000);
         const data = await resp.json();
-        if (resultSpan) resultSpan.textContent = data.success
-          ? `SDCP: ✓ ${data.videoUrl ? `VideoUrl: ${data.videoUrl}` : 'OK'}`
-          : `SDCP: ✗ ${data.error || 'Failed'}`;
+        if (resultSpan)
+          resultSpan.textContent = data.success
+            ? `SDCP: ✓ ${data.videoUrl ? `VideoUrl: ${data.videoUrl}` : 'OK'}`
+            : `SDCP: ✗ ${data.error || 'Failed'}`;
       } catch (err: any) {
         if (resultSpan) resultSpan.textContent = `SDCP: ✗ ${err.message}`;
       } finally {
@@ -559,9 +588,10 @@ export function bindDebugPanel(): void {
       try {
         const resp = await fetchTimeout('/api/debug/videostream/mqtt', { method: 'POST' }, 15_000);
         const data = await resp.json();
-        if (resultSpan) resultSpan.textContent = data.success
-          ? `MQTT 1054: ✓ sent — check log for response`
-          : `MQTT 1054: ✗ ${data.error || 'Failed'}`;
+        if (resultSpan)
+          resultSpan.textContent = data.success
+            ? `MQTT 1054: ✓ sent — check log for response`
+            : `MQTT 1054: ✗ ${data.error || 'Failed'}`;
       } catch (err: any) {
         if (resultSpan) resultSpan.textContent = `MQTT 1054: ✗ ${err.message}`;
       } finally {

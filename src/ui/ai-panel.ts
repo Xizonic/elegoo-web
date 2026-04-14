@@ -85,10 +85,14 @@ export function handleAIAlert(data: Record<string, unknown>): void {
 
 function statusIcon(status: string): string {
   switch (status) {
-    case 'ok': return '✅';
-    case 'warning': return '⚠️';
-    case 'critical': return '🚨';
-    default: return '❓';
+    case 'ok':
+      return '✅';
+    case 'warning':
+      return '⚠️';
+    case 'critical':
+      return '🚨';
+    default:
+      return '❓';
   }
 }
 
@@ -99,28 +103,38 @@ function timeAgo(ts: number): string {
   return `${Math.floor(sec / 3600)}h ago`;
 }
 
-function renderLabelScores(scores: Array<{ label: string; score: number }> | undefined, source: string): string {
+function renderLabelScores(
+  scores: Array<{ label: string; score: number }> | undefined,
+  source: string,
+): string {
   if (!scores || scores.length === 0) return '';
   // Sort by score descending
   const sorted = [...scores].sort((a, b) => b.score - a.score);
-  const rows = sorted.map(s => {
-    const pct = Math.round(s.score * 100);
-    const barColor = pct > 30 ? 'var(--warning)' : pct > 15 ? 'var(--accent)' : 'var(--text-muted)';
-    return `<div class="ai-label-row">
+  const rows = sorted
+    .map((s) => {
+      const pct = Math.round(s.score * 100);
+      const barColor =
+        pct > 30 ? 'var(--warning)' : pct > 15 ? 'var(--accent)' : 'var(--text-muted)';
+      return `<div class="ai-label-row">
       <div class="ai-label-bar" style="width:${Math.max(2, pct)}%;background:${barColor}"></div>
       <span class="ai-label-pct">${pct}%</span>
       <span class="ai-label-text">${escapeHtml(s.label)}</span>
     </div>`;
-  }).join('');
+    })
+    .join('');
   return `<details class="ai-label-details" data-label-source="${source}"><summary>Label scores (${sorted.length})</summary><div class="ai-label-scores">${rows}</div></details>`;
 }
 
 function renderAnalysisCard(a: AIAnalysis): string {
-  const issues = a.issues.length > 0
-    ? a.issues.map(i =>
-      `<span class="ai-issue ai-issue-${a.status}" title="${escapeHtml(i.description)}">${escapeHtml(i.type)} (${Math.round(i.confidence * 100)}%)</span>`
-    ).join(' ')
-    : '<span class="ai-no-issues">No issues</span>';
+  const issues =
+    a.issues.length > 0
+      ? a.issues
+          .map(
+            (i) =>
+              `<span class="ai-issue ai-issue-${a.status}" title="${escapeHtml(i.description)}">${escapeHtml(i.type)} (${Math.round(i.confidence * 100)}%)</span>`,
+          )
+          .join(' ')
+      : '<span class="ai-no-issues">No issues</span>';
 
   return `
     <div class="ai-analysis ai-status-${a.status}">
@@ -139,7 +153,7 @@ function renderAnalysisCard(a: AIAnalysis): string {
 }
 
 function renderAlertItem(a: AIAlert): string {
-  const issues = a.issues.map(i => escapeHtml(i.type)).join(', ') || 'unknown';
+  const issues = a.issues.map((i) => escapeHtml(i.type)).join(', ') || 'unknown';
   return `
     <div class="ai-alert-item ai-alert-${a.status}">
       <span>${statusIcon(a.status)}</span>
@@ -156,7 +170,7 @@ export function renderAIPanel(): void {
 
   // Preserve <details> open states before re-rendering
   const openStates = new Map<string, boolean>();
-  container.querySelectorAll('details[data-label-source]').forEach(el => {
+  container.querySelectorAll('details[data-label-source]').forEach((el) => {
     const key = (el as HTMLElement).dataset.labelSource ?? '';
     openStates.set(key, (el as HTMLDetailsElement).open);
   });
@@ -168,27 +182,33 @@ export function renderAIPanel(): void {
   if (latestVlm) latestCards.push(renderAnalysisCard(latestVlm));
   if (latestLocal) latestCards.push(renderAnalysisCard(latestLocal));
 
-  const latestHtml = latestCards.length > 0
-    ? latestCards.join('')
-    : `<div class="ai-empty">${aiStatusMessage()}</div>`;
+  const latestHtml =
+    latestCards.length > 0
+      ? latestCards.join('')
+      : `<div class="ai-empty">${aiStatusMessage()}</div>`;
 
   // Alert history
-  const alertHtml = alertHistory.length > 0
-    ? alertHistory.slice(0, 10).map(renderAlertItem).join('')
-    : '<div class="ai-empty">No alerts</div>';
+  const alertHtml =
+    alertHistory.length > 0
+      ? alertHistory.slice(0, 10).map(renderAlertItem).join('')
+      : '<div class="ai-empty">No alerts</div>';
 
   // Recent history (collapsed by default)
-  const historyHtml = analysisHistory.length > 0
-    ? analysisHistory.slice(0, 15).map(a => {
-      const t = new Date(a.timestamp).toLocaleTimeString();
-      return `<div class="ai-history-row ai-status-${a.status}">
+  const historyHtml =
+    analysisHistory.length > 0
+      ? analysisHistory
+          .slice(0, 15)
+          .map((a) => {
+            const t = new Date(a.timestamp).toLocaleTimeString();
+            return `<div class="ai-history-row ai-status-${a.status}">
         <span>${statusIcon(a.status)}</span>
         <span class="ai-source">${a.source}</span>
         <span class="ai-hist-desc">${escapeHtml(a.description.slice(0, 80))}</span>
         <span class="ai-time">${t}</span>
       </div>`;
-    }).join('')
-    : '<div class="ai-empty">No history</div>';
+          })
+          .join('')
+      : '<div class="ai-empty">No history</div>';
 
   container.innerHTML = `
     <div class="ai-section">
@@ -210,7 +230,7 @@ export function renderAIPanel(): void {
   `;
 
   // Restore <details> open states for label scores
-  container.querySelectorAll('details[data-label-source]').forEach(el => {
+  container.querySelectorAll('details[data-label-source]').forEach((el) => {
     const key = (el as HTMLElement).dataset.labelSource ?? '';
     if (openStates.get(key)) {
       (el as HTMLDetailsElement).open = true;
@@ -220,19 +240,27 @@ export function renderAIPanel(): void {
 
 function aiStatusIcon(): string {
   switch (aiServiceStatus) {
-    case 'monitoring': return '🔍';
-    case 'idle': return '✅';
-    case 'stopped': return '⏹';
-    default: return '⚫';
+    case 'monitoring':
+      return '🔍';
+    case 'idle':
+      return '✅';
+    case 'stopped':
+      return '⏹';
+    default:
+      return '⚫';
   }
 }
 
 function aiStatusMessage(): string {
   switch (aiServiceStatus) {
-    case 'monitoring': return 'Monitoring active — analyzing camera every ' + (aiConfig?.intervalSec ?? '?') + 's';
-    case 'idle': return 'Enabled — waiting for print to start';
-    case 'stopped': return 'AI monitor stopped';
-    default: return 'AI monitoring not enabled';
+    case 'monitoring':
+      return 'Monitoring active — analyzing camera every ' + (aiConfig?.intervalSec ?? '?') + 's';
+    case 'idle':
+      return 'Enabled — waiting for print to start';
+    case 'stopped':
+      return 'AI monitor stopped';
+    default:
+      return 'AI monitoring not enabled';
   }
 }
 

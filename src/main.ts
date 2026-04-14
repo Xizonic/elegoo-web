@@ -1,29 +1,56 @@
 import { WsClient } from './ws-client';
-import type { CommandSender } from './ws-client';
 import { PrinterState } from './printer-state';
 import { LogStore } from './log-store';
 import { ChartStore } from './chart-store';
 import {
-  renderDashboard, renderCanvas, renderFiles, renderHeader, bindControls, onCommandResponse,
-  registerChart, initCharts,
-  renderStructuredLog, bindStructuredLogControls,
-  bindFileControls, toast, setCanvasClient,
+  renderDashboard,
+  renderCanvas,
+  renderFiles,
+  renderHeader,
+  bindControls,
+  onCommandResponse,
+  registerChart,
+  initCharts,
+  renderStructuredLog,
+  bindStructuredLogControls,
+  bindFileControls,
+  toast,
+  setCanvasClient,
   renderSystemInfo,
-  renderTimelapse, setTimelapseClient, requestTimelapseList, showTimelapsePlayer,
+  renderTimelapse,
+  setTimelapseClient,
+  requestTimelapseList,
+  showTimelapsePlayer,
   renderGcodePreview,
   renderLayerTimeChart,
-  updateServiceStatus, fetchTimeout,
-  handleAIAnalysis, handleAIAlert, updateAIStatus,
-  openSettings, applyCardLayout, renderSettingsContent, switchToTab,
-  currentFileSource, currentFileDir, handleThumbnailResponse, handleInlineThumbnail,
-  handleEventLog, loadEventLogHistory,
+  updateServiceStatus,
+  fetchTimeout,
+  handleAIAnalysis,
+  handleAIAlert,
+  updateAIStatus,
+  applyCardLayout,
+  switchToTab,
+  currentFileSource,
+  currentFileDir,
+  handleThumbnailResponse,
+  handleInlineThumbnail,
+  handleEventLog,
+  loadEventLogHistory,
   toggleCameraOverlay,
-  renderPrintHistory, bindHistoryControls, setHistoryClient, requestHistory,
-  renderMaintenance, bindMaintenanceControls, setMaintenanceClient,
-  renderReports, bindReportControls,
+  renderPrintHistory,
+  bindHistoryControls,
+  setHistoryClient,
+  requestHistory,
+  renderMaintenance,
+  bindMaintenanceControls,
+  setMaintenanceClient,
+  renderReports,
+  bindReportControls,
   handleFileDetailForPrint,
   bindGcodePreviewControls,
-  renderDebugPanel, bindDebugPanel, trackStateChanges,
+  renderDebugPanel,
+  bindDebugPanel,
+  trackStateChanges,
 } from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
 
@@ -34,27 +61,26 @@ let client: WsClient | null = null;
 let renderScheduled = false;
 
 // Define chart series
-chartStore.defineSeries('nozzle',     'Nozzle',     '#ef5350');
+chartStore.defineSeries('nozzle', 'Nozzle', '#ef5350');
 chartStore.defineSeries('nozzle_tgt', 'Nozzle Tgt', '#ef535080');
-chartStore.defineSeries('bed',        'Bed',        '#ffa726');
-chartStore.defineSeries('bed_tgt',    'Bed Tgt',    '#ffa72680');
-chartStore.defineSeries('chamber',    'Chamber',    '#66bb6a');
-chartStore.defineSeries('fan_model',  'Model',      '#4fc3f7');
-chartStore.defineSeries('fan_aux',    'Aux',        '#66bb6a');
-chartStore.defineSeries('fan_case',   'Case',       '#ffa726');
+chartStore.defineSeries('bed', 'Bed', '#ffa726');
+chartStore.defineSeries('bed_tgt', 'Bed Tgt', '#ffa72680');
+chartStore.defineSeries('chamber', 'Chamber', '#66bb6a');
+chartStore.defineSeries('fan_model', 'Model', '#4fc3f7');
+chartStore.defineSeries('fan_aux', 'Aux', '#66bb6a');
+chartStore.defineSeries('fan_case', 'Case', '#ffa726');
 
 // AI chart series — motion detection
-chartStore.defineSeries('ai_motion',        'Motion',           '#58a6ff');
+chartStore.defineSeries('ai_motion', 'Motion', '#58a6ff');
 // AI chart series — classification groups
-chartStore.defineSeries('ai_printing',      'Print in Progress', '#3fb950');
-chartStore.defineSeries('ai_failure',       'Spaghetti/Failure', '#f85149');
-chartStore.defineSeries('ai_empty',         'Empty Bed',         '#8b949e');
-chartStore.defineSeries('ai_paused',        'Paused/Stopped',    '#f0883e');
-chartStore.defineSeries('ai_other',         'Other',             '#a371f7');
+chartStore.defineSeries('ai_printing', 'Print in Progress', '#3fb950');
+chartStore.defineSeries('ai_failure', 'Spaghetti/Failure', '#f85149');
+chartStore.defineSeries('ai_empty', 'Empty Bed', '#8b949e');
+chartStore.defineSeries('ai_paused', 'Paused/Stopped', '#f0883e');
+chartStore.defineSeries('ai_other', 'Other', '#a371f7');
 
 // Speed & flow chart series
-chartStore.defineSeries('extrusion_rate', 'Extrusion',  '#4fc3f7');
-
+chartStore.defineSeries('extrusion_rate', 'Extrusion', '#4fc3f7');
 
 // Register charts
 registerChart({
@@ -96,7 +122,6 @@ registerChart({
   unit: 'mm/s',
   averageKeys: ['extrusion_rate'],
 });
-
 
 function scheduleRender(): void {
   if (renderScheduled) return;
@@ -184,7 +209,6 @@ function showDashboard(): void {
     });
     initCharts(chartStore);
 
-
     // Camera click-to-expand
     const cameraWrap = $('camera-wrap');
     const cameraModal = $('camera-modal');
@@ -200,7 +224,10 @@ function showDashboard(): void {
       cameraModal.classList.add('hidden');
       cameraModalImg.src = '';
     };
-    $('camera-modal-close').addEventListener('click', (e) => { e.stopPropagation(); closeModal(); });
+    $('camera-modal-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeModal();
+    });
     cameraModal.addEventListener('click', closeModal);
     cameraModal.addEventListener('keydown', (e) => {
       if ((e as KeyboardEvent).key === 'Escape') closeModal();
@@ -234,7 +261,7 @@ function showDashboard(): void {
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) {
             snapshotBtn.textContent = `⏳ retry ${attempt}...`;
-            await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)));
+            await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
           }
           try {
             res = await fetchTimeout('/api/snapshot');
@@ -301,7 +328,8 @@ function connectToService(): void {
       if (connState === 'error' && !dashboardShown) {
         ($('connect-btn') as HTMLButtonElement).disabled = false;
         ($('connect-btn') as HTMLButtonElement).textContent = 'Connect';
-        $('connect-error').textContent = 'Cannot reach service. Ensure the elegoo-web service is running.';
+        $('connect-error').textContent =
+          'Cannot reach service. Ensure the elegoo-web service is running.';
         toast('Service connection failed', 'error');
       }
     },
@@ -332,7 +360,11 @@ function connectToService(): void {
         state.systemInfo = initData.systemInfo as Record<string, unknown>;
       }
       if (initData.layerTimes && Array.isArray(initData.layerTimes)) {
-        const lt = initData.layerTimes as Array<{ layer: number; duration: number; timestamp: number }>;
+        const lt = initData.layerTimes as Array<{
+          layer: number;
+          duration: number;
+          timestamp: number;
+        }>;
         if (lt.length > 0) {
           const lastEntry = lt[lt.length - 1];
           state.restoreLayerData(lt, lastEntry.layer, lastEntry.timestamp);
@@ -353,13 +385,19 @@ function connectToService(): void {
       }
       // Load chart history from service (replaces localStorage persistence)
       if (initData.chartHistory && Array.isArray(initData.chartHistory)) {
-        chartStore.loadHistory(initData.chartHistory as Array<{ t: number; values: Record<string, number> }>);
+        chartStore.loadHistory(
+          initData.chartHistory as Array<{ t: number; values: Record<string, number> }>,
+        );
       }
       // Load AI chart history from service
       if (initData.aiChartHistory && Array.isArray(initData.aiChartHistory)) {
-        const aiPoints = initData.aiChartHistory as Array<{ t: number; motion: number; scores: Record<string, number> }>;
+        const aiPoints = initData.aiChartHistory as Array<{
+          t: number;
+          motion: number;
+          scores: Record<string, number>;
+        }>;
         // Convert AI chart points into the generic chart format for loadHistory merge
-        const converted = aiPoints.map(p => ({
+        const converted = aiPoints.map((p) => ({
           t: p.t,
           values: {
             ai_motion: p.motion,
@@ -377,7 +415,9 @@ function connectToService(): void {
       }
       // Load event log history
       if (initData.eventLog && Array.isArray(initData.eventLog)) {
-        loadEventLogHistory(initData.eventLog as Array<{ ts: number; event: Record<string, unknown> }>);
+        loadEventLogHistory(
+          initData.eventLog as Array<{ ts: number; event: Record<string, unknown> }>,
+        );
       }
 
       // Always show dashboard when service responds — even if printer MQTT is down
@@ -396,7 +436,9 @@ function connectToService(): void {
       }
       if (method === 1047 && client) {
         // After file delete, refresh file list and capacity
-        const result = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
+        const result = (data as Record<string, unknown>).result as
+          | Record<string, unknown>
+          | undefined;
         const errorCode = result?.error_code as number | undefined;
         if (errorCode === 0) {
           toast('File deleted', 'success');
@@ -410,7 +452,12 @@ function connectToService(): void {
           const msg = ERROR_NAMES[errorCode ?? -1] ?? `Error ${errorCode ?? 'unknown'}`;
           toast(`Delete failed: ${msg}`, 'error');
         }
-        client.sendCommand(1044, { storage_media: currentFileSource(), dir: currentFileDir(), offset: 0, limit: 200 });
+        client.sendCommand(1044, {
+          storage_media: currentFileSource(),
+          dir: currentFileDir(),
+          offset: 0,
+          limit: 200,
+        });
         client.sendCommand(1048, { storage_media: currentFileSource() });
       }
       if (method === 1048 && client) {
@@ -449,7 +496,9 @@ function connectToService(): void {
         }
       }
       if (method === 1051) {
-        const r1051 = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
+        const r1051 = (data as Record<string, unknown>).result as
+          | Record<string, unknown>
+          | undefined;
         const err1051 = r1051?.error_code as number | undefined;
         if (err1051 === 0) {
           if (state.videoUrl) {
@@ -485,7 +534,9 @@ function connectToService(): void {
         requestAnimationFrame(() => renderTimelapse(state));
       }
       if (method === 2003) {
-        const result = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
+        const result = (data as Record<string, unknown>).result as
+          | Record<string, unknown>
+          | undefined;
         const errorCode = result?.error_code as number | undefined;
         if (errorCode === 0) {
           toast('Filament saved', 'success');
@@ -501,10 +552,15 @@ function connectToService(): void {
       state.handleStatusEvent(data as Record<string, unknown>);
       // Auto-refresh timelapse list when video generation completes or fails
       const ms = (data as Record<string, unknown>).result as Record<string, unknown> | undefined;
-      const subStatus = (ms?.machine_status as Record<string, unknown>)?.sub_status as number | undefined;
+      const subStatus = (ms?.machine_status as Record<string, unknown>)?.sub_status as
+        | number
+        | undefined;
       if (subStatus === 3021 || subStatus === 3022) {
         // Timelapse generation complete/failed — refresh history to get updated URLs
-        toast(subStatus === 3021 ? 'Timelapse video ready' : 'Timelapse export failed', subStatus === 3021 ? 'success' : 'error');
+        toast(
+          subStatus === 3021 ? 'Timelapse video ready' : 'Timelapse export failed',
+          subStatus === 3021 ? 'success' : 'error',
+        );
         requestTimelapseList();
       }
     },
@@ -554,7 +610,11 @@ function connectToService(): void {
       state.zones.current = data.to as typeof state.zones.current;
       state.zones.enteredAt = data.timestamp;
       if (state.zones.history.length > 50) state.zones.history.shift();
-      state.zones.history.push({ zone: data.from as typeof state.zones.current, entered: 0, exited: data.timestamp });
+      state.zones.history.push({
+        zone: data.from as typeof state.zones.current,
+        entered: 0,
+        exited: data.timestamp,
+      });
       scheduleRender();
     },
   });
@@ -576,10 +636,18 @@ $('connect-btn').addEventListener('click', () => {
 connectToService();
 
 // Ship uncaught client errors to server for logging
-function reportClientError(message: string, stack?: string, url?: string, line?: number, col?: number): void {
+function reportClientError(
+  message: string,
+  stack?: string,
+  url?: string,
+  line?: number,
+  col?: number,
+): void {
   try {
     navigator.sendBeacon('/api/client-error', JSON.stringify({ message, stack, url, line, col }));
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 window.addEventListener('error', (e) => {
   reportClientError(e.message, e.error?.stack, e.filename, e.lineno, e.colno);
@@ -591,9 +659,14 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 // Tab navigation
-document.querySelectorAll('.main-tab').forEach(btn => {
+document.querySelectorAll('.main-tab').forEach((btn) => {
   btn.addEventListener('click', () => {
-    const tab = (btn as HTMLElement).dataset.tab as 'dashboard' | 'settings' | 'tools' | 'help' | 'debug';
+    const tab = (btn as HTMLElement).dataset.tab as
+      | 'dashboard'
+      | 'settings'
+      | 'tools'
+      | 'help'
+      | 'debug';
     switchToTab(tab);
   });
 });

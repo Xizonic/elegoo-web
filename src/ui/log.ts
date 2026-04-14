@@ -2,12 +2,16 @@ import type { LogStore, LogEntry } from '../log-store';
 import { $, escapeHtml } from './helpers';
 
 let autoScroll = true;
-let expandedEntries = new Set<number>();
+const expandedEntries = new Set<number>();
 let filterText = '';
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts);
-  return d.toLocaleTimeString('nb-NO', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  return (
+    d.toLocaleTimeString('nb-NO', { hour12: false }) +
+    '.' +
+    String(d.getMilliseconds()).padStart(3, '0')
+  );
 }
 
 function shortTopic(topic: string): string {
@@ -41,7 +45,11 @@ export function renderLog(store: LogStore): void {
   const lastEntry = entries[entries.length - 1];
   const lastRendered = container.dataset.lastTs;
   const countRendered = container.dataset.count;
-  if (lastEntry && String(lastEntry.timestamp) === lastRendered && String(entries.length) === countRendered) {
+  if (
+    lastEntry &&
+    String(lastEntry.timestamp) === lastRendered &&
+    String(entries.length) === countRendered
+  ) {
     return;
   }
 
@@ -70,7 +78,7 @@ export function renderLog(store: LogStore): void {
   container.dataset.count = String(entries.length);
 
   // Click to expand/collapse
-  container.querySelectorAll('.log-row').forEach(row => {
+  container.querySelectorAll('.log-row').forEach((row) => {
     row.addEventListener('click', () => {
       const ts = parseInt((row as HTMLElement).dataset.ts ?? '0');
       if (expandedEntries.has(ts)) {

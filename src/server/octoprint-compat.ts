@@ -17,19 +17,19 @@ import type { ServiceConfig } from './config.js';
 import type { FanInfo } from '../types.js';
 import { getLogger } from './logger.js';
 
-const log = getLogger('OctoPrint');
+const _log = getLogger('OctoPrint');
 
 const OCTOPRINT_API_VERSION = '0.1';
 const OCTOPRINT_SERVER_VERSION = '1.10.3';
 
-const fanPct = (f?: FanInfo) => f ? Math.round((f.speed / 255) * 100) : 0;
+const _fanPct = (f?: FanInfo) => (f ? Math.round((f.speed / 255) * 100) : 0);
 
 function json(res: ServerResponse, data: unknown, status = 200): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
-function notFound(res: ServerResponse): void {
+function _notFound(res: ServerResponse): void {
   json(res, { error: 'Not found' }, 404);
 }
 
@@ -52,7 +52,7 @@ function getOctoPrintState(store: StateStore) {
   const ms = store.status?.machine_status;
   const machineStatus = ms?.status ?? 0;
   const isPrinting = machineStatus === 2;
-  const isPaused = machineStatus === 3 || (ms?.sub_status === 2502) || (ms?.sub_status === 2505);
+  const isPaused = machineStatus === 3 || ms?.sub_status === 2502 || ms?.sub_status === 2505;
   const isIdle = machineStatus === 1;
   const isError = (ms?.exception_status?.length ?? 0) > 0;
 
@@ -108,7 +108,6 @@ export function createOctoPrintRouter(
   bridge: MqttBridge,
   config: ServiceConfig,
 ): (req: IncomingMessage, res: ServerResponse) => boolean {
-
   /**
    * Returns true if the request was handled, false otherwise.
    * Caller should only invoke this for URLs starting with /octoprint/api.
@@ -184,16 +183,18 @@ export function createOctoPrintRouter(
 
     // --- POST /api/printer/tool ---
     if (path === '/api/printer/tool' && method === 'POST') {
-      readBody(req).then((body) => {
-        const cmd = JSON.parse(body);
-        if (cmd.command === 'target' && cmd.targets?.tool0 != null) {
-          bridge.sendCommand(1028, {
-            target: 'extruder',
-            temperature: cmd.targets.tool0,
-          });
-        }
-        noContent(res);
-      }).catch(() => json(res, { error: 'Bad request' }, 400));
+      readBody(req)
+        .then((body) => {
+          const cmd = JSON.parse(body);
+          if (cmd.command === 'target' && cmd.targets?.tool0 != null) {
+            bridge.sendCommand(1028, {
+              target: 'extruder',
+              temperature: cmd.targets.tool0,
+            });
+          }
+          noContent(res);
+        })
+        .catch(() => json(res, { error: 'Bad request' }, 400));
       return true;
     }
 
@@ -212,16 +213,18 @@ export function createOctoPrintRouter(
 
     // --- POST /api/printer/bed ---
     if (path === '/api/printer/bed' && method === 'POST') {
-      readBody(req).then((body) => {
-        const cmd = JSON.parse(body);
-        if (cmd.command === 'target' && cmd.target != null) {
-          bridge.sendCommand(1028, {
-            target: 'heater_bed',
-            temperature: cmd.target,
-          });
-        }
-        noContent(res);
-      }).catch(() => json(res, { error: 'Bad request' }, 400));
+      readBody(req)
+        .then((body) => {
+          const cmd = JSON.parse(body);
+          if (cmd.command === 'target' && cmd.target != null) {
+            bridge.sendCommand(1028, {
+              target: 'heater_bed',
+              temperature: cmd.target,
+            });
+          }
+          noContent(res);
+        })
+        .catch(() => json(res, { error: 'Bad request' }, 400));
       return true;
     }
 
@@ -240,24 +243,26 @@ export function createOctoPrintRouter(
 
     // --- POST /api/printer/printhead ---
     if (path === '/api/printer/printhead' && method === 'POST') {
-      readBody(req).then((body) => {
-        const cmd = JSON.parse(body);
-        if (cmd.command === 'jog') {
-          const axes: Record<string, number> = {};
-          if (cmd.x != null) axes.x = cmd.x;
-          if (cmd.y != null) axes.y = cmd.y;
-          if (cmd.z != null) axes.z = cmd.z;
-          bridge.sendCommand(1027, {
-            direction: 'relative',
-            ...axes,
-            speed: cmd.speed ?? 3000,
-          });
-        } else if (cmd.command === 'home') {
-          const homeAxes = cmd.axes?.length ? cmd.axes : ['x', 'y', 'z'];
-          bridge.sendCommand(1026, { axes: homeAxes });
-        }
-        noContent(res);
-      }).catch(() => json(res, { error: 'Bad request' }, 400));
+      readBody(req)
+        .then((body) => {
+          const cmd = JSON.parse(body);
+          if (cmd.command === 'jog') {
+            const axes: Record<string, number> = {};
+            if (cmd.x != null) axes.x = cmd.x;
+            if (cmd.y != null) axes.y = cmd.y;
+            if (cmd.z != null) axes.z = cmd.z;
+            bridge.sendCommand(1027, {
+              direction: 'relative',
+              ...axes,
+              speed: cmd.speed ?? 3000,
+            });
+          } else if (cmd.command === 'home') {
+            const homeAxes = cmd.axes?.length ? cmd.axes : ['x', 'y', 'z'];
+            bridge.sendCommand(1026, { axes: homeAxes });
+          }
+          noContent(res);
+        })
+        .catch(() => json(res, { error: 'Bad request' }, 400));
       return true;
     }
 
@@ -277,7 +282,7 @@ export function createOctoPrintRouter(
             size: null,
             date: null,
           },
-          estimatedPrintTime: ps ? (ps.print_duration + ps.remaining_time_sec) : null,
+          estimatedPrintTime: ps ? ps.print_duration + ps.remaining_time_sec : null,
           lastPrintTime: null,
           filament: null,
           user: null,
@@ -297,38 +302,40 @@ export function createOctoPrintRouter(
 
     // --- POST /api/job (start/cancel/pause/resume) ---
     if (path === '/api/job' && method === 'POST') {
-      readBody(req).then((body) => {
-        const cmd = JSON.parse(body);
-        switch (cmd.command) {
-          case 'start':
-            // OctoPrint start requires a file already selected — we support filename
-            if (cmd.filename) {
-              bridge.sendCommand(1020, {
-                filename: cmd.filename,
-                storage_media: 'udisk',
-              });
-            }
-            break;
-          case 'cancel':
-            bridge.sendCommand(1022, {});
-            break;
-          case 'pause':
-            if (cmd.action === 'toggle') {
-              const isPaused = store.status?.machine_status?.status === 3;
-              bridge.sendCommand(isPaused ? 1023 : 1021, {});
-            } else if (cmd.action === 'resume') {
+      readBody(req)
+        .then((body) => {
+          const cmd = JSON.parse(body);
+          switch (cmd.command) {
+            case 'start':
+              // OctoPrint start requires a file already selected — we support filename
+              if (cmd.filename) {
+                bridge.sendCommand(1020, {
+                  filename: cmd.filename,
+                  storage_media: 'udisk',
+                });
+              }
+              break;
+            case 'cancel':
+              bridge.sendCommand(1022, {});
+              break;
+            case 'pause':
+              if (cmd.action === 'toggle') {
+                const isPaused = store.status?.machine_status?.status === 3;
+                bridge.sendCommand(isPaused ? 1023 : 1021, {});
+              } else if (cmd.action === 'resume') {
+                bridge.sendCommand(1023, {});
+              } else {
+                // Default: pause
+                bridge.sendCommand(1021, {});
+              }
+              break;
+            case 'restart':
               bridge.sendCommand(1023, {});
-            } else {
-              // Default: pause
-              bridge.sendCommand(1021, {});
-            }
-            break;
-          case 'restart':
-            bridge.sendCommand(1023, {});
-            break;
-        }
-        noContent(res);
-      }).catch(() => json(res, { error: 'Bad request' }, 400));
+              break;
+          }
+          noContent(res);
+        })
+        .catch(() => json(res, { error: 'Bad request' }, 400));
       return true;
     }
 
@@ -343,9 +350,11 @@ export function createOctoPrintRouter(
         typePath: f.type === 'folder' ? ['folder'] : ['machinecode', 'gcode'],
         size: f.size,
         date: f.create_time ? Math.floor(f.create_time) : null,
-        gcodeAnalysis: f.print_time ? {
-          estimatedPrintTime: f.print_time,
-        } : undefined,
+        gcodeAnalysis: f.print_time
+          ? {
+              estimatedPrintTime: f.print_time,
+            }
+          : undefined,
       }));
       json(res, { files, free: null, total: null });
       return true;

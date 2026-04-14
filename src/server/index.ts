@@ -10,7 +10,7 @@
  */
 
 import { createServer } from 'http';
-import { loadConfig, type ServiceConfig } from './config.js';
+import { loadConfig } from './config.js';
 import { MqttBridge } from './mqtt-bridge.js';
 import { StateStore } from './state-store.js';
 import { WebSocketTransport } from './ws-transport.js';
@@ -26,7 +26,7 @@ import { PrintReportCollector } from './print-report-collector.js';
 import { initLogger, getLogger } from './logger.js';
 
 const config = loadConfig();
-const logger = initLogger(config.dataDir);
+initLogger(config.dataDir);
 const log = getLogger('Service');
 
 log.info('🖨  Elegoo CC2 Service');
@@ -38,7 +38,9 @@ if (config.telegramEnabled) {
   log.info(`Telegram: enabled (progress every ${config.progressInterval}%)`);
 }
 if (config.aiEnabled) {
-  log.info(`AI:       enabled (VLM: ${config.aiVlmEnabled ? config.aiVlmModel : 'off'}, Local: ${config.aiLocalEnabled ? 'on' : 'off'})`);
+  log.info(
+    `AI:       enabled (VLM: ${config.aiVlmEnabled ? config.aiVlmModel : 'off'}, Local: ${config.aiLocalEnabled ? 'on' : 'off'})`,
+  );
 }
 log.info(`Moonraker: http://0.0.0.0:${config.moonrakerPort}`);
 
@@ -154,9 +156,12 @@ if (aiMonitor) {
     }
   });
 
-  aiMonitor.on('ai_chart_data', (data: { t: number; motion: number; scores: Record<string, number> }) => {
-    store.pushAIChartData(data);
-  });
+  aiMonitor.on(
+    'ai_chart_data',
+    (data: { t: number; motion: number; scores: Record<string, number> }) => {
+      store.pushAIChartData(data);
+    },
+  );
 }
 
 // --- Startup ---

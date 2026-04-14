@@ -49,11 +49,21 @@ export class MqttBridge extends EventEmitter {
     return Array.from({ length: len }, () => chars[Math.floor(Math.random() * 16)]).join('');
   }
 
-  get isConnected(): boolean { return this._connected; }
-  get brokerConnected(): boolean { return this._brokerConnected; }
-  get registerAttempts(): number { return this._registerAttempts; }
-  get serialNumber(): string { return this.sn; }
-  get ip(): string { return this.printerIp; }
+  get isConnected(): boolean {
+    return this._connected;
+  }
+  get brokerConnected(): boolean {
+    return this._brokerConnected;
+  }
+  get registerAttempts(): number {
+    return this._registerAttempts;
+  }
+  get serialNumber(): string {
+    return this.sn;
+  }
+  get ip(): string {
+    return this.printerIp;
+  }
 
   connect(): void {
     const url = `mqtt://${this.printerIp}:1883`;

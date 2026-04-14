@@ -335,9 +335,7 @@ export const EXCEPTION_NAMES: Record<number, string> = {
 
 // Critical exceptions that typically halt the printer
 export const CRITICAL_EXCEPTIONS = new Set([
-  101, 102, 103, 104, 105, 106, 107, 108,
-  801, 803, 902, 903,
-  1103, 1104, 1105, 1106, 1210,
+  101, 102, 103, 104, 105, 106, 107, 108, 801, 803, 902, 903, 1103, 1104, 1105, 1106, 1210,
 ]);
 
 // ─── Toolhead Zone Detection ───────────────────────────────────────
@@ -358,7 +356,7 @@ export interface ZoneBoundary {
 export interface ZoneState {
   current: ZoneName;
   previous: ZoneName;
-  enteredAt: number;   // timestamp when entered current zone
+  enteredAt: number; // timestamp when entered current zone
   history: Array<{ zone: ZoneName; entered: number; exited: number }>;
 }
 

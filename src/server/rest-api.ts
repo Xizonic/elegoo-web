@@ -16,7 +16,14 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { request as httpRequest } from 'http';
 import { createHash } from 'crypto';
-import { writeFile, readdir, readFile, mkdir, stat, unlink, readdir as readdirFs } from 'fs/promises';
+import {
+  writeFile,
+  readdir,
+  readFile,
+  mkdir,
+  stat,
+  unlink,
+} from 'fs/promises';
 import { createReadStream, createWriteStream, existsSync } from 'fs';
 import { join, resolve, extname } from 'path';
 import { PassThrough } from 'stream';
@@ -75,7 +82,9 @@ async function getCachedGcode(fileName: string): Promise<string | null> {
     const cached = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
     const s = await stat(cached);
     if (s.size > 0) return cached;
-  } catch { /* not cached */ }
+  } catch {
+    /* not cached */
+  }
   return null;
 }
 
@@ -83,15 +92,19 @@ async function evictOldCache(): Promise<void> {
   try {
     const files = await readdir(GCODE_CACHE_DIR);
     if (files.length <= GCODE_CACHE_MAX) return;
-    const entries = await Promise.all(files.map(async f => {
-      const p = join(GCODE_CACHE_DIR, f);
-      const s = await stat(p).catch(() => null);
-      return { path: p, mtime: s?.mtimeMs ?? 0 };
-    }));
+    const entries = await Promise.all(
+      files.map(async (f) => {
+        const p = join(GCODE_CACHE_DIR, f);
+        const s = await stat(p).catch(() => null);
+        return { path: p, mtime: s?.mtimeMs ?? 0 };
+      }),
+    );
     entries.sort((a, b) => a.mtime - b.mtime);
     const toRemove = entries.slice(0, entries.length - GCODE_CACHE_MAX);
-    await Promise.all(toRemove.map(e => unlink(e.path).catch(() => {})));
-  } catch { /* ignore */ }
+    await Promise.all(toRemove.map((e) => unlink(e.path).catch(() => {})));
+  } catch {
+    /* ignore */
+  }
 }
 
 async function handleFileDownload(
@@ -118,56 +131,67 @@ async function handleFileDownload(
         createReadStream(cached).pipe(res);
         return;
       }
-    } catch { /* cache miss, fall through to printer */ }
+    } catch {
+      /* cache miss, fall through to printer */
+    }
   }
 
-  const pathMap: Record<string, string> = { 'local': '/download', 'u-disk': '/download/udisk', 'sd-card': '/download/sdcard' };
+  const pathMap: Record<string, string> = {
+    local: '/download',
+    'u-disk': '/download/udisk',
+    'sd-card': '/download/sdcard',
+  };
   const dlPath = pathMap[source] ?? '/download';
   log.info(`Download proxy: ${fileName} from ${dlPath}`);
 
-  const proxyReq = httpRequest({
-    hostname: config.printerIp,
-    port: 80,
-    path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
-    method: 'GET',
-    timeout: 120_000,
-    // Printer's libhv sends both Content-Length and Transfer-Encoding: chunked,
-    // which is invalid HTTP. Node's strict parser rejects this.
-    insecureHTTPParser: true,
-  }, (proxyRes) => {
-    if (proxyRes.statusCode !== 200) {
-      res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: `Printer returned ${proxyRes.statusCode}` }));
-      proxyRes.resume();
-      return;
-    }
-    // Keep the socket alive during slow transfers
-    proxyRes.socket?.setTimeout(120_000);
-    res.writeHead(200, {
-      'Content-Type': 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${baseName}"`,
-      ...(proxyRes.headers['content-length'] ? { 'Content-Length': proxyRes.headers['content-length'] } : {}),
-    });
+  const proxyReq = httpRequest(
+    {
+      hostname: config.printerIp,
+      port: 80,
+      path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
+      method: 'GET',
+      timeout: 120_000,
+      // Printer's libhv sends both Content-Length and Transfer-Encoding: chunked,
+      // which is invalid HTTP. Node's strict parser rejects this.
+      insecureHTTPParser: true,
+    },
+    (proxyRes) => {
+      if (proxyRes.statusCode !== 200) {
+        res.writeHead(proxyRes.statusCode ?? 502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Printer returned ${proxyRes.statusCode}` }));
+        proxyRes.resume();
+        return;
+      }
+      // Keep the socket alive during slow transfers
+      proxyRes.socket?.setTimeout(120_000);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${baseName}"`,
+        ...(proxyRes.headers['content-length']
+          ? { 'Content-Length': proxyRes.headers['content-length'] }
+          : {}),
+      });
 
-    // For gcode files, tee the stream to a cache file
-    if (isGcode) {
-      const cachePath = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
-      const cacheStream = createWriteStream(cachePath);
-      const tee = new PassThrough();
-      tee.pipe(res);
-      tee.pipe(cacheStream);
-      proxyRes.pipe(tee);
-      cacheStream.on('finish', () => {
-        evictOldCache().catch(() => {});
-        log.info(`Cached gcode: ${fileName}`);
-      });
-      cacheStream.on('error', () => {
-        unlink(cachePath).catch(() => {});
-      });
-    } else {
-      proxyRes.pipe(res);
-    }
-  });
+      // For gcode files, tee the stream to a cache file
+      if (isGcode) {
+        const cachePath = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
+        const cacheStream = createWriteStream(cachePath);
+        const tee = new PassThrough();
+        tee.pipe(res);
+        tee.pipe(cacheStream);
+        proxyRes.pipe(tee);
+        cacheStream.on('finish', () => {
+          evictOldCache().catch(() => {});
+          log.info(`Cached gcode: ${fileName}`);
+        });
+        cacheStream.on('error', () => {
+          unlink(cachePath).catch(() => {});
+        });
+      } else {
+        proxyRes.pipe(res);
+      }
+    },
+  );
   proxyReq.on('error', (err) => {
     log.error(`Download proxy error: ${(err as NodeJS.ErrnoException).code} ${err.message}`);
     if (!res.headersSent) {
@@ -201,7 +225,9 @@ export function precacheGcode(fileName: string, config: ServiceConfig, source = 
  * with { ok, cached, size } when done.
  */
 export async function precacheGcodeAsync(
-  fileName: string, config: ServiceConfig, source = 'local',
+  fileName: string,
+  config: ServiceConfig,
+  source = 'local',
 ): Promise<{ ok: boolean; cached: boolean; size: number; error?: string }> {
   try {
     await ensureCacheDir();
@@ -212,41 +238,50 @@ export async function precacheGcodeAsync(
       return { ok: true, cached: true, size: s.size };
     }
 
-    const pathMap: Record<string, string> = { 'local': '/download', 'u-disk': '/download/udisk', 'sd-card': '/download/sdcard' };
+    const pathMap: Record<string, string> = {
+      local: '/download',
+      'u-disk': '/download/udisk',
+      'sd-card': '/download/sdcard',
+    };
     const dlPath = pathMap[source] ?? '/download';
     log.info(`Precache: downloading ${fileName} from ${dlPath}`);
 
     const cachePath = join(GCODE_CACHE_DIR, gcodeCacheKey(fileName));
 
     const size = await new Promise<number>((resolve, reject) => {
-      const proxyReq = httpRequest({
-        hostname: config.printerIp,
-        port: 80,
-        path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
-        method: 'GET',
-        timeout: 120_000,
-        insecureHTTPParser: true,
-      }, (proxyRes) => {
-        if (proxyRes.statusCode !== 200) {
-          proxyRes.resume();
-          reject(new Error(`Printer returned ${proxyRes.statusCode}`));
-          return;
-        }
-        proxyRes.socket?.setTimeout(120_000);
-        const cacheStream = createWriteStream(cachePath);
-        let bytes = 0;
-        proxyRes.on('data', (chunk: Buffer) => { bytes += chunk.length; });
-        proxyRes.pipe(cacheStream);
-        cacheStream.on('finish', () => {
-          evictOldCache().catch(() => {});
-          log.info(`Precache: cached ${fileName} (${bytes} bytes)`);
-          resolve(bytes);
-        });
-        cacheStream.on('error', (err) => {
-          unlink(cachePath).catch(() => {});
-          reject(err);
-        });
-      });
+      const proxyReq = httpRequest(
+        {
+          hostname: config.printerIp,
+          port: 80,
+          path: `${dlPath}?X-Token=${encodeURIComponent(config.printerPassword)}&file_name=${encodeURIComponent(fileName)}`,
+          method: 'GET',
+          timeout: 120_000,
+          insecureHTTPParser: true,
+        },
+        (proxyRes) => {
+          if (proxyRes.statusCode !== 200) {
+            proxyRes.resume();
+            reject(new Error(`Printer returned ${proxyRes.statusCode}`));
+            return;
+          }
+          proxyRes.socket?.setTimeout(120_000);
+          const cacheStream = createWriteStream(cachePath);
+          let bytes = 0;
+          proxyRes.on('data', (chunk: Buffer) => {
+            bytes += chunk.length;
+          });
+          proxyRes.pipe(cacheStream);
+          cacheStream.on('finish', () => {
+            evictOldCache().catch(() => {});
+            log.info(`Precache: cached ${fileName} (${bytes} bytes)`);
+            resolve(bytes);
+          });
+          cacheStream.on('error', (err) => {
+            unlink(cachePath).catch(() => {});
+            reject(err);
+          });
+        },
+      );
       proxyReq.on('error', reject);
       proxyReq.on('timeout', () => {
         proxyReq.destroy();
@@ -387,7 +422,10 @@ function startMjpegUpstream(cameraUrl: string): void {
       // Extract complete JPEG frames and broadcast
       while (true) {
         const startIdx = buf.indexOf(JPEG_START);
-        if (startIdx === -1) { buf = Buffer.alloc(0); break; }
+        if (startIdx === -1) {
+          buf = Buffer.alloc(0);
+          break;
+        }
         const endIdx = buf.indexOf(JPEG_END, startIdx + 2);
         if (endIdx === -1) break; // Wait for more data
 
@@ -416,19 +454,24 @@ function startMjpegUpstream(cameraUrl: string): void {
           if (now - lastOverlayTime >= OVERLAY_MIN_INTERVAL_MS) {
             lastOverlayTime = now;
             overlayProcessing = true;
-            processOverlayFrame(frame).then((overlayFrame) => {
-              if (!overlayFrame) return;
-              for (const client of overlayClients) {
-                try {
-                  client.write(`${MJPEG_BOUNDARY}\r\n`);
-                  client.write('Content-Type: image/jpeg\r\n');
-                  client.write(`Content-Length: ${overlayFrame.length}\r\n\r\n`);
-                  client.write(overlayFrame);
-                } catch {
-                  overlayClients.delete(client);
+            processOverlayFrame(frame)
+              .then((overlayFrame) => {
+                if (!overlayFrame) return;
+                for (const client of overlayClients) {
+                  try {
+                    client.write(`${MJPEG_BOUNDARY}\r\n`);
+                    client.write('Content-Type: image/jpeg\r\n');
+                    client.write(`Content-Length: ${overlayFrame.length}\r\n\r\n`);
+                    client.write(overlayFrame);
+                  } catch {
+                    overlayClients.delete(client);
+                  }
                 }
-              }
-            }).catch(() => {}).finally(() => { overlayProcessing = false; });
+              })
+              .catch(() => {})
+              .finally(() => {
+                overlayProcessing = false;
+              });
           }
         }
       }
@@ -475,7 +518,7 @@ function addStreamClient(res: ServerResponse, config: ServiceConfig): void {
   res.writeHead(200, {
     'Content-Type': `multipart/x-mixed-replace; boundary=${MJPEG_BOUNDARY}`,
     'Cache-Control': 'no-cache, no-store',
-    'Connection': 'close',
+    Connection: 'close',
   });
 
   streamClients.add(res);
@@ -503,7 +546,11 @@ function formatOverlayTime(sec: number | undefined): string {
 }
 
 function escapeXml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function buildOverlaySvg(width: number, height: number): string {
@@ -526,10 +573,15 @@ function buildOverlaySvg(width: number, height: number): string {
   const maxChars = Math.max(10, Math.floor((width - padding * 2 - 8) / charWidth));
 
   if (isPrinting && ps?.filename) {
-    const name = ps.filename.length > maxChars ? ps.filename.slice(0, maxChars - 3) + '...' : ps.filename;
+    const name =
+      ps.filename.length > maxChars ? ps.filename.slice(0, maxChars - 3) + '...' : ps.filename;
     lines.push(escapeXml(name));
-    lines.push(`Progress: ${ms?.progress ?? 0}%  Layer: ${ps.current_layer ?? '--'}/${ps.total_layer ?? store.fileTotalLayers ?? '??'}`);
-    lines.push(`Remaining: ${formatOverlayTime(ps.remaining_time_sec)}  Elapsed: ${formatOverlayTime(ps.print_duration)}`);
+    lines.push(
+      `Progress: ${ms?.progress ?? 0}%  Layer: ${ps.current_layer ?? '--'}/${ps.total_layer ?? store.fileTotalLayers ?? '??'}`,
+    );
+    lines.push(
+      `Remaining: ${formatOverlayTime(ps.remaining_time_sec)}  Elapsed: ${formatOverlayTime(ps.print_duration)}`,
+    );
   } else {
     lines.push(`Status: ${statusName}`);
   }
@@ -548,14 +600,17 @@ function buildOverlaySvg(width: number, height: number): string {
   let svgText = '';
   lines.forEach((line, i) => {
     const y = boxY + padding + (i + 1) * lineHeight - 2;
-    svgText += `<text x="${padding + 4}" y="${y}" fill="white" font-family="monospace" font-size="${fontSize}" font-weight="bold">`
-      + `<tspan stroke="black" stroke-width="3" paint-order="stroke">${line}</tspan></text>`;
+    svgText +=
+      `<text x="${padding + 4}" y="${y}" fill="white" font-family="monospace" font-size="${fontSize}" font-weight="bold">` +
+      `<tspan stroke="black" stroke-width="3" paint-order="stroke">${line}</tspan></text>`;
   });
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
-    + `<rect x="2" y="${boxY}" width="${width - 4}" height="${boxHeight}" rx="4" fill="rgba(0,0,0,0.55)"/>`
-    + svgText
-    + `</svg>`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<rect x="2" y="${boxY}" width="${width - 4}" height="${boxHeight}" rx="4" fill="rgba(0,0,0,0.55)"/>` +
+    svgText +
+    `</svg>`
+  );
 }
 
 async function processOverlayFrame(frame: Buffer): Promise<Buffer | null> {
@@ -581,7 +636,7 @@ function addOverlayClient(res: ServerResponse, config: ServiceConfig): void {
   res.writeHead(200, {
     'Content-Type': `multipart/x-mixed-replace; boundary=${MJPEG_BOUNDARY}`,
     'Cache-Control': 'no-cache, no-store',
-    'Connection': 'close',
+    Connection: 'close',
   });
 
   overlayClients.add(res);
@@ -641,7 +696,9 @@ function serveStatic(url: string, res: ServerResponse): void {
         const ext = extname(filePath);
         const contentType = MIME_TYPES[ext] || 'application/octet-stream';
         // Cache hashed assets (Vite fingerprinted) aggressively
-        const cacheControl = filePath.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+        const cacheControl = filePath.includes('/assets/')
+          ? 'public, max-age=31536000, immutable'
+          : 'no-cache';
         res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheControl });
         createReadStream(filePath).pipe(res);
         return;
@@ -655,7 +712,13 @@ function serveStatic(url: string, res: ServerResponse): void {
   res.end('Not found');
 }
 
-export function createRestRouter(store: StateStore, config: ServiceConfig, aiMonitor?: AIMonitor | null, reportCollector?: PrintReportCollector | null, bridge?: MqttBridge | null) {
+export function createRestRouter(
+  store: StateStore,
+  config: ServiceConfig,
+  aiMonitor?: AIMonitor | null,
+  reportCollector?: PrintReportCollector | null,
+  bridge?: MqttBridge | null,
+) {
   overlayStore = store;
   if (bridge) _bridge = bridge;
   return (req: IncomingMessage, res: ServerResponse) => {
@@ -676,22 +739,30 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
 
     if (url === '/api/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        ok: true,
-        mqtt: _bridge?.isConnected ? 'connected' : (_bridge?.brokerConnected ? 'broker_only' : 'disconnected'),
-        clients: 0, // filled in by ws-transport if needed
-      }));
+      res.end(
+        JSON.stringify({
+          ok: true,
+          mqtt: _bridge?.isConnected
+            ? 'connected'
+            : _bridge?.brokerConnected
+              ? 'broker_only'
+              : 'disconnected',
+          clients: 0, // filled in by ws-transport if needed
+        }),
+      );
       return;
     }
 
     if (url === '/api/status') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        attributes: store.attributes,
-        status: store.status,
-        canvas: store.canvas,
-        files: store.files,
-      }));
+      res.end(
+        JSON.stringify({
+          attributes: store.attributes,
+          status: store.status,
+          canvas: store.canvas,
+          files: store.files,
+        }),
+      );
       return;
     }
 
@@ -701,39 +772,55 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       const qs = qIdx >= 0 ? url.slice(qIdx + 1) : '';
       const action = new URLSearchParams(qs).get('action');
       if (action === 'stream') {
-        if (!config.cameraEnabled) { res.writeHead(503); res.end('Camera disabled'); return; }
+        if (!config.cameraEnabled) {
+          res.writeHead(503);
+          res.end('Camera disabled');
+          return;
+        }
         addStreamClient(res, config);
         return;
       }
       // Default to snapshot
-      getSnapshot(config).then((jpeg) => {
-        if (jpeg) {
-          res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache', 'Content-Length': jpeg.length });
-          res.end(jpeg);
-        } else {
-          res.writeHead(503, { 'Content-Type': 'text/plain' }); res.end('Camera unavailable');
-        }
-      }).catch(() => { res.writeHead(500); res.end('Internal error'); });
+      getSnapshot(config)
+        .then((jpeg) => {
+          if (jpeg) {
+            res.writeHead(200, {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'no-cache',
+              'Content-Length': jpeg.length,
+            });
+            res.end(jpeg);
+          } else {
+            res.writeHead(503, { 'Content-Type': 'text/plain' });
+            res.end('Camera unavailable');
+          }
+        })
+        .catch(() => {
+          res.writeHead(500);
+          res.end('Internal error');
+        });
       return;
     }
 
     if (url === '/api/snapshot') {
-      getSnapshot(config).then((jpeg) => {
-        if (jpeg) {
-          res.writeHead(200, {
-            'Content-Type': 'image/jpeg',
-            'Cache-Control': 'no-cache',
-            'Content-Length': jpeg.length,
-          });
-          res.end(jpeg);
-        } else {
-          res.writeHead(503, { 'Content-Type': 'text/plain' });
-          res.end('Camera unavailable');
-        }
-      }).catch(() => {
-        res.writeHead(500);
-        res.end('Internal error');
-      });
+      getSnapshot(config)
+        .then((jpeg) => {
+          if (jpeg) {
+            res.writeHead(200, {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'no-cache',
+              'Content-Length': jpeg.length,
+            });
+            res.end(jpeg);
+          } else {
+            res.writeHead(503, { 'Content-Type': 'text/plain' });
+            res.end('Camera unavailable');
+          }
+        })
+        .catch(() => {
+          res.writeHead(500);
+          res.end('Internal error');
+        });
       return;
     }
 
@@ -761,21 +848,28 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
     if (url === '/api/config/telegram') {
       if (req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          enabled: config.telegramEnabled,
-          chatId: config.telegramChatId ? config.telegramChatId.slice(0, 4) + '...' : '',
-          progressInterval: config.progressInterval,
-        }));
+        res.end(
+          JSON.stringify({
+            enabled: config.telegramEnabled,
+            chatId: config.telegramChatId ? config.telegramChatId.slice(0, 4) + '...' : '',
+            progressInterval: config.progressInterval,
+          }),
+        );
         return;
       }
       if (req.method === 'POST') {
         let body = '';
-        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString();
+        });
         req.on('end', () => {
           try {
             const data = JSON.parse(body) as { progressInterval?: number };
-            if (typeof data.progressInterval === 'number' &&
-                data.progressInterval >= 5 && data.progressInterval <= 50) {
+            if (
+              typeof data.progressInterval === 'number' &&
+              data.progressInterval >= 5 &&
+              data.progressInterval <= 50
+            ) {
               (config as { progressInterval: number }).progressInterval = data.progressInterval;
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ ok: true, progressInterval: config.progressInterval }));
@@ -796,10 +890,12 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
     if (url === '/api/config/ai-labels') {
       if (req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          labels: aiMonitor?.getLabelConfigs() ?? [],
-          enabled: config.aiEnabled && config.aiLocalEnabled,
-        }));
+        res.end(
+          JSON.stringify({
+            labels: aiMonitor?.getLabelConfigs() ?? [],
+            enabled: config.aiEnabled && config.aiLocalEnabled,
+          }),
+        );
         return;
       }
       if (req.method === 'POST') {
@@ -809,7 +905,9 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
           return;
         }
         let body = '';
-        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString();
+        });
         req.on('end', () => {
           try {
             const data = JSON.parse(body) as { labels?: AILabelConfig[] };
@@ -830,18 +928,32 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
                 res.end(JSON.stringify({ error: `Invalid severity: ${lc.severity}` }));
                 return;
               }
-              if (typeof lc.warnThreshold !== 'number' || lc.warnThreshold < 0 || lc.warnThreshold > 1) {
+              if (
+                typeof lc.warnThreshold !== 'number' ||
+                lc.warnThreshold < 0 ||
+                lc.warnThreshold > 1
+              ) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: 'warnThreshold must be 0-1' }));
                 return;
               }
-              if (typeof lc.critThreshold !== 'number' || lc.critThreshold < 0 || lc.critThreshold > 1) {
+              if (
+                typeof lc.critThreshold !== 'number' ||
+                lc.critThreshold < 0 ||
+                lc.critThreshold > 1
+              ) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: 'critThreshold must be 0-1' }));
                 return;
               }
               // Validate group if provided; default to 'Other' if missing
-              const validGroups = ['Print in Progress', 'Spaghetti/Failure', 'Empty Bed', 'Paused/Stopped', 'Other'];
+              const validGroups = [
+                'Print in Progress',
+                'Spaghetti/Failure',
+                'Empty Bed',
+                'Paused/Stopped',
+                'Other',
+              ];
               if (lc.group && !validGroups.includes(lc.group)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: `Invalid group: ${lc.group}` }));
@@ -851,13 +963,16 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
                 lc.group = 'Other';
               }
             }
-            aiMonitor.setLabelConfigs(data.labels).then(() => {
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true }));
-            }).catch(() => {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Failed to save' }));
-            });
+            aiMonitor
+              .setLabelConfigs(data.labels)
+              .then(() => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+              })
+              .catch(() => {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Failed to save' }));
+              });
           } catch {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -871,13 +986,16 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
           res.end(JSON.stringify({ error: 'AI monitor not enabled' }));
           return;
         }
-        aiMonitor.resetLabelConfigs().then(() => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, labels: aiMonitor.getLabelConfigs() }));
-        }).catch(() => {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Failed to reset' }));
-        });
+        aiMonitor
+          .resetLabelConfigs()
+          .then(() => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, labels: aiMonitor.getLabelConfigs() }));
+          })
+          .catch(() => {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to reset' }));
+          });
         return;
       }
     }
@@ -890,7 +1008,9 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
         return;
       }
       let body = '';
-      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      req.on('data', (chunk: Buffer) => {
+        body += chunk.toString();
+      });
       req.on('end', () => {
         let duration = 10;
         try {
@@ -898,11 +1018,18 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
           if (parsed.duration && parsed.duration > 0 && parsed.duration <= 60) {
             duration = parsed.duration;
           }
-        } catch { /* use default */ }
+        } catch {
+          /* use default */
+        }
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `mqtt-capture-${ts}.json`;
         const messages: Array<{ direction: string; topic: string; data: unknown; ts: number }> = [];
-        const listener = (entry: { direction: string; topic: string; data: unknown; ts: number }) => {
+        const listener = (entry: {
+          direction: string;
+          topic: string;
+          data: unknown;
+          ts: number;
+        }) => {
           messages.push(entry);
         };
         store.on('raw', listener);
@@ -915,21 +1042,33 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
           debugLog.info(`Capture saved: ${filename} (${messages.length} messages, ${duration}s)`);
         }, duration * 1000);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, file: filename, duration, message: `Capturing for ${duration}s` }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            file: filename,
+            duration,
+            message: `Capturing for ${duration}s`,
+          }),
+        );
       });
       return;
     }
 
     // List available captures
     if (url === '/api/debug/captures' && req.method === 'GET') {
-      readdir(join('data', 'logs')).then(files => {
-        const captures = files.filter(f => f.startsWith('mqtt-capture-')).sort().reverse();
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ captures, active: activeCapture?.file ?? null }));
-      }).catch(() => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ captures: [], active: null }));
-      });
+      readdir(join('data', 'logs'))
+        .then((files) => {
+          const captures = files
+            .filter((f) => f.startsWith('mqtt-capture-'))
+            .sort()
+            .reverse();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ captures, active: activeCapture?.file ?? null }));
+        })
+        .catch(() => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ captures: [], active: null }));
+        });
       return;
     }
 
@@ -937,18 +1076,24 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
     if (url.startsWith('/api/debug/captures/') && req.method === 'GET') {
       const filename = decodeURIComponent(url.slice('/api/debug/captures/'.length));
       // Prevent path traversal
-      if (filename.includes('..') || filename.includes('/') || !filename.startsWith('mqtt-capture-')) {
+      if (
+        filename.includes('..') ||
+        filename.includes('/') ||
+        !filename.startsWith('mqtt-capture-')
+      ) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid filename' }));
         return;
       }
-      readFile(join('data', 'logs', filename), 'utf-8').then(content => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(content);
-      }).catch(() => {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'File not found' }));
-      });
+      readFile(join('data', 'logs', filename), 'utf-8')
+        .then((content) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(content);
+        })
+        .catch(() => {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File not found' }));
+        });
       return;
     }
 
@@ -959,13 +1104,16 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
         res.end(JSON.stringify({ error: 'Bridge not available' }));
         return;
       }
-      bridge.enableVideoStreamSDCP().then(result => {
-        res.writeHead(result.success ? 200 : 502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
-      }).catch(err => {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
-      });
+      bridge
+        .enableVideoStreamSDCP()
+        .then((result) => {
+          res.writeHead(result.success ? 200 : 502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        })
+        .catch((err) => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        });
       return;
     }
 
@@ -978,7 +1126,12 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       }
       bridge.enableVideoStreamMQTT();
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, note: 'Sent method 1054 Enable=1 — check MQTT log for response' }));
+      res.end(
+        JSON.stringify({
+          success: true,
+          note: 'Sent method 1054 Enable=1 — check MQTT log for response',
+        }),
+      );
       return;
     }
 
@@ -1018,7 +1171,7 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
         try {
           await ensureCacheDir();
           const cacheFiles = await readdir(GCODE_CACHE_DIR);
-          const cacheHashes = new Set(cacheFiles.map(f => f.replace(/\.gcode$/, '')));
+          const cacheHashes = new Set(cacheFiles.map((f) => f.replace(/\.gcode$/, '')));
           const params = new URL(req.url || '', 'http://localhost').searchParams;
           const checkFiles = params.getAll('file');
           const cached: string[] = [];
@@ -1041,7 +1194,9 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
     // Downloads gcode from printer to service cache before print start
     if (url === '/api/files/precache' && req.method === 'POST') {
       let body = '';
-      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      req.on('data', (chunk: Buffer) => {
+        body += chunk.toString();
+      });
       req.on('end', async () => {
         try {
           const { file, source } = JSON.parse(body) as { file: string; source?: string };
@@ -1067,7 +1222,11 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
     if (url.startsWith('/api/files/upload') && req.method === 'POST') {
       const params = new URL(url, 'http://localhost').searchParams;
       const source = params.get('source') || 'local';
-      const pathMap: Record<string, string> = { 'local': '/upload', 'u-disk': '/upload/udisk', 'sd-card': '/upload/sdcard' };
+      const pathMap: Record<string, string> = {
+        local: '/upload',
+        'u-disk': '/upload/udisk',
+        'sd-card': '/upload/sdcard',
+      };
       const uploadPath = pathMap[source] ?? '/upload';
 
       // Parse multipart boundary from Content-Type
@@ -1119,25 +1278,49 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
             const chunkData = fileData.subarray(offset, end);
 
             const chunkResult = await uploadChunk(
-              config.printerIp, uploadPath, config.printerPassword,
-              fileName, md5, chunkData, offset, end - 1, totalBytes,
+              config.printerIp,
+              uploadPath,
+              config.printerPassword,
+              fileName,
+              md5,
+              chunkData,
+              offset,
+              end - 1,
+              totalBytes,
             );
 
             if (chunkResult.error_code !== 0) {
               // Retry once on offset mismatch
               if (chunkResult.error_code === 9000) {
                 const retry = await uploadChunk(
-                  config.printerIp, uploadPath, config.printerPassword,
-                  fileName, md5, chunkData, offset, end - 1, totalBytes,
+                  config.printerIp,
+                  uploadPath,
+                  config.printerPassword,
+                  fileName,
+                  md5,
+                  chunkData,
+                  offset,
+                  end - 1,
+                  totalBytes,
                 );
                 if (retry.error_code !== 0) {
                   res.writeHead(502, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ error: `Upload failed at offset ${offset}`, error_code: retry.error_code }));
+                  res.end(
+                    JSON.stringify({
+                      error: `Upload failed at offset ${offset}`,
+                      error_code: retry.error_code,
+                    }),
+                  );
                   return;
                 }
               } else {
                 res.writeHead(502, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `Upload failed at offset ${offset}`, error_code: chunkResult.error_code }));
+                res.end(
+                  JSON.stringify({
+                    error: `Upload failed at offset ${offset}`,
+                    error_code: chunkResult.error_code,
+                  }),
+                );
                 return;
               }
             }
@@ -1186,18 +1369,25 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
         res.end(JSON.stringify({ reports: [] }));
         return;
       }
-      reportCollector.listReports().then(reports => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ reports, active: reportCollector.isActive() }));
-      }).catch(() => {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to list reports' }));
-      });
+      reportCollector
+        .listReports()
+        .then((reports) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ reports, active: reportCollector.isActive() }));
+        })
+        .catch(() => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to list reports' }));
+        });
       return;
     }
 
     if (url.startsWith('/api/reports/') && req.method === 'GET') {
-      if (!reportCollector) { res.writeHead(404); res.end('Not found'); return; }
+      if (!reportCollector) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
       const parts = url.slice('/api/reports/'.length).split('/');
       const reportId = decodeURIComponent(parts[0]);
       const action = parts[1];
@@ -1211,30 +1401,33 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
 
       // GET /api/reports/:id/pdf — Download PDF
       if (action === 'pdf') {
-        Promise.all([
-          reportCollector.getReport(reportId),
-          reportCollector.getChartData(reportId),
-        ]).then(async ([report, chartData]) => {
-          if (!report) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Report not found' }));
-            return;
-          }
-          const pdf = await generateReportPDF(report, chartData ?? [], join(config.dataDir, 'reports'));
-          const safeName = report.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-          res.writeHead(200, {
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="report-${safeName}.pdf"`,
-            'Content-Length': pdf.length,
+        Promise.all([reportCollector.getReport(reportId), reportCollector.getChartData(reportId)])
+          .then(async ([report, chartData]) => {
+            if (!report) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Report not found' }));
+              return;
+            }
+            const pdf = await generateReportPDF(
+              report,
+              chartData ?? [],
+              join(config.dataDir, 'reports'),
+            );
+            const safeName = report.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+            res.writeHead(200, {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="report-${safeName}.pdf"`,
+              'Content-Length': pdf.length,
+            });
+            res.end(pdf);
+          })
+          .catch((err) => {
+            log.error(`PDF generation failed: ${err}`);
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'PDF generation failed' }));
+            }
           });
-          res.end(pdf);
-        }).catch((err) => {
-          log.error(`PDF generation failed: ${err}`);
-          if (!res.headersSent) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'PDF generation failed' }));
-          }
-        });
         return;
       }
 
@@ -1246,52 +1439,65 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
           res.end(JSON.stringify({ error: 'Invalid snapshot filename' }));
           return;
         }
-        reportCollector.getSnapshot(reportId, snapName).then(jpeg => {
-          if (jpeg) {
-            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': jpeg.length });
-            res.end(jpeg);
-          } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Snapshot not found' }));
-          }
-        }).catch(() => {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Failed to read snapshot' }));
-        });
+        reportCollector
+          .getSnapshot(reportId, snapName)
+          .then((jpeg) => {
+            if (jpeg) {
+              res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': jpeg.length });
+              res.end(jpeg);
+            } else {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Snapshot not found' }));
+            }
+          })
+          .catch(() => {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to read snapshot' }));
+          });
         return;
       }
 
       // GET /api/reports/:id — Report JSON
-      reportCollector.getReport(reportId).then(report => {
-        if (report) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(report));
-        } else {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Report not found' }));
-        }
-      }).catch(() => {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to read report' }));
-      });
+      reportCollector
+        .getReport(reportId)
+        .then((report) => {
+          if (report) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(report));
+          } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Report not found' }));
+          }
+        })
+        .catch(() => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to read report' }));
+        });
       return;
     }
 
     if (url.startsWith('/api/reports/') && req.method === 'DELETE') {
-      if (!reportCollector) { res.writeHead(404); res.end('Not found'); return; }
+      if (!reportCollector) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
       const reportId = decodeURIComponent(url.slice('/api/reports/'.length));
       if (!reportId || reportId.includes('..')) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid report ID' }));
         return;
       }
-      reportCollector.deleteReport(reportId).then(ok => {
-        res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok }));
-      }).catch(() => {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to delete report' }));
-      });
+      reportCollector
+        .deleteReport(reportId)
+        .then((ok) => {
+          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok }));
+        })
+        .catch(() => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to delete report' }));
+        });
       return;
     }
 
@@ -1312,7 +1518,13 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
       });
       req.on('end', () => {
         try {
-          const data = JSON.parse(body) as { message?: string; stack?: string; url?: string; line?: number; col?: number };
+          const data = JSON.parse(body) as {
+            message?: string;
+            stack?: string;
+            url?: string;
+            line?: number;
+            col?: number;
+          };
           const msg = typeof data.message === 'string' ? data.message.slice(0, 500) : 'unknown';
           const stack = typeof data.stack === 'string' ? data.stack.slice(0, 2000) : '';
           const url = typeof data.url === 'string' ? data.url.slice(0, 200) : '';
@@ -1332,7 +1544,10 @@ export function createRestRouter(store: StateStore, config: ServiceConfig, aiMon
 
 /* ── File upload helpers ──────────────────────────────────────────── */
 
-function parseMultipart(body: Buffer, boundary: string): { fileName: string | null; fileData: Buffer | null } {
+function parseMultipart(
+  body: Buffer,
+  boundary: string,
+): { fileName: string | null; fileData: Buffer | null } {
   const sep = Buffer.from(`--${boundary}`);
   let start = body.indexOf(sep);
   if (start === -1) return { fileName: null, fileData: null };
@@ -1358,38 +1573,52 @@ function parseMultipart(body: Buffer, boundary: string): { fileName: string | nu
 }
 
 function uploadChunk(
-  printerIp: string, uploadPath: string, password: string,
-  fileName: string, md5: string, chunk: Buffer,
-  rangeStart: number, rangeEnd: number, totalSize: number,
+  printerIp: string,
+  uploadPath: string,
+  password: string,
+  fileName: string,
+  md5: string,
+  chunk: Buffer,
+  rangeStart: number,
+  rangeEnd: number,
+  totalSize: number,
 ): Promise<{ error_code: number }> {
   return new Promise((resolve, reject) => {
-    const req = httpRequest({
-      hostname: printerIp,
-      port: 80,
-      path: uploadPath,
-      method: 'PUT',
-      timeout: 30_000,
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': chunk.length,
-        'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${totalSize}`,
-        'X-Token': password,
-        'X-File-Name': encodeURIComponent(fileName),
-        'X-File-MD5': md5,
+    const req = httpRequest(
+      {
+        hostname: printerIp,
+        port: 80,
+        path: uploadPath,
+        method: 'PUT',
+        timeout: 30_000,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': chunk.length,
+          'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${totalSize}`,
+          'X-Token': password,
+          'X-File-Name': encodeURIComponent(fileName),
+          'X-File-MD5': md5,
+        },
       },
-    }, (res) => {
-      let body = '';
-      res.on('data', (d: Buffer) => { body += d.toString(); });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(body) as { error_code: number });
-        } catch {
-          resolve({ error_code: -1 });
-        }
-      });
-    });
+      (res) => {
+        let body = '';
+        res.on('data', (d: Buffer) => {
+          body += d.toString();
+        });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body) as { error_code: number });
+          } catch {
+            resolve({ error_code: -1 });
+          }
+        });
+      },
+    );
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Upload chunk timeout')); });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Upload chunk timeout'));
+    });
     req.write(chunk);
     req.end();
   });
@@ -1419,18 +1648,19 @@ function buildMetrics(store: StateStore) {
   const gm = s?.gcode_move;
   const layers = store.layerTimes;
 
-  const avgLayerDur = layers.length > 0
-    ? layers.reduce((sum, l) => sum + l.duration, 0) / layers.length
-    : null;
+  const avgLayerDur =
+    layers.length > 0 ? layers.reduce((sum, l) => sum + l.duration, 0) / layers.length : null;
   const lastLayerDur = layers.length > 0 ? layers[layers.length - 1].duration : null;
 
   return {
-    printer: a ? {
-      model: a.machine_model,
-      sn: a.sn,
-      ip: a.ip,
-      firmware: a.software_version?.ota_version ?? null,
-    } : null,
+    printer: a
+      ? {
+          model: a.machine_model,
+          sn: a.sn,
+          ip: a.ip,
+          firmware: a.software_version?.ota_version ?? null,
+        }
+      : null,
     connected: !!_bridge?.isConnected,
     state: {
       status: ms?.status ?? null,
@@ -1438,7 +1668,7 @@ function buildMetrics(store: StateStore) {
       sub_status: ms?.sub_status ?? null,
       sub_status_name: SUB_STATUS_NAMES[ms?.sub_status ?? 0] || null,
       progress: ms?.progress ?? null,
-      exceptions: (ms?.exception_status ?? []).map(c => ({
+      exceptions: (ms?.exception_status ?? []).map((c) => ({
         code: c,
         name: EXCEPTION_NAMES[c] ?? `Unknown (${c})`,
       })),
@@ -1450,28 +1680,34 @@ function buildMetrics(store: StateStore) {
       bed_target: bed?.target ?? null,
       chamber: ch?.temperature ?? null,
     },
-    fans: fans ? {
-      part_fan: fanPct(fans.fan?.speed ?? 0),
-      aux_fan: fanPct(fans.aux_fan?.speed ?? 0),
-      box_fan: fanPct(fans.box_fan?.speed ?? 0),
-      heater_fan: fanPct(fans.heater_fan?.speed ?? 0),
-      controller_fan: fanPct(fans.controller_fan?.speed ?? 0),
-    } : null,
-    position: gm ? {
-      x: gm.x,
-      y: gm.y,
-      z: gm.z,
-      speed: gm.speed,
-      speed_mode: gm.speed_mode,
-      speed_mode_name: SPEED_MODE_NAMES[gm.speed_mode] ?? 'Unknown',
-    } : null,
-    print: ps ? {
-      filename: ps.filename || null,
-      current_layer: ps.current_layer,
-      total_layer: ps.total_layer ?? store.fileTotalLayers ?? null,
-      print_duration: ps.print_duration,
-      remaining_time_sec: ps.remaining_time_sec,
-    } : null,
+    fans: fans
+      ? {
+          part_fan: fanPct(fans.fan?.speed ?? 0),
+          aux_fan: fanPct(fans.aux_fan?.speed ?? 0),
+          box_fan: fanPct(fans.box_fan?.speed ?? 0),
+          heater_fan: fanPct(fans.heater_fan?.speed ?? 0),
+          controller_fan: fanPct(fans.controller_fan?.speed ?? 0),
+        }
+      : null,
+    position: gm
+      ? {
+          x: gm.x,
+          y: gm.y,
+          z: gm.z,
+          speed: gm.speed,
+          speed_mode: gm.speed_mode,
+          speed_mode_name: SPEED_MODE_NAMES[gm.speed_mode] ?? 'Unknown',
+        }
+      : null,
+    print: ps
+      ? {
+          filename: ps.filename || null,
+          current_layer: ps.current_layer,
+          total_layer: ps.total_layer ?? store.fileTotalLayers ?? null,
+          print_duration: ps.print_duration,
+          remaining_time_sec: ps.remaining_time_sec,
+        }
+      : null,
     filament_detected: ext?.filament_detected ?? null,
     filament_usage: store.getFilamentUsageArray(),
     layers: {
@@ -1495,9 +1731,7 @@ function buildPrometheusMetrics(store: StateStore): string {
   const gm = s?.gcode_move;
   const layers = store.layerTimes;
 
-  const labels = a
-    ? `model="${a.machine_model}",sn="${a.sn}"`
-    : '';
+  const labels = a ? `model="${a.machine_model}",sn="${a.sn}"` : '';
 
   function g(name: string, help: string, value: number | null | undefined, extra = '') {
     if (value == null) return;
@@ -1508,7 +1742,11 @@ function buildPrometheusMetrics(store: StateStore): string {
   }
 
   // Connection
-  g('elegoo_connected', 'Printer MQTT connection state (1=connected, 0=disconnected)', _bridge?.isConnected ? 1 : 0);
+  g(
+    'elegoo_connected',
+    'Printer MQTT connection state (1=connected, 0=disconnected)',
+    _bridge?.isConnected ? 1 : 0,
+  );
 
   // Machine state
   g('elegoo_machine_status', 'Machine status code', ms?.status);
@@ -1525,8 +1763,11 @@ function buildPrometheusMetrics(store: StateStore): string {
   // Fans (as percentage 0-100)
   if (fans) {
     const fanEntries: [string, FanInfo | undefined][] = [
-      ['part', fans.fan], ['aux', fans.aux_fan], ['box', fans.box_fan],
-      ['heater', fans.heater_fan], ['controller', fans.controller_fan],
+      ['part', fans.fan],
+      ['aux', fans.aux_fan],
+      ['box', fans.box_fan],
+      ['heater', fans.heater_fan],
+      ['controller', fans.controller_fan],
     ];
     lines.push('# HELP elegoo_fan_speed_percent Fan speed percentage');
     lines.push('# TYPE elegoo_fan_speed_percent gauge');
@@ -1549,9 +1790,17 @@ function buildPrometheusMetrics(store: StateStore): string {
   // Print info
   if (ps) {
     g('elegoo_print_current_layer', 'Current print layer', ps.current_layer);
-    g('elegoo_print_total_layers', 'Total print layers', ps.total_layer ?? store.fileTotalLayers ?? undefined);
+    g(
+      'elegoo_print_total_layers',
+      'Total print layers',
+      ps.total_layer ?? store.fileTotalLayers ?? undefined,
+    );
     g('elegoo_print_duration_seconds', 'Elapsed print time in seconds', ps.print_duration);
-    g('elegoo_print_remaining_seconds', 'Estimated remaining time in seconds', ps.remaining_time_sec);
+    g(
+      'elegoo_print_remaining_seconds',
+      'Estimated remaining time in seconds',
+      ps.remaining_time_sec,
+    );
   }
 
   // Filament detected
@@ -1563,13 +1812,17 @@ function buildPrometheusMetrics(store: StateStore): string {
     lines.push('# HELP elegoo_filament_used_grams Filament used in grams');
     lines.push('# TYPE elegoo_filament_used_grams gauge');
     for (const u of usage) {
-      const lab = [labels, `tray="${u.trayKey}",type="${u.filamentType}"`].filter(Boolean).join(',');
+      const lab = [labels, `tray="${u.trayKey}",type="${u.filamentType}"`]
+        .filter(Boolean)
+        .join(',');
       lines.push(`elegoo_filament_used_grams{${lab}} ${Math.round(u.grams * 100) / 100}`);
     }
     lines.push('# HELP elegoo_filament_used_meters Filament used in meters');
     lines.push('# TYPE elegoo_filament_used_meters gauge');
     for (const u of usage) {
-      const lab = [labels, `tray="${u.trayKey}",type="${u.filamentType}"`].filter(Boolean).join(',');
+      const lab = [labels, `tray="${u.trayKey}",type="${u.filamentType}"`]
+        .filter(Boolean)
+        .join(',');
       lines.push(`elegoo_filament_used_meters{${lab}} ${Math.round(u.meters * 1000) / 1000}`);
     }
   }
@@ -1579,7 +1832,11 @@ function buildPrometheusMetrics(store: StateStore): string {
     g('elegoo_layer_count', 'Number of recorded layer times', layers.length);
     const avgDur = layers.reduce((sum, l) => sum + l.duration, 0) / layers.length;
     g('elegoo_layer_avg_duration_seconds', 'Average layer duration', Math.round(avgDur * 10) / 10);
-    g('elegoo_layer_last_duration_seconds', 'Last layer duration', layers[layers.length - 1].duration);
+    g(
+      'elegoo_layer_last_duration_seconds',
+      'Last layer duration',
+      layers[layers.length - 1].duration,
+    );
   }
 
   // Exceptions

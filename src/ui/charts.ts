@@ -72,7 +72,7 @@ export function initCharts(chartStore: ChartStore): void {
 }
 
 function bindTimeWindowButtons(): void {
-  document.querySelectorAll('.chart-time-btn').forEach(btn => {
+  document.querySelectorAll('.chart-time-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const el = btn as HTMLElement;
       const canvasId = el.dataset.chart!;
@@ -84,7 +84,7 @@ function bindTimeWindowButtons(): void {
       }
       // Update active state for this chart's buttons
       const parent = el.parentElement;
-      parent?.querySelectorAll('.chart-time-btn').forEach(b => b.classList.remove('active'));
+      parent?.querySelectorAll('.chart-time-btn').forEach((b) => b.classList.remove('active'));
       el.classList.add('active');
     });
   });
@@ -96,7 +96,7 @@ function bindTimeWindowButtons(): void {
       config.window = saved;
       // Update active button state
       const btns = document.querySelectorAll(`.chart-time-btn[data-chart="${canvasId}"]`);
-      btns.forEach(b => {
+      btns.forEach((b) => {
         const el = b as HTMLElement;
         b.classList.toggle('active', parseInt(el.dataset.window!) === saved);
       });
@@ -112,11 +112,15 @@ function bindChartInteractions(): void {
     const inter = interactions.get(canvasId)!;
 
     // Wheel to zoom
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.8 : 1.25; // scroll down = zoom out, up = zoom in
-      inter.zoomFactor = Math.max(0.1, Math.min(10, inter.zoomFactor * delta));
-    }, { passive: false });
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.8 : 1.25; // scroll down = zoom out, up = zoom in
+        inter.zoomFactor = Math.max(0.1, Math.min(10, inter.zoomFactor * delta));
+      },
+      { passive: false },
+    );
 
     // Drag to pan
     canvas.addEventListener('mousedown', (e) => {
@@ -229,7 +233,10 @@ function drawChart(config: ChartConfig): void {
         }
       }
     }
-    if (yMin === Infinity) { yMin = 0; yMax = 100; }
+    if (yMin === Infinity) {
+      yMin = 0;
+      yMax = 100;
+    }
     const padding = (yMax - yMin) * 0.1 || 10;
     yMin = Math.max(0, yMin - padding);
     yMax = yMax + padding;
@@ -273,13 +280,14 @@ function drawChart(config: ChartConfig): void {
     const d = new Date(t);
     ctx.fillText(
       `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`,
-      x, PADDING.top + plotH + 4
+      x,
+      PADDING.top + plotH + 4,
     );
   }
 
   // Draw each series
   for (const s of allSeries) {
-    const visible = s.data.filter(p => p.t >= tMin);
+    const visible = s.data.filter((p) => p.t >= tMin);
     if (visible.length < 2) continue;
 
     ctx.strokeStyle = s.color;
@@ -291,8 +299,10 @@ function drawChart(config: ChartConfig): void {
     for (const p of visible) {
       const x = xMap(p.t);
       const y = yMap(p.v);
-      if (!started) { ctx.moveTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
@@ -303,21 +313,17 @@ function drawChart(config: ChartConfig): void {
       ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(
-        `${s.label}: ${last.v.toFixed(1)}`,
-        xMap(last.t) + 4,
-        yMap(last.v)
-      );
+      ctx.fillText(`${s.label}: ${last.v.toFixed(1)}`, xMap(last.t) + 4, yMap(last.v));
     }
   }
 
   // Draw average lines (dashed) for configured series
   if (config.averageKeys?.length) {
     for (const key of config.averageKeys) {
-      const s = allSeries.find(sr => store!.getSeries(key) === sr);
+      const s = allSeries.find((sr) => store!.getSeries(key) === sr);
       if (!s) continue;
       // Compute average over ALL data (not just visible window) — represents whole print
-      const allData = s.data.filter(p => p.v > 0);
+      const allData = s.data.filter((p) => p.v > 0);
       if (allData.length < 2) continue;
       const avg = allData.reduce((sum, p) => sum + p.v, 0) / allData.length;
       const y = yMap(avg);
@@ -353,7 +359,11 @@ function drawChart(config: ChartConfig): void {
     ctx.textBaseline = 'top';
     const zoomLabel = `${inter.zoomFactor.toFixed(1)}x`;
     const panLabel = inter.panOffset !== 0 ? ` pan:${(inter.panOffset / 1000).toFixed(0)}s` : '';
-    ctx.fillText(`🔍 ${zoomLabel}${panLabel} (dblclick to reset)`, PADDING.left + 4, PADDING.top + 2);
+    ctx.fillText(
+      `🔍 ${zoomLabel}${panLabel} (dblclick to reset)`,
+      PADDING.left + 4,
+      PADDING.top + 2,
+    );
   }
 
   // ── Tooltip on hover ──
@@ -378,7 +388,10 @@ function drawChart(config: ChartConfig): void {
       let bestDist = Infinity;
       for (const p of s.data) {
         const dist = Math.abs(p.t - hoverT);
-        if (dist < bestDist) { bestDist = dist; best = p; }
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = p;
+        }
         if (p.t > hoverT) break; // data is sorted by time
       }
       if (best && bestDist < (tMax - tMin) * 0.05) {
@@ -425,7 +438,7 @@ function drawChart(config: ChartConfig): void {
       if (boxX + boxW > w - 4) {
         boxX = inter.hoverX - boxW - 12;
       }
-      let boxY = PADDING.top + 4;
+      const boxY = PADDING.top + 4;
 
       // Background
       ctx.fillStyle = 'rgba(30, 30, 44, 0.92)';

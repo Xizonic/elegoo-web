@@ -34,7 +34,11 @@ registerCommands(bot, bridge, config);
 // We keep one "live" message per print that gets updated in place.
 let liveMessageId: number | null = null;
 
-async function sendNewMessage(text: string, photo: Buffer | null, urgent: boolean): Promise<number | null> {
+async function sendNewMessage(
+  text: string,
+  photo: Buffer | null,
+  urgent: boolean,
+): Promise<number | null> {
   const caption = safeCaption(text);
   if (photo) {
     const msg = await bot.api.sendPhoto(config.chatId, new InputFile(photo, 'snapshot.jpg'), {
@@ -82,9 +86,15 @@ async function sendNotification(event: BridgeEvent): Promise<void> {
   if (!text) return;
 
   try {
-    const wantPhoto = config.cameraEnabled && [
-      'print_started', 'print_completed', 'print_failed', 'print_progress', 'first_layer_complete',
-    ].includes(event.type);
+    const wantPhoto =
+      config.cameraEnabled &&
+      [
+        'print_started',
+        'print_completed',
+        'print_failed',
+        'print_progress',
+        'first_layer_complete',
+      ].includes(event.type);
     const photo = wantPhoto ? await fetchSnapshot(config.cameraUrl) : null;
 
     // Events that should update the live message in-place

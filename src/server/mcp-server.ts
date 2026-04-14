@@ -62,7 +62,7 @@ const fanPct = (v: number) => Math.round((v / 255) * 100);
 const txt = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 const err = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
 const json = (obj: unknown) => txt(JSON.stringify(obj, null, 2));
-const needConn = (bridge: MqttBridge) => bridge.isConnected ? null : err('Printer not connected');
+const needConn = (bridge: MqttBridge) => (bridge.isConnected ? null : err('Printer not connected'));
 
 function buildStatusText(store: StateStore): string {
   const s = store.status;
@@ -76,18 +76,26 @@ function buildStatusText(store: StateStore): string {
   lines.push(`Status: ${statusName}${subName ? ` — ${subName}` : ''}`);
   lines.push(`Nozzle: ${s.extruder?.temperature ?? '?'}°C → ${s.extruder?.target ?? 0}°C`);
   lines.push(`Bed: ${s.heater_bed?.temperature ?? '?'}°C → ${s.heater_bed?.target ?? 0}°C`);
-  if (s.ztemperature_sensor?.temperature != null) lines.push(`Chamber: ${s.ztemperature_sensor.temperature}°C`);
+  if (s.ztemperature_sensor?.temperature != null)
+    lines.push(`Chamber: ${s.ztemperature_sensor.temperature}°C`);
   if (ms?.status === 2 && ps) {
     const rem = ps.remaining_time_sec ?? 0;
     lines.push(`File: ${ps.filename || '?'}`);
-    lines.push(`Progress: ${ms.progress ?? 0}% | Layer: ${ps.current_layer ?? '?'}/${ps.total_layer ?? store.fileTotalLayers ?? '?'}`);
-    lines.push(`Remaining: ${Math.floor(rem / 3600)}h${Math.floor((rem % 3600) / 60)}m | Speed: ${speedName}`);
+    lines.push(
+      `Progress: ${ms.progress ?? 0}% | Layer: ${ps.current_layer ?? '?'}/${ps.total_layer ?? store.fileTotalLayers ?? '?'}`,
+    );
+    lines.push(
+      `Remaining: ${Math.floor(rem / 3600)}h${Math.floor((rem % 3600) / 60)}m | Speed: ${speedName}`,
+    );
   }
   if (s.fans) {
-    lines.push(`Fans — Part: ${fanPct(s.fans.fan?.speed ?? 0)}% Aux: ${fanPct(s.fans.aux_fan?.speed ?? 0)}% Case: ${fanPct(s.fans.box_fan?.speed ?? 0)}%`);
+    lines.push(
+      `Fans — Part: ${fanPct(s.fans.fan?.speed ?? 0)}% Aux: ${fanPct(s.fans.aux_fan?.speed ?? 0)}% Case: ${fanPct(s.fans.box_fan?.speed ?? 0)}%`,
+    );
   }
   const exc = ms?.exception_status ?? [];
-  if (exc.length) lines.push(`Errors: ${exc.map((c: number) => EXCEPTION_NAMES[c] || `Code ${c}`).join(', ')}`);
+  if (exc.length)
+    lines.push(`Errors: ${exc.map((c: number) => EXCEPTION_NAMES[c] || `Code ${c}`).join(', ')}`);
   lines.push(`Zone: ${store.zones.current}`);
   return lines.join('\n');
 }
@@ -100,62 +108,149 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
 
   // ── Resources ──────────────────────────────────────────────
 
-  mcp.resource('printer-status', 'printer://status', {
-    description: 'Current printer status (temps, fans, progress, errors, zones)',
-  }, async () => ({
-    contents: [{ uri: 'printer://status', mimeType: 'text/plain', text: buildStatusText(store) }],
-  }));
+  mcp.resource(
+    'printer-status',
+    'printer://status',
+    {
+      description: 'Current printer status (temps, fans, progress, errors, zones)',
+    },
+    async () => ({
+      contents: [{ uri: 'printer://status', mimeType: 'text/plain', text: buildStatusText(store) }],
+    }),
+  );
 
-  mcp.resource('printer-files', 'printer://files', {
-    description: 'Files on printer storage',
-  }, async () => ({
-    contents: [{ uri: 'printer://files', mimeType: 'application/json',
-      text: JSON.stringify(store.files.map(f => ({ name: f.filename, size: f.size, type: f.type })), null, 2) }],
-  }));
+  mcp.resource(
+    'printer-files',
+    'printer://files',
+    {
+      description: 'Files on printer storage',
+    },
+    async () => ({
+      contents: [
+        {
+          uri: 'printer://files',
+          mimeType: 'application/json',
+          text: JSON.stringify(
+            store.files.map((f) => ({ name: f.filename, size: f.size, type: f.type })),
+            null,
+            2,
+          ),
+        },
+      ],
+    }),
+  );
 
-  mcp.resource('printer-metrics', 'printer://metrics', {
-    description: 'Structured metrics (temps, fans, position, layers, filament)',
-  }, async () => {
-    const s = store.status; const ms = s?.machine_status; const ps = s?.print_status;
-    const layers = store.layerTimes;
-    return { contents: [{ uri: 'printer://metrics', mimeType: 'application/json', text: JSON.stringify({
-      connected: !!store.attributes,
-      status: STATUS_NAMES[ms?.status ?? -1] ?? 'Unknown',
-      temperatures: {
-        nozzle: s?.extruder?.temperature ?? null, nozzle_target: s?.extruder?.target ?? null,
-        bed: s?.heater_bed?.temperature ?? null, bed_target: s?.heater_bed?.target ?? null,
-        chamber: s?.ztemperature_sensor?.temperature ?? null,
-      },
-      print: ms?.status === 2 && ps ? {
-        filename: ps.filename, progress: ms.progress, current_layer: ps.current_layer,
-        total_layer: ps.total_layer ?? store.fileTotalLayers, remaining_sec: ps.remaining_time_sec,
-      } : null,
-      filament_usage: store.getFilamentUsageArray(),
-      layers: { count: layers.length, avg_sec: layers.length ? Math.round(layers.reduce((s, l) => s + l.duration, 0) / layers.length * 10) / 10 : null },
-      zone: store.zones.current,
-    }, null, 2) }] };
-  });
+  mcp.resource(
+    'printer-metrics',
+    'printer://metrics',
+    {
+      description: 'Structured metrics (temps, fans, position, layers, filament)',
+    },
+    async () => {
+      const s = store.status;
+      const ms = s?.machine_status;
+      const ps = s?.print_status;
+      const layers = store.layerTimes;
+      return {
+        contents: [
+          {
+            uri: 'printer://metrics',
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                connected: !!store.attributes,
+                status: STATUS_NAMES[ms?.status ?? -1] ?? 'Unknown',
+                temperatures: {
+                  nozzle: s?.extruder?.temperature ?? null,
+                  nozzle_target: s?.extruder?.target ?? null,
+                  bed: s?.heater_bed?.temperature ?? null,
+                  bed_target: s?.heater_bed?.target ?? null,
+                  chamber: s?.ztemperature_sensor?.temperature ?? null,
+                },
+                print:
+                  ms?.status === 2 && ps
+                    ? {
+                        filename: ps.filename,
+                        progress: ms.progress,
+                        current_layer: ps.current_layer,
+                        total_layer: ps.total_layer ?? store.fileTotalLayers,
+                        remaining_sec: ps.remaining_time_sec,
+                      }
+                    : null,
+                filament_usage: store.getFilamentUsageArray(),
+                layers: {
+                  count: layers.length,
+                  avg_sec: layers.length
+                    ? Math.round(
+                        (layers.reduce((s, l) => s + l.duration, 0) / layers.length) * 10,
+                      ) / 10
+                    : null,
+                },
+                zone: store.zones.current,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
 
-  mcp.resource('printer-events', 'printer://events', {
-    description: 'Recent event log (print starts, errors, layer changes)',
-  }, async () => ({
-    contents: [{ uri: 'printer://events', mimeType: 'application/json',
-      text: JSON.stringify(store.getEventLog().slice(-50), null, 2) }],
-  }));
+  mcp.resource(
+    'printer-events',
+    'printer://events',
+    {
+      description: 'Recent event log (print starts, errors, layer changes)',
+    },
+    async () => ({
+      contents: [
+        {
+          uri: 'printer://events',
+          mimeType: 'application/json',
+          text: JSON.stringify(store.getEventLog().slice(-50), null, 2),
+        },
+      ],
+    }),
+  );
 
-  mcp.resource('printer-system', 'printer://system', {
-    description: 'System info (firmware, model, SN, IP, disk)',
-  }, async () => ({
-    contents: [{ uri: 'printer://system', mimeType: 'application/json',
-      text: JSON.stringify({ attributes: store.attributes, systemInfo: store.systemInfo }, null, 2) }],
-  }));
+  mcp.resource(
+    'printer-system',
+    'printer://system',
+    {
+      description: 'System info (firmware, model, SN, IP, disk)',
+    },
+    async () => ({
+      contents: [
+        {
+          uri: 'printer://system',
+          mimeType: 'application/json',
+          text: JSON.stringify(
+            { attributes: store.attributes, systemInfo: store.systemInfo },
+            null,
+            2,
+          ),
+        },
+      ],
+    }),
+  );
 
-  mcp.resource('printer-zones', 'printer://zones', {
-    description: 'Toolhead zone detection state and history',
-  }, async () => ({
-    contents: [{ uri: 'printer://zones', mimeType: 'application/json',
-      text: JSON.stringify(store.zones, null, 2) }],
-  }));
+  mcp.resource(
+    'printer-zones',
+    'printer://zones',
+    {
+      description: 'Toolhead zone detection state and history',
+    },
+    async () => ({
+      contents: [
+        {
+          uri: 'printer://zones',
+          mimeType: 'application/json',
+          text: JSON.stringify(store.zones, null, 2),
+        },
+      ],
+    }),
+  );
 
   // ── Read-only tools ────────────────────────────────────────
 
@@ -172,24 +267,33 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
   });
 
   mcp.tool('print_progress', 'Get active print progress', async () => {
-    const s = store.status; if (!s) return err('Not connected');
+    const s = store.status;
+    if (!s) return err('Not connected');
     const ms = s.machine_status;
-    if (ms?.status !== 2) return txt(`Not printing. Status: ${STATUS_NAMES[ms?.status ?? 0] ?? 'Unknown'}`);
+    if (ms?.status !== 2)
+      return txt(`Not printing. Status: ${STATUS_NAMES[ms?.status ?? 0] ?? 'Unknown'}`);
     const ps = s.print_status;
     return json({
-      filename: ps?.filename, progress: ms.progress, current_layer: ps?.current_layer,
+      filename: ps?.filename,
+      progress: ms.progress,
+      current_layer: ps?.current_layer,
       total_layer: ps?.total_layer ?? store.fileTotalLayers,
-      elapsed_sec: ps?.print_duration, remaining_sec: ps?.remaining_time_sec,
+      elapsed_sec: ps?.print_duration,
+      remaining_sec: ps?.remaining_time_sec,
       speed_mode: SPEED_MODE_NAMES[s.gcode_move?.speed_mode ?? 1],
     });
   });
 
   mcp.tool('files', 'List gcode files on printer', async () => {
     if (!store.files.length) return txt('No files loaded yet');
-    return txt(store.files.map(f => `${f.filename} (${(f.size / 1024).toFixed(0)}KB)`).join('\n'));
+    return txt(
+      store.files.map((f) => `${f.filename} (${(f.size / 1024).toFixed(0)}KB)`).join('\n'),
+    );
   });
 
-  mcp.tool('events', 'Get recent event log entries',
+  mcp.tool(
+    'events',
+    'Get recent event log entries',
     { count: z.number().optional().describe('Number of recent events (default 20)') },
     async (args) => json(store.getEventLog().slice(-(args.count ?? 20))),
   );
@@ -200,7 +304,9 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
 
   mcp.tool('zones', 'Get toolhead zone state', async () => json(store.zones));
 
-  mcp.tool('layers', 'Get layer time history',
+  mcp.tool(
+    'layers',
+    'Get layer time history',
     { last: z.number().optional().describe('Number of recent layers (default all)') },
     async (args) => {
       const l = store.layerTimes;
@@ -208,7 +314,9 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool('filament_usage', 'Get per-spool filament usage', async () => json(store.getFilamentUsageArray()));
+  mcp.tool('filament_usage', 'Get per-spool filament usage', async () =>
+    json(store.getFilamentUsageArray()),
+  );
 
   mcp.tool('canvas_info', 'Get Canvas/AMS spool status', async () => {
     return store.canvas ? json(store.canvas) : txt('No Canvas data');
@@ -216,130 +324,176 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
 
   // ── Control tools ──────────────────────────────────────────
 
-  mcp.tool('set_temperature', 'Set nozzle and/or bed temperature',
+  mcp.tool(
+    'set_temperature',
+    'Set nozzle and/or bed temperature',
     {
       nozzle: z.number().optional().describe('Nozzle °C (0-300)'),
       bed: z.number().optional().describe('Bed °C (0-120)'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       const p: Record<string, unknown> = {};
-      if (args.nozzle != null) { if (args.nozzle < 0 || args.nozzle > 300) return err('Nozzle: 0-300°C'); p.extruder = args.nozzle; }
-      if (args.bed != null) { if (args.bed < 0 || args.bed > 120) return err('Bed: 0-120°C'); p.heater_bed = args.bed; }
+      if (args.nozzle != null) {
+        if (args.nozzle < 0 || args.nozzle > 300) return err('Nozzle: 0-300°C');
+        p.extruder = args.nozzle;
+      }
+      if (args.bed != null) {
+        if (args.bed < 0 || args.bed > 120) return err('Bed: 0-120°C');
+        p.heater_bed = args.bed;
+      }
       if (!Object.keys(p).length) return err('Specify nozzle and/or bed');
       bridge.sendCommand(1028, p);
       return txt(`Temperature set: ${JSON.stringify(p)}`);
     },
   );
 
-  mcp.tool('fan', 'Set fan speed',
+  mcp.tool(
+    'fan',
+    'Set fan speed',
     {
       name: z.enum(['part', 'aux', 'case']).describe('Fan: part, aux, or case'),
       speed: z.number().describe('Speed 0-100%'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       const key = { part: 'fan', aux: 'aux_fan', case: 'box_fan' }[args.name];
-      bridge.sendCommand(1030, { [key]: Math.round(Math.max(0, Math.min(100, args.speed)) / 100 * 255) });
+      bridge.sendCommand(1030, {
+        [key]: Math.round((Math.max(0, Math.min(100, args.speed)) / 100) * 255),
+      });
       return txt(`${args.name} fan → ${args.speed}%`);
     },
   );
 
-  mcp.tool('speed_mode', 'Set print speed mode',
+  mcp.tool(
+    'speed_mode',
+    'Set print speed mode',
     { mode: z.enum(['silent', 'balanced', 'sport', 'ludicrous']).describe('Speed mode') },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       const v = { silent: 0, balanced: 1, sport: 2, ludicrous: 3 }[args.mode];
       bridge.sendCommand(1031, { mode: v });
       return txt(`Speed → ${args.mode}`);
     },
   );
 
-  mcp.tool('led', 'Toggle LED light',
+  mcp.tool(
+    'led',
+    'Toggle LED light',
     { on: z.boolean().describe('true=on, false=off') },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(1029, { power: args.on ? 1 : 0 });
       return txt(`LED ${args.on ? 'on' : 'off'}`);
     },
   );
 
-  mcp.tool('home', 'Home printer axes',
+  mcp.tool(
+    'home',
+    'Home printer axes',
     { axes: z.enum(['xy', 'z', 'xyz']).optional().describe('Axes to home (default xyz)') },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(1026, { homed_axes: args.axes ?? 'xyz' });
       return txt(`Homing ${args.axes ?? 'xyz'}`);
     },
   );
 
-  mcp.tool('move', 'Jog a single axis',
+  mcp.tool(
+    'move',
+    'Jog a single axis',
     {
       axis: z.enum(['x', 'y', 'z']).describe('Axis'),
       distance: z.number().describe('Distance in mm (negative for reverse)'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(1027, { axes: args.axis, distance: args.distance });
       return txt(`Moving ${args.axis} ${args.distance}mm`);
     },
   );
 
-  mcp.tool('start_print', 'Start printing a file',
+  mcp.tool(
+    'start_print',
+    'Start printing a file',
     {
       filename: z.string().describe('Filename to print'),
       source: z.enum(['local', 'u-disk']).optional().describe('Storage (default local)'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(1020, { filename: args.filename, storage_media: args.source ?? 'local' });
       return txt(`Starting: ${args.filename}`);
     },
   );
 
   mcp.tool('pause_print', 'Pause current print', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1021, {}); return txt('Paused');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1021, {});
+    return txt('Paused');
   });
 
   mcp.tool('resume_print', 'Resume paused print', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1023, {}); return txt('Resumed');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1023, {});
+    return txt('Resumed');
   });
 
   mcp.tool('stop_print', 'Stop/cancel current print', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1022, {}); return txt('Stopped');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1022, {});
+    return txt('Stopped');
   });
 
   mcp.tool('emergency_stop', 'Emergency stop — immediately halts printer', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1007, {}); return txt('EMERGENCY STOP sent');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1007, {});
+    return txt('EMERGENCY STOP sent');
   });
 
   mcp.tool('auto_level', 'Start auto bed leveling', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1032, {}); return txt('Auto-leveling started');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1032, {});
+    return txt('Auto-leveling started');
   });
 
   mcp.tool('pid_calibrate', 'Start PID auto-tune', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1034, {}); return txt('PID calibration started');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1034, {});
+    return txt('PID calibration started');
   });
 
   mcp.tool('vibration_calibrate', 'Start resonance optimization', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1033, {}); return txt('Vibration calibration started');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1033, {});
+    return txt('Vibration calibration started');
   });
 
-  mcp.tool('self_check', 'Run combined self-test',
+  mcp.tool(
+    'self_check',
+    'Run combined self-test',
     {
       ringing: z.boolean().optional().describe('Include resonance test (default true)'),
       pid: z.boolean().optional().describe('Include PID test (default true)'),
       leveling: z.boolean().optional().describe('Include bed leveling (default true)'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(1035, {
         ringing_optimize: args.ringing ?? true,
         pid_check: args.pid ?? true,
@@ -349,41 +503,54 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool('delete_file', 'Delete a file from printer storage',
+  mcp.tool(
+    'delete_file',
+    'Delete a file from printer storage',
     {
       path: z.string().describe('File path (e.g. /model.gcode)'),
       source: z.enum(['local', 'u-disk']).optional().describe('Storage (default local)'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(1047, { storage_media: args.source ?? 'local', file_path: args.path });
       return txt(`Deleted: ${args.path}`);
     },
   );
 
   mcp.tool('load_filament', 'Feed/load filament into extruder', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1024, {}); return txt('Loading filament');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1024, {});
+    return txt('Loading filament');
   });
 
   mcp.tool('unload_filament', 'Retract/unload filament from extruder', async () => {
-    const c = needConn(bridge); if (c) return c;
-    bridge.sendCommand(1025, {}); return txt('Unloading filament');
+    const c = needConn(bridge);
+    if (c) return c;
+    bridge.sendCommand(1025, {});
+    return txt('Unloading filament');
   });
 
-  mcp.tool('set_auto_refill', 'Enable/disable Canvas auto-refill',
+  mcp.tool(
+    'set_auto_refill',
+    'Enable/disable Canvas auto-refill',
     { enabled: z.boolean().describe('true=enable, false=disable') },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       bridge.sendCommand(2004, { auto_refill: args.enabled });
       return txt(`Auto-refill ${args.enabled ? 'enabled' : 'disabled'}`);
     },
   );
 
-  mcp.tool('enable_video_stream', 'Enable camera MJPEG stream via SDCP',
+  mcp.tool(
+    'enable_video_stream',
+    'Enable camera MJPEG stream via SDCP',
     { method: z.enum(['sdcp', 'mqtt']).optional().describe('Method: sdcp (default) or mqtt') },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       if ((args.method ?? 'sdcp') === 'sdcp') {
         const result = await bridge.enableVideoStreamSDCP();
         return result.success
@@ -395,15 +562,22 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool('send_command', 'Send raw MQTT command (advanced)',
+  mcp.tool(
+    'send_command',
+    'Send raw MQTT command (advanced)',
     {
       method: z.number().describe('CC2 method code (e.g. 1001, 1028)'),
       params: z.string().optional().describe('JSON params string (default "{}")'),
     },
     async (args) => {
-      const c = needConn(bridge); if (c) return c;
+      const c = needConn(bridge);
+      if (c) return c;
       let p: Record<string, unknown>;
-      try { p = JSON.parse(args.params ?? '{}'); } catch { return err('Invalid JSON'); }
+      try {
+        p = JSON.parse(args.params ?? '{}');
+      } catch {
+        return err('Invalid JSON');
+      }
       bridge.sendCommand(args.method, p);
       return txt(`Sent method=${args.method} params=${JSON.stringify(p)}`);
     },

@@ -75,7 +75,9 @@ function loadCardLayout(): CardLayout {
         collapsed: Array.isArray(parsed.collapsed) ? parsed.collapsed : [],
       };
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return { sidebar: [...DEFAULT_SIDEBAR], main: [...DEFAULT_MAIN], hidden: [], collapsed: [] };
 }
 
@@ -158,8 +160,9 @@ export function applyCardLayout(): void {
   for (const card of allCards) {
     if (!card.id || card.dataset.collapseInit) continue;
     card.dataset.collapseInit = '1';
-    const header = card.querySelector('.card-header, .card-head, .files-header, .log-header') as HTMLElement
-      || card.querySelector('h3') as HTMLElement;
+    const header =
+      (card.querySelector('.card-header, .card-head, .files-header, .log-header') as HTMLElement) ||
+      (card.querySelector('h3') as HTMLElement);
     if (!header) continue;
     header.style.cursor = 'pointer';
     header.addEventListener('click', (e) => {
@@ -193,7 +196,7 @@ export function switchToTab(tab: 'dashboard' | 'settings' | 'tools' | 'help' | '
 
   if (!dashboard || !settingsPage) return;
 
-  tabs.forEach(t => {
+  tabs.forEach((t) => {
     const el = t as HTMLElement;
     el.classList.toggle('active', el.dataset.tab === tab);
   });
@@ -238,15 +241,15 @@ export function renderSettingsContent(): void {
 }
 
 function buildSettingsHTML(content: HTMLElement): void {
-
   currentLayout = loadCardLayout();
 
   // Build card list grouped by panel
   function buildCardRows(cards: string[], panel: 'sidebar' | 'main'): string {
-    return cards.map(id => {
-      const name = CARD_NAMES[id] || id;
-      const isHidden = currentLayout.hidden.includes(id);
-      return `
+    return cards
+      .map((id) => {
+        const name = CARD_NAMES[id] || id;
+        const isHidden = currentLayout.hidden.includes(id);
+        return `
         <div class="settings-card-row" data-card-id="${id}" data-panel="${panel}">
           <span class="settings-drag-handle" title="Drag to reorder">⠿</span>
           <label class="settings-card-label">
@@ -263,7 +266,8 @@ function buildSettingsHTML(content: HTMLElement): void {
           </span>
         </div>
       `;
-    }).join('');
+      })
+      .join('');
   }
 
   content.innerHTML = `
@@ -301,12 +305,12 @@ function buildSettingsHTML(content: HTMLElement): void {
   `;
 
   // Bind card visibility toggles
-  content.querySelectorAll('.settings-card-visible').forEach(cb => {
+  content.querySelectorAll('.settings-card-visible').forEach((cb) => {
     cb.addEventListener('change', (e) => {
       const input = e.target as HTMLInputElement;
       const cardId = input.dataset.cardId!;
       if (input.checked) {
-        currentLayout.hidden = currentLayout.hidden.filter(h => h !== cardId);
+        currentLayout.hidden = currentLayout.hidden.filter((h) => h !== cardId);
       } else {
         if (!currentLayout.hidden.includes(cardId)) {
           currentLayout.hidden.push(cardId);
@@ -318,14 +322,14 @@ function buildSettingsHTML(content: HTMLElement): void {
   });
 
   // Bind panel (sidebar/main) selector
-  content.querySelectorAll('.settings-card-panel').forEach(sel => {
+  content.querySelectorAll('.settings-card-panel').forEach((sel) => {
     sel.addEventListener('change', (e) => {
       const select = e.target as HTMLSelectElement;
       const cardId = select.dataset.cardId!;
       const newPanel = select.value as 'sidebar' | 'main';
       // Remove from current panel
-      currentLayout.sidebar = currentLayout.sidebar.filter(id => id !== cardId);
-      currentLayout.main = currentLayout.main.filter(id => id !== cardId);
+      currentLayout.sidebar = currentLayout.sidebar.filter((id) => id !== cardId);
+      currentLayout.main = currentLayout.main.filter((id) => id !== cardId);
       // Add to new panel
       if (newPanel === 'sidebar') {
         currentLayout.sidebar.push(cardId);
@@ -340,7 +344,7 @@ function buildSettingsHTML(content: HTMLElement): void {
   });
 
   // Bind move up/down buttons (works within the card's current panel)
-  content.querySelectorAll('.settings-move-up').forEach(btn => {
+  content.querySelectorAll('.settings-move-up').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cardId = (btn as HTMLElement).dataset.cardId!;
       const panel = (btn as HTMLElement).dataset.panel as 'sidebar' | 'main';
@@ -356,7 +360,7 @@ function buildSettingsHTML(content: HTMLElement): void {
     });
   });
 
-  content.querySelectorAll('.settings-move-down').forEach(btn => {
+  content.querySelectorAll('.settings-move-down').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cardId = (btn as HTMLElement).dataset.cardId!;
       const panel = (btn as HTMLElement).dataset.panel as 'sidebar' | 'main';
@@ -374,7 +378,12 @@ function buildSettingsHTML(content: HTMLElement): void {
 
   // Reset button
   content.querySelector('#settings-reset-layout')?.addEventListener('click', () => {
-    currentLayout = { sidebar: [...DEFAULT_SIDEBAR], main: [...DEFAULT_MAIN], hidden: [], collapsed: [] };
+    currentLayout = {
+      sidebar: [...DEFAULT_SIDEBAR],
+      main: [...DEFAULT_MAIN],
+      hidden: [],
+      collapsed: [],
+    };
     saveCardLayout(currentLayout);
     applyCardLayout();
     settingsRendered = false;
@@ -398,7 +407,7 @@ async function loadTelegramStatus(): Promise<void> {
       container.innerHTML = '<span class="settings-hint">Could not load Telegram config</span>';
       return;
     }
-    const data = await res.json() as {
+    const data = (await res.json()) as {
       enabled: boolean;
       chatId: string;
       progressInterval: number;
@@ -473,7 +482,7 @@ interface AILabelConfig {
 }
 
 /** Shorten a CLIP label for display */
-function shortLabel(label: string): string {
+function _shortLabel(label: string): string {
   if (label.length <= 60) return label;
   return label.slice(0, 57) + '...';
 }
@@ -488,7 +497,7 @@ async function loadAILabels(): Promise<void> {
       container.innerHTML = '<span class="settings-hint">Could not load AI label config</span>';
       return;
     }
-    const data = await res.json() as { labels: AILabelConfig[]; enabled: boolean };
+    const data = (await res.json()) as { labels: AILabelConfig[]; enabled: boolean };
 
     if (!data.enabled) {
       container.innerHTML = `
@@ -504,14 +513,24 @@ async function loadAILabels(): Promise<void> {
 }
 
 function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): void {
-  const rows = labels.map((lc, idx) => {
-    const sevOpts = ['ok', 'warning', 'critical'].map(s =>
-      `<option value="${s}" ${lc.severity === s ? 'selected' : ''}>${s.toUpperCase()}</option>`
-    ).join('');
-    const groupOpts = ['Print in Progress', 'Spaghetti/Failure', 'Empty Bed', 'Paused/Stopped', 'Other'].map(g =>
-      `<option value="${g}" ${lc.group === g ? 'selected' : ''}>${g}</option>`
-    ).join('');
-    return `
+  const rows = labels
+    .map((lc, idx) => {
+      const sevOpts = ['ok', 'warning', 'critical']
+        .map(
+          (s) =>
+            `<option value="${s}" ${lc.severity === s ? 'selected' : ''}>${s.toUpperCase()}</option>`,
+        )
+        .join('');
+      const groupOpts = [
+        'Print in Progress',
+        'Spaghetti/Failure',
+        'Empty Bed',
+        'Paused/Stopped',
+        'Other',
+      ]
+        .map((g) => `<option value="${g}" ${lc.group === g ? 'selected' : ''}>${g}</option>`)
+        .join('');
+      return `
       <div class="ai-label-config-row" data-idx="${idx}">
         <div class="ai-label-config-field ai-label-config-label">
           <label>Label</label>
@@ -543,7 +562,8 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
         </div>
       </div>
     `;
-  }).join('');
+    })
+    .join('');
 
   container.innerHTML = `
     <div class="ai-label-config-list">${rows}</div>
@@ -555,7 +575,7 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
   `;
 
   // Delete label buttons
-  container.querySelectorAll('.ai-lc-delete').forEach(btn => {
+  container.querySelectorAll('.ai-lc-delete').forEach((btn) => {
     btn.addEventListener('click', () => {
       const idx = parseInt((btn as HTMLElement).dataset.idx!, 10);
       const current = collectLabelConfigs(container);
@@ -587,7 +607,7 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
       toast('Add at least one label', 'error');
       return;
     }
-    const emptyIdx = updated.findIndex(l => !l.label);
+    const emptyIdx = updated.findIndex((l) => !l.label);
     if (emptyIdx >= 0) {
       toast(`Label ${emptyIdx + 1} cannot be empty`, 'error');
       return;
@@ -614,7 +634,7 @@ function renderAILabelEditor(container: HTMLElement, labels: AILabelConfig[]): v
     try {
       const res = await fetchTimeout('/api/config/ai-labels', { method: 'DELETE' });
       if (res.ok) {
-        const data = await res.json() as { labels: AILabelConfig[] };
+        const data = (await res.json()) as { labels: AILabelConfig[] };
         renderAILabelEditor(container, data.labels);
         toast('AI labels reset to defaults', 'success');
       } else {
@@ -631,12 +651,22 @@ function collectLabelConfigs(container: HTMLElement): AILabelConfig[] | null {
   const configs: AILabelConfig[] = [];
   for (const row of rows) {
     const idx = (row as HTMLElement).dataset.idx!;
-    const label = (row.querySelector(`.ai-lc-label[data-idx="${idx}"]`) as HTMLTextAreaElement)?.value.trim();
-    const issueType = (row.querySelector(`.ai-lc-issue[data-idx="${idx}"]`) as HTMLInputElement)?.value.trim();
-    const group = (row.querySelector(`.ai-lc-group[data-idx="${idx}"]`) as HTMLSelectElement)?.value || 'Other';
-    const severity = (row.querySelector(`.ai-lc-severity[data-idx="${idx}"]`) as HTMLSelectElement)?.value as 'ok' | 'warning' | 'critical';
-    const warnThreshold = parseFloat((row.querySelector(`.ai-lc-warn[data-idx="${idx}"]`) as HTMLInputElement)?.value);
-    const critThreshold = parseFloat((row.querySelector(`.ai-lc-crit[data-idx="${idx}"]`) as HTMLInputElement)?.value);
+    const label = (
+      row.querySelector(`.ai-lc-label[data-idx="${idx}"]`) as HTMLTextAreaElement
+    )?.value.trim();
+    const issueType = (
+      row.querySelector(`.ai-lc-issue[data-idx="${idx}"]`) as HTMLInputElement
+    )?.value.trim();
+    const group =
+      (row.querySelector(`.ai-lc-group[data-idx="${idx}"]`) as HTMLSelectElement)?.value || 'Other';
+    const severity = (row.querySelector(`.ai-lc-severity[data-idx="${idx}"]`) as HTMLSelectElement)
+      ?.value as 'ok' | 'warning' | 'critical';
+    const warnThreshold = parseFloat(
+      (row.querySelector(`.ai-lc-warn[data-idx="${idx}"]`) as HTMLInputElement)?.value,
+    );
+    const critThreshold = parseFloat(
+      (row.querySelector(`.ai-lc-crit[data-idx="${idx}"]`) as HTMLInputElement)?.value,
+    );
 
     // Allow empty labels only for newly added rows (they'll be filled in)
     configs.push({

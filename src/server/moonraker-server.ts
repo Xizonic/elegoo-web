@@ -8,23 +8,34 @@
  * This allows Fluidd, Mainsail, and KlipperScreen to connect directly.
  */
 
-import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'http';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { readFile as fsRead, writeFile as fsWrite, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { createHash } from 'crypto';
-import { hostname, cpus, totalmem, freemem, uptime, loadavg, networkInterfaces, platform, release, arch } from 'os';
+import {
+  cpus,
+  totalmem,
+  freemem,
+  uptime,
+  loadavg,
+  networkInterfaces,
+  platform,
+  release,
+  arch,
+} from 'os';
 import { execSync } from 'child_process';
 import type { StateStore } from './state-store.js';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { ServiceConfig } from './config.js';
 import type { FanInfo } from '../types.js';
-import {
-  MOONRAKER_VERSION,
-  AVAILABLE_OBJECTS,
-  queryObjects,
-} from './moonraker-compat.js';
+import { MOONRAKER_VERSION, AVAILABLE_OBJECTS, queryObjects } from './moonraker-compat.js';
 import { getLogger } from './logger.js';
 import { cacheGcodeBuffer } from './rest-api.js';
 
@@ -66,7 +77,11 @@ function readBodyRaw(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
     let total = 0;
     req.on('data', (c: Buffer) => {
       total += c.length;
-      if (total > maxBytes) { req.destroy(); reject(new Error('Body too large')); return; }
+      if (total > maxBytes) {
+        req.destroy();
+        reject(new Error('Body too large'));
+        return;
+      }
       chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks)));
@@ -85,7 +100,7 @@ function parseQuery(url: string): Record<string, string> {
   return params;
 }
 
-const fanPct = (f?: FanInfo) => f ? f.speed / 255 : 0;
+const _fanPct = (f?: FanInfo) => (f ? f.speed / 255 : 0);
 
 // ── Simple file-backed key/value database ────────────────────────
 
@@ -113,7 +128,9 @@ class MoonrakerDatabase {
       log.warn('Failed to load database:', (e as Error).message);
     }
     // Auto-save every 10s when dirty
-    this.saveTimer = setInterval(() => { if (this.dirty) void this.save(); }, 10_000);
+    this.saveTimer = setInterval(() => {
+      if (this.dirty) void this.save();
+    }, 10_000);
   }
 
   async save(): Promise<void> {
@@ -145,13 +162,18 @@ class MoonrakerDatabase {
     const parts = key.split('.');
     let current: unknown = ns;
     for (const part of parts) {
-      if (current == null || typeof current !== 'object') return { namespace, key, value: undefined };
+      if (current == null || typeof current !== 'object')
+        return { namespace, key, value: undefined };
       current = (current as Record<string, unknown>)[part];
     }
     return { namespace, key, value: current };
   }
 
-  postItem(namespace: string, key: string, value: unknown): { namespace: string; key: string; value: unknown } {
+  postItem(
+    namespace: string,
+    key: string,
+    value: unknown,
+  ): { namespace: string; key: string; value: unknown } {
     if (!this.namespaces.has(namespace)) this.namespaces.set(namespace, {});
     const ns = this.namespaces.get(namespace)!;
     // Support dotted key paths for nested writes
@@ -215,7 +237,7 @@ interface ClientState {
   ws: WebSocket;
   connectionId: number;
   identified: boolean;
-  subscribedObjects: Record<string, string[] | null>;  // object name → attrs or null (all)
+  subscribedObjects: Record<string, string[] | null>; // object name → attrs or null (all)
   /** Snapshot of last sent values per object.attr to compute deltas */
   lastSent: Record<string, Record<string, unknown>>;
   /** Timestamp of last message sent to this client (for keepalive) */
@@ -275,7 +297,9 @@ export class MoonrakerServer {
 
       // Mark alive on pong response (for server-initiated ping keepalive)
       (ws as any).isAlive = true;
-      ws.on('pong', () => { (ws as any).isAlive = true; });
+      ws.on('pong', () => {
+        (ws as any).isAlive = true;
+      });
 
       ws.on('message', (raw) => {
         this.handleWsMessage(client, raw.toString());
@@ -283,7 +307,9 @@ export class MoonrakerServer {
 
       ws.on('close', () => {
         this.clients.delete(ws);
-        log.info(`WS client disconnected (id: ${client.connectionId}, total: ${this.clients.size})`);
+        log.info(
+          `WS client disconnected (id: ${client.connectionId}, total: ${this.clients.size})`,
+        );
       });
 
       ws.on('error', (err) => {
@@ -344,7 +370,12 @@ export class MoonrakerServer {
   /** Seed a default webcam entry if the webcams namespace is empty. */
   private seedDefaultWebcam(): void {
     const existing = this.db.getItem('webcams');
-    if (existing.value && typeof existing.value === 'object' && Object.keys(existing.value as object).length > 0) return;
+    if (
+      existing.value &&
+      typeof existing.value === 'object' &&
+      Object.keys(existing.value as object).length > 0
+    )
+      return;
     if (!this.config.cameraEnabled) return;
     this.db.postItem('webcams', 'default', {
       name: 'default',
@@ -371,8 +402,9 @@ export class MoonrakerServer {
   private getWebcams(): Record<string, unknown>[] {
     const result = this.db.getItem('webcams');
     if (!result.value || typeof result.value !== 'object') return [];
-    return Object.values(result.value as Record<string, unknown>)
-      .filter((v): v is Record<string, unknown> => v != null && typeof v === 'object');
+    return Object.values(result.value as Record<string, unknown>).filter(
+      (v): v is Record<string, unknown> => v != null && typeof v === 'object',
+    );
   }
 
   // ── Push status updates to subscribed clients ──
@@ -468,7 +500,9 @@ export class MoonrakerServer {
       // ── Connection ──
       case 'server.connection.identify':
         client.identified = true;
-        log.info(`Client identified: ${params.client_name} v${params.version} (type: ${params.type})`);
+        log.info(
+          `Client identified: ${params.client_name} v${params.version} (type: ${params.type})`,
+        );
         client.ws.send(rpcResult(msg.id, { connection_id: client.connectionId }));
         break;
 
@@ -478,49 +512,62 @@ export class MoonrakerServer {
 
       // ── Server info ──
       case 'server.info':
-        client.ws.send(rpcResult(msg.id, {
-          klippy_connected: this.bridge.isConnected,
-          klippy_state: this.bridge.isConnected ? 'ready' : 'error',
-          components: [
-            'klippy_apis', 'file_manager', 'machine',
-            'data_store', 'history', 'octoprint_compat',
-            'webcam', 'database', 'authorization',
-            'announcements', 'job_queue',
-          ],
-          failed_components: [],
-          registered_directories: ['gcodes'],
-          warnings: [],
-          websocket_count: this.clients.size,
-          moonraker_version: MOONRAKER_VERSION,
-          api_version: [1, 5, 0],
-          api_version_string: '1.5.0',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            klippy_connected: this.bridge.isConnected,
+            klippy_state: this.bridge.isConnected ? 'ready' : 'error',
+            components: [
+              'klippy_apis',
+              'file_manager',
+              'machine',
+              'data_store',
+              'history',
+              'octoprint_compat',
+              'webcam',
+              'database',
+              'authorization',
+              'announcements',
+              'job_queue',
+            ],
+            failed_components: [],
+            registered_directories: ['gcodes'],
+            warnings: [],
+            websocket_count: this.clients.size,
+            moonraker_version: MOONRAKER_VERSION,
+            api_version: [1, 5, 0],
+            api_version_string: '1.5.0',
+          }),
+        );
         break;
 
       case 'server.config':
-        client.ws.send(rpcResult(msg.id, {
-          config: { server: { host: '0.0.0.0', port: this.config.moonrakerPort } },
-          orig: {},
-          files: [],
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            config: { server: { host: '0.0.0.0', port: this.config.moonrakerPort } },
+            orig: {},
+            files: [],
+          }),
+        );
         break;
 
       // ── Printer info ──
       case 'printer.info':
-        client.ws.send(rpcResult(msg.id, {
-          state: this.bridge.isConnected ? 'ready' : 'error',
-          state_message: this.bridge.isConnected ? 'Printer is ready' : 'Printer not connected',
-          hostname: this.store.attributes?.hostname ?? 'elegoo-cc2',
-          software_version: this.store.attributes?.software_version?.ota_version ?? 'unknown',
-          cpu_info: 'Elegoo CC2',
-          klipper_path: '/opt/elegoo',
-          python_path: '/usr/bin/python3',
-          log_file: '/var/log/elegoo.log',
-          config_file: '/etc/elegoo/printer.cfg',
-          process_id: process.pid,
-          user_id: 1000,
-          group_id: 1000,
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            state: this.bridge.isConnected ? 'ready' : 'error',
+            state_message: this.bridge.isConnected ? 'Printer is ready' : 'Printer not connected',
+            hostname: this.store.attributes?.hostname ?? 'elegoo-cc2',
+            software_version: this.store.attributes?.software_version?.ota_version ?? 'unknown',
+            cpu_info: 'Elegoo CC2',
+            klipper_path: '/opt/elegoo',
+            python_path: '/usr/bin/python3',
+            log_file: '/var/log/elegoo.log',
+            config_file: '/etc/elegoo/printer.cfg',
+            process_id: process.pid,
+            user_id: 1000,
+            group_id: 1000,
+          }),
+        );
         break;
 
       // ── Printer objects ──
@@ -531,10 +578,12 @@ export class MoonrakerServer {
       case 'printer.objects.query': {
         const objects = (params.objects || {}) as Record<string, string[] | null>;
         const status = queryObjects(this.store, objects);
-        client.ws.send(rpcResult(msg.id, {
-          eventtime: Date.now() / 1000,
-          status,
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            eventtime: Date.now() / 1000,
+            status,
+          }),
+        );
         break;
       }
 
@@ -556,10 +605,12 @@ export class MoonrakerServer {
           client.lastSent[objName] = { ...objData };
         }
 
-        client.ws.send(rpcResult(msg.id, {
-          eventtime: Date.now() / 1000,
-          status,
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            eventtime: Date.now() / 1000,
+            status,
+          }),
+        );
         break;
       }
 
@@ -631,14 +682,16 @@ export class MoonrakerServer {
       }
 
       case 'printer.gcode.help':
-        client.ws.send(rpcResult(msg.id, {
-          G28: 'Home all axes',
-          M104: 'Set extruder temperature',
-          M140: 'Set bed temperature',
-          M112: 'Emergency stop',
-          SET_HEATER_TEMPERATURE: 'Set heater temperature (HEATER= TARGET=)',
-          TURN_OFF_HEATERS: 'Turn off all heaters',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            G28: 'Home all axes',
+            M104: 'Set extruder temperature',
+            M140: 'Set bed temperature',
+            M112: 'Emergency stop',
+            SET_HEATER_TEMPERATURE: 'Set heater temperature (HEATER= TARGET=)',
+            TURN_OFF_HEATERS: 'Turn off all heaters',
+          }),
+        );
         break;
 
       // ── Files ──
@@ -672,12 +725,14 @@ export class MoonrakerServer {
             size: f.size,
             permissions: 'rw',
           }));
-        client.ws.send(rpcResult(msg.id, {
-          dirs,
-          files,
-          disk_usage: this.getDiskUsage(),
-          root_info: { name: 'gcodes', permissions: 'rw' },
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            dirs,
+            files,
+            disk_usage: this.getDiskUsage(),
+            root_info: { name: 'gcodes', permissions: 'rw' },
+          }),
+        );
         break;
       }
 
@@ -685,33 +740,40 @@ export class MoonrakerServer {
         const filename = params.filename as string;
         const file = filename ? this.store.files.find((f) => f.filename === filename) : null;
         if (file) {
-          client.ws.send(rpcResult(msg.id, {
-            size: file.size,
-            modified: file.create_time ?? Date.now() / 1000,
-            filename: file.filename,
-            estimated_time: file.print_time ?? null,
-            layer_height: null,
-            first_layer_height: null,
-            object_height: null,
-            slicer: null,
-            slicer_version: null,
-            thumbnails: [],
-          }));
+          client.ws.send(
+            rpcResult(msg.id, {
+              size: file.size,
+              modified: file.create_time ?? Date.now() / 1000,
+              filename: file.filename,
+              estimated_time: file.print_time ?? null,
+              layer_height: null,
+              first_layer_height: null,
+              object_height: null,
+              slicer: null,
+              slicer_version: null,
+              thumbnails: [],
+            }),
+          );
         } else if (filename && this.store.status?.print_status?.filename === filename) {
           // Synthesize metadata from active print status when file list is unavailable
           const ps = this.store.status.print_status;
-          client.ws.send(rpcResult(msg.id, {
-            size: 0,
-            modified: Date.now() / 1000,
-            filename,
-            estimated_time: ps.total_duration && ps.remaining_time_sec ? ps.total_duration + ps.remaining_time_sec : null,
-            layer_height: null,
-            first_layer_height: null,
-            object_height: null,
-            slicer: null,
-            slicer_version: null,
-            thumbnails: [],
-          }));
+          client.ws.send(
+            rpcResult(msg.id, {
+              size: 0,
+              modified: Date.now() / 1000,
+              filename,
+              estimated_time:
+                ps.total_duration && ps.remaining_time_sec
+                  ? ps.total_duration + ps.remaining_time_sec
+                  : null,
+              layer_height: null,
+              first_layer_height: null,
+              object_height: null,
+              slicer: null,
+              slicer_version: null,
+              thumbnails: [],
+            }),
+          );
         } else {
           client.ws.send(rpcError(msg.id, 404, 'File not found'));
         }
@@ -719,10 +781,12 @@ export class MoonrakerServer {
       }
 
       case 'server.files.roots':
-        client.ws.send(rpcResult(msg.id, [
-          { name: 'gcodes', path: '/gcodes', permissions: 'rw' },
-          { name: 'config', path: '/config', permissions: 'r' },
-        ]));
+        client.ws.send(
+          rpcResult(msg.id, [
+            { name: 'gcodes', path: '/gcodes', permissions: 'rw' },
+            { name: 'config', path: '/config', permissions: 'r' },
+          ]),
+        );
         break;
 
       // ── Temperature store ──
@@ -733,21 +797,23 @@ export class MoonrakerServer {
         const chamberTemps = chartData.map((p) => p.values.chamber ?? 0);
         const nozzleTargets = chartData.map((p) => p.values.nozzleTarget ?? 0);
         const bedTargets = chartData.map((p) => p.values.bedTarget ?? 0);
-        client.ws.send(rpcResult(msg.id, {
-          extruder: {
-            temperatures: temps,
-            targets: nozzleTargets,
-            powers: nozzleTargets.map((t: number) => t > 0 ? 1 : 0),
-          },
-          heater_bed: {
-            temperatures: bedTemps,
-            targets: bedTargets,
-            powers: bedTargets.map((t: number) => t > 0 ? 1 : 0),
-          },
-          'temperature_sensor chamber': {
-            temperatures: chamberTemps,
-          },
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            extruder: {
+              temperatures: temps,
+              targets: nozzleTargets,
+              powers: nozzleTargets.map((t: number) => (t > 0 ? 1 : 0)),
+            },
+            heater_bed: {
+              temperatures: bedTemps,
+              targets: bedTargets,
+              powers: bedTargets.map((t: number) => (t > 0 ? 1 : 0)),
+            },
+            'temperature_sensor chamber': {
+              temperatures: chamberTemps,
+            },
+          }),
+        );
         break;
       }
 
@@ -765,9 +831,11 @@ export class MoonrakerServer {
         const wcName = String(msg.params?.name ?? msg.params?.uid ?? '');
         const webcams = this.getWebcams();
         const wc = webcams.find((w) => w.name === wcName || w.uid === wcName);
-        client.ws.send(wc
-          ? rpcResult(msg.id, { webcam: wc })
-          : rpcError(msg.id, 404, `Webcam '${wcName}' not found`));
+        client.ws.send(
+          wc
+            ? rpcResult(msg.id, { webcam: wc })
+            : rpcError(msg.id, 404, `Webcam '${wcName}' not found`),
+        );
         break;
       }
 
@@ -803,17 +871,19 @@ export class MoonrakerServer {
         break;
 
       case 'server.history.totals':
-        client.ws.send(rpcResult(msg.id, {
-          job_totals: {
-            total_jobs: 0,
-            total_time: 0,
-            total_print_time: 0,
-            total_filament_used: 0,
-            longest_job: 0,
-            longest_print: 0,
-          },
-          auxiliary_totals: [],
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            job_totals: {
+              total_jobs: 0,
+              total_time: 0,
+              total_print_time: 0,
+              total_filament_used: 0,
+              longest_job: 0,
+              longest_print: 0,
+            },
+            auxiliary_totals: [],
+          }),
+        );
         break;
 
       case 'server.history.get_job':
@@ -825,13 +895,19 @@ export class MoonrakerServer {
         break;
 
       case 'server.history.reset_totals':
-        client.ws.send(rpcResult(msg.id, {
-          last_totals: {
-            total_jobs: 0, total_time: 0, total_print_time: 0,
-            total_filament_used: 0, longest_job: 0, longest_print: 0,
-          },
-          last_auxiliary_totals: [],
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            last_totals: {
+              total_jobs: 0,
+              total_time: 0,
+              total_print_time: 0,
+              total_filament_used: 0,
+              longest_job: 0,
+              longest_print: 0,
+            },
+            last_auxiliary_totals: [],
+          }),
+        );
         break;
 
       // ── Machine ──
@@ -864,13 +940,15 @@ export class MoonrakerServer {
 
       // ── Update manager ──
       case 'machine.update.status':
-        client.ws.send(rpcResult(msg.id, {
-          busy: false,
-          github_rate_limit: null,
-          github_requests_remaining: null,
-          github_limit_reset_time: null,
-          version_info: {},
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            busy: false,
+            github_rate_limit: null,
+            github_requests_remaining: null,
+            github_limit_reset_time: null,
+            version_info: {},
+          }),
+        );
         break;
 
       // ── Job queue ──
@@ -900,11 +978,13 @@ export class MoonrakerServer {
 
       // ── Access / Auth (stub — always permitted) ──
       case 'access.get_user':
-        client.ws.send(rpcResult(msg.id, {
-          username: 'elegoo',
-          source: 'moonraker',
-          created_on: Date.now() / 1000,
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            username: 'elegoo',
+            source: 'moonraker',
+            created_on: Date.now() / 1000,
+          }),
+        );
         break;
 
       case 'access.oneshot_token':
@@ -912,13 +992,15 @@ export class MoonrakerServer {
         break;
 
       case 'access.login':
-        client.ws.send(rpcResult(msg.id, {
-          username: String(msg.params?.username ?? 'elegoo'),
-          token: 'elegoo-compat-jwt-token',
-          refresh_token: 'elegoo-compat-refresh-token',
-          action: 'user_logged_in',
-          source: 'moonraker',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            username: String(msg.params?.username ?? 'elegoo'),
+            token: 'elegoo-compat-jwt-token',
+            refresh_token: 'elegoo-compat-refresh-token',
+            action: 'user_logged_in',
+            source: 'moonraker',
+          }),
+        );
         break;
 
       case 'access.logout':
@@ -926,23 +1008,32 @@ export class MoonrakerServer {
         break;
 
       case 'access.post_user':
-        client.ws.send(rpcResult(msg.id, {
-          username: String(msg.params?.username ?? 'elegoo'),
-          token: 'elegoo-compat-jwt-token',
-          refresh_token: 'elegoo-compat-refresh-token',
-          action: 'user_created',
-          source: 'moonraker',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            username: String(msg.params?.username ?? 'elegoo'),
+            token: 'elegoo-compat-jwt-token',
+            refresh_token: 'elegoo-compat-refresh-token',
+            action: 'user_created',
+            source: 'moonraker',
+          }),
+        );
         break;
 
       case 'access.delete_user':
-        client.ws.send(rpcResult(msg.id, { username: String(msg.params?.username ?? ''), action: 'user_deleted' }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            username: String(msg.params?.username ?? ''),
+            action: 'user_deleted',
+          }),
+        );
         break;
 
       case 'access.users.list':
-        client.ws.send(rpcResult(msg.id, {
-          users: [{ username: 'elegoo', source: 'moonraker', created_on: Date.now() / 1000 }],
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            users: [{ username: 'elegoo', source: 'moonraker', created_on: Date.now() / 1000 }],
+          }),
+        );
         break;
 
       case 'access.user.password':
@@ -950,12 +1041,14 @@ export class MoonrakerServer {
         break;
 
       case 'access.refresh_jwt':
-        client.ws.send(rpcResult(msg.id, {
-          username: 'elegoo',
-          token: 'elegoo-compat-jwt-token',
-          source: 'moonraker',
-          action: 'user_jwt_refresh',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            username: 'elegoo',
+            token: 'elegoo-compat-jwt-token',
+            source: 'moonraker',
+            action: 'user_jwt_refresh',
+          }),
+        );
         break;
 
       case 'access.get_api_key':
@@ -964,12 +1057,14 @@ export class MoonrakerServer {
         break;
 
       case 'access.info':
-        client.ws.send(rpcResult(msg.id, {
-          default_source: 'moonraker',
-          available_sources: ['moonraker'],
-          login_required: false,
-          trusted: true,
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            default_source: 'moonraker',
+            available_sources: ['moonraker'],
+            login_required: false,
+            trusted: true,
+          }),
+        );
         break;
 
       // ── Machine services (stubs) ──
@@ -983,43 +1078,89 @@ export class MoonrakerServer {
 
       // ── File management extras ──
       case 'server.files.post_directory':
-        client.ws.send(rpcResult(msg.id, {
-          item: { path: String(msg.params?.path ?? ''), root: 'gcodes', modified: Date.now() / 1000, size: 4096, permissions: 'rw' },
-          action: 'create_dir',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            item: {
+              path: String(msg.params?.path ?? ''),
+              root: 'gcodes',
+              modified: Date.now() / 1000,
+              size: 4096,
+              permissions: 'rw',
+            },
+            action: 'create_dir',
+          }),
+        );
         break;
 
       case 'server.files.delete_directory':
-        client.ws.send(rpcResult(msg.id, {
-          item: { path: String(msg.params?.path ?? ''), root: 'gcodes', modified: 0, size: 0, permissions: '' },
-          action: 'delete_dir',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            item: {
+              path: String(msg.params?.path ?? ''),
+              root: 'gcodes',
+              modified: 0,
+              size: 0,
+              permissions: '',
+            },
+            action: 'delete_dir',
+          }),
+        );
         break;
 
       case 'server.files.move':
-        client.ws.send(rpcResult(msg.id, {
-          item: { root: 'gcodes', path: String(msg.params?.dest ?? ''), modified: Date.now() / 1000, size: 0, permissions: 'rw' },
-          source_item: { path: String(msg.params?.source ?? ''), root: 'gcodes' },
-          action: 'move_file',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            item: {
+              root: 'gcodes',
+              path: String(msg.params?.dest ?? ''),
+              modified: Date.now() / 1000,
+              size: 0,
+              permissions: 'rw',
+            },
+            source_item: { path: String(msg.params?.source ?? ''), root: 'gcodes' },
+            action: 'move_file',
+          }),
+        );
         break;
 
       case 'server.files.copy':
-        client.ws.send(rpcResult(msg.id, {
-          item: { root: 'gcodes', path: String(msg.params?.dest ?? ''), modified: Date.now() / 1000, size: 0, permissions: 'rw' },
-          action: 'create_file',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            item: {
+              root: 'gcodes',
+              path: String(msg.params?.dest ?? ''),
+              modified: Date.now() / 1000,
+              size: 0,
+              permissions: 'rw',
+            },
+            action: 'create_file',
+          }),
+        );
         break;
 
       case 'server.files.delete_file':
-        client.ws.send(rpcResult(msg.id, {
-          item: { path: String(msg.params?.path ?? ''), root: 'gcodes', size: 0, modified: 0, permissions: '' },
-          action: 'delete_file',
-        }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            item: {
+              path: String(msg.params?.path ?? ''),
+              root: 'gcodes',
+              size: 0,
+              modified: 0,
+              permissions: '',
+            },
+            action: 'delete_file',
+          }),
+        );
         break;
 
       case 'server.files.metascan':
-        client.ws.send(rpcResult(msg.id, { size: 0, modified: Date.now() / 1000, filename: String(msg.params?.filename ?? '') }));
+        client.ws.send(
+          rpcResult(msg.id, {
+            size: 0,
+            modified: Date.now() / 1000,
+            filename: String(msg.params?.filename ?? ''),
+          }),
+        );
         break;
 
       case 'server.files.thumbnails': {
@@ -1103,10 +1244,17 @@ export class MoonrakerServer {
         klippy_connected: this.bridge.isConnected,
         klippy_state: this.bridge.isConnected ? 'ready' : 'error',
         components: [
-          'klippy_apis', 'file_manager', 'machine',
-          'data_store', 'history', 'octoprint_compat',
-          'webcam', 'database', 'authorization',
-          'announcements', 'job_queue',
+          'klippy_apis',
+          'file_manager',
+          'machine',
+          'data_store',
+          'history',
+          'octoprint_compat',
+          'webcam',
+          'database',
+          'authorization',
+          'announcements',
+          'job_queue',
         ],
         failed_components: [],
         registered_directories: ['gcodes'],
@@ -1162,10 +1310,12 @@ export class MoonrakerServer {
       };
 
       if (method === 'POST') {
-        readBody(req).then((body) => {
-          const parsed = JSON.parse(body);
-          handleQuery(parsed.objects || {});
-        }).catch(() => jsonError(res, 'Invalid JSON'));
+        readBody(req)
+          .then((body) => {
+            const parsed = JSON.parse(body);
+            handleQuery(parsed.objects || {});
+          })
+          .catch(() => jsonError(res, 'Invalid JSON'));
       } else {
         const objects: Record<string, string[] | null> = {};
         for (const [key, val] of Object.entries(query)) {
@@ -1185,15 +1335,17 @@ export class MoonrakerServer {
         this.bridge.sendCommand(1020, { filename, storage_media: 'udisk' });
         jsonResult(res, 'ok');
       } else {
-        readBody(req).then((body) => {
-          const parsed = JSON.parse(body);
-          if (parsed.filename) {
-            this.bridge.sendCommand(1020, { filename: parsed.filename, storage_media: 'udisk' });
-            jsonResult(res, 'ok');
-          } else {
-            jsonError(res, 'filename required');
-          }
-        }).catch(() => jsonError(res, 'Invalid JSON'));
+        readBody(req)
+          .then((body) => {
+            const parsed = JSON.parse(body);
+            if (parsed.filename) {
+              this.bridge.sendCommand(1020, { filename: parsed.filename, storage_media: 'udisk' });
+              jsonResult(res, 'ok');
+            } else {
+              jsonError(res, 'filename required');
+            }
+          })
+          .catch(() => jsonError(res, 'Invalid JSON'));
       }
       return;
     }
@@ -1222,36 +1374,38 @@ export class MoonrakerServer {
 
     // --- POST /printer/gcode/script ---
     if (urlPath === '/printer/gcode/script' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        const script = ((parsed.script as string) || '').trim().toUpperCase();
-        if (script === 'G28' || script.startsWith('G28 ')) {
-          this.bridge.sendCommand(1026, { axes: ['x', 'y', 'z'] });
-        } else if (script.startsWith('M104 ')) {
-          const m = script.match(/S(\d+)/);
-          if (m) this.bridge.sendCommand(1028, { extruder: parseInt(m[1]) });
-        } else if (script.startsWith('M140 ')) {
-          const m = script.match(/S(\d+)/);
-          if (m) this.bridge.sendCommand(1028, { heater_bed: parseInt(m[1]) });
-        } else if (script === 'M112') {
-          this.bridge.sendCommand(1022, {});
-        } else if (script.startsWith('SET_HEATER_TEMPERATURE')) {
-          const heater = script.match(/HEATER=(\S+)/)?.[1]?.toLowerCase();
-          const target = script.match(/TARGET=(\d+)/)?.[1];
-          if (heater && target !== undefined) {
-            const temp = parseInt(target);
-            if (heater === 'heater_bed') {
-              this.bridge.sendCommand(1028, { heater_bed: temp });
-            } else {
-              this.bridge.sendCommand(1028, { extruder: temp });
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          const script = ((parsed.script as string) || '').trim().toUpperCase();
+          if (script === 'G28' || script.startsWith('G28 ')) {
+            this.bridge.sendCommand(1026, { axes: ['x', 'y', 'z'] });
+          } else if (script.startsWith('M104 ')) {
+            const m = script.match(/S(\d+)/);
+            if (m) this.bridge.sendCommand(1028, { extruder: parseInt(m[1]) });
+          } else if (script.startsWith('M140 ')) {
+            const m = script.match(/S(\d+)/);
+            if (m) this.bridge.sendCommand(1028, { heater_bed: parseInt(m[1]) });
+          } else if (script === 'M112') {
+            this.bridge.sendCommand(1022, {});
+          } else if (script.startsWith('SET_HEATER_TEMPERATURE')) {
+            const heater = script.match(/HEATER=(\S+)/)?.[1]?.toLowerCase();
+            const target = script.match(/TARGET=(\d+)/)?.[1];
+            if (heater && target !== undefined) {
+              const temp = parseInt(target);
+              if (heater === 'heater_bed') {
+                this.bridge.sendCommand(1028, { heater_bed: temp });
+              } else {
+                this.bridge.sendCommand(1028, { extruder: temp });
+              }
             }
+          } else if (script === 'TURN_OFF_HEATERS') {
+            this.bridge.sendCommand(1028, { extruder: 0 });
+            this.bridge.sendCommand(1028, { heater_bed: 0 });
           }
-        } else if (script === 'TURN_OFF_HEATERS') {
-          this.bridge.sendCommand(1028, { extruder: 0 });
-          this.bridge.sendCommand(1028, { heater_bed: 0 });
-        }
-        jsonResult(res, 'ok');
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+          jsonResult(res, 'ok');
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1297,7 +1451,10 @@ export class MoonrakerServer {
 
     if (urlPath === '/server/files/metadata' && method === 'GET') {
       const filename = query.filename;
-      if (!filename) { jsonError(res, 'filename required'); return; }
+      if (!filename) {
+        jsonError(res, 'filename required');
+        return;
+      }
       const file = this.store.files.find((f) => f.filename === filename);
       if (file) {
         jsonResult(res, {
@@ -1318,7 +1475,10 @@ export class MoonrakerServer {
           size: 0,
           modified: Date.now() / 1000,
           filename,
-          estimated_time: ps.total_duration && ps.remaining_time_sec ? ps.total_duration + ps.remaining_time_sec : null,
+          estimated_time:
+            ps.total_duration && ps.remaining_time_sec
+              ? ps.total_duration + ps.remaining_time_sec
+              : null,
           layer_height: null,
           first_layer_height: null,
           object_height: null,
@@ -1352,12 +1512,12 @@ export class MoonrakerServer {
         extruder: {
           temperatures: temps,
           targets: nozzleTargets,
-          powers: nozzleTargets.map((t) => t > 0 ? 1 : 0),
+          powers: nozzleTargets.map((t) => (t > 0 ? 1 : 0)),
         },
         heater_bed: {
           temperatures: bedTemps,
           targets: bedTargets,
-          powers: bedTargets.map((t) => t > 0 ? 1 : 0),
+          powers: bedTargets.map((t) => (t > 0 ? 1 : 0)),
         },
         'temperature_sensor chamber': {
           temperatures: chamberTemps,
@@ -1376,19 +1536,25 @@ export class MoonrakerServer {
     if (urlPath === '/server/webcams/item' && method === 'GET') {
       const name = query.name ?? query.uid ?? '';
       const wc = this.getWebcams().find((w) => w.name === name || w.uid === name);
-      if (wc) { jsonResult(res, { webcam: wc }); } else { jsonError(res, `Webcam '${name}' not found`, 404); }
+      if (wc) {
+        jsonResult(res, { webcam: wc });
+      } else {
+        jsonError(res, `Webcam '${name}' not found`, 404);
+      }
       return;
     }
 
     // --- POST /server/webcams/item ---
     if (urlPath === '/server/webcams/item' && method === 'POST') {
-      readBody(req).then((body) => {
-        const wcData = JSON.parse(body) as Record<string, unknown>;
-        const wcName = String(wcData.name ?? `cam-${Date.now()}`);
-        const entry = { ...wcData, uid: wcData.uid ?? wcName, source: 'database' };
-        this.db.postItem('webcams', wcName, entry);
-        jsonResult(res, { webcam: entry });
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const wcData = JSON.parse(body) as Record<string, unknown>;
+          const wcName = String(wcData.name ?? `cam-${Date.now()}`);
+          const entry = { ...wcData, uid: wcData.uid ?? wcName, source: 'database' };
+          this.db.postItem('webcams', wcName, entry);
+          jsonResult(res, { webcam: entry });
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1429,12 +1595,14 @@ export class MoonrakerServer {
 
     // --- POST /server/database/item ---
     if (urlPath === '/server/database/item' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        const ns = String(parsed.namespace ?? '');
-        const key = String(parsed.key ?? '');
-        jsonResult(res, this.db.postItem(ns, key, parsed.value));
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          const ns = String(parsed.namespace ?? '');
+          const key = String(parsed.key ?? '');
+          jsonResult(res, this.db.postItem(ns, key, parsed.value));
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1493,8 +1661,12 @@ export class MoonrakerServer {
     if (urlPath === '/server/history/totals' && method === 'GET') {
       jsonResult(res, {
         job_totals: {
-          total_jobs: 0, total_time: 0, total_print_time: 0,
-          total_filament_used: 0, longest_job: 0, longest_print: 0,
+          total_jobs: 0,
+          total_time: 0,
+          total_print_time: 0,
+          total_filament_used: 0,
+          longest_job: 0,
+          longest_print: 0,
         },
         auxiliary_totals: [],
       });
@@ -1517,8 +1689,12 @@ export class MoonrakerServer {
     if (urlPath === '/server/history/reset_totals' && method === 'POST') {
       jsonResult(res, {
         last_totals: {
-          total_jobs: 0, total_time: 0, total_print_time: 0,
-          total_filament_used: 0, longest_job: 0, longest_print: 0,
+          total_jobs: 0,
+          total_time: 0,
+          total_print_time: 0,
+          total_filament_used: 0,
+          longest_job: 0,
+          longest_print: 0,
         },
         last_auxiliary_totals: [],
       });
@@ -1668,16 +1844,18 @@ export class MoonrakerServer {
     // --- Auth endpoints ---
     // POST /access/login
     if (urlPath === '/access/login' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        jsonResult(res, {
-          username: String(parsed.username ?? 'elegoo'),
-          token: 'elegoo-compat-jwt-token',
-          refresh_token: 'elegoo-compat-refresh-token',
-          action: 'user_logged_in',
-          source: 'moonraker',
-        });
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          jsonResult(res, {
+            username: String(parsed.username ?? 'elegoo'),
+            token: 'elegoo-compat-jwt-token',
+            refresh_token: 'elegoo-compat-refresh-token',
+            action: 'user_logged_in',
+            source: 'moonraker',
+          });
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1714,16 +1892,18 @@ export class MoonrakerServer {
 
     // POST /access/user (create user)
     if (urlPath === '/access/user' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        jsonResult(res, {
-          username: String(parsed.username ?? 'elegoo'),
-          token: 'elegoo-compat-jwt-token',
-          refresh_token: 'elegoo-compat-refresh-token',
-          action: 'user_created',
-          source: 'moonraker',
-        });
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          jsonResult(res, {
+            username: String(parsed.username ?? 'elegoo'),
+            token: 'elegoo-compat-jwt-token',
+            refresh_token: 'elegoo-compat-refresh-token',
+            action: 'user_created',
+            source: 'moonraker',
+          });
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1741,13 +1921,21 @@ export class MoonrakerServer {
 
     // --- POST /server/files/directory ---
     if (urlPath === '/server/files/directory' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        jsonResult(res, {
-          item: { path: String(parsed.path ?? ''), root: 'gcodes', modified: Date.now() / 1000, size: 4096, permissions: 'rw' },
-          action: 'create_dir',
-        });
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          jsonResult(res, {
+            item: {
+              path: String(parsed.path ?? ''),
+              root: 'gcodes',
+              modified: Date.now() / 1000,
+              size: 4096,
+              permissions: 'rw',
+            },
+            action: 'create_dir',
+          });
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1762,26 +1950,42 @@ export class MoonrakerServer {
 
     // --- POST /server/files/move ---
     if (urlPath === '/server/files/move' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        jsonResult(res, {
-          item: { root: 'gcodes', path: String(parsed.dest ?? ''), modified: Date.now() / 1000, size: 0, permissions: 'rw' },
-          source_item: { path: String(parsed.source ?? ''), root: 'gcodes' },
-          action: 'move_file',
-        });
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          jsonResult(res, {
+            item: {
+              root: 'gcodes',
+              path: String(parsed.dest ?? ''),
+              modified: Date.now() / 1000,
+              size: 0,
+              permissions: 'rw',
+            },
+            source_item: { path: String(parsed.source ?? ''), root: 'gcodes' },
+            action: 'move_file',
+          });
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
     // --- POST /server/files/copy ---
     if (urlPath === '/server/files/copy' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        jsonResult(res, {
-          item: { root: 'gcodes', path: String(parsed.dest ?? ''), modified: Date.now() / 1000, size: 0, permissions: 'rw' },
-          action: 'create_file',
-        });
-      }).catch(() => jsonError(res, 'Invalid JSON'));
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          jsonResult(res, {
+            item: {
+              root: 'gcodes',
+              path: String(parsed.dest ?? ''),
+              modified: Date.now() / 1000,
+              size: 0,
+              permissions: 'rw',
+            },
+            action: 'create_file',
+          });
+        })
+        .catch(() => jsonError(res, 'Invalid JSON'));
       return;
     }
 
@@ -1817,10 +2021,14 @@ export class MoonrakerServer {
       // Notify clients about delete
       for (const client of this.clients.values()) {
         if (client.ws.readyState === WebSocket.OPEN) {
-          client.ws.send(rpcNotify('notify_filelist_changed', [{
-            action: 'delete_file',
-            item: { path: decoded, root: 'gcodes', size: 0, modified: Date.now() / 1000 },
-          }]));
+          client.ws.send(
+            rpcNotify('notify_filelist_changed', [
+              {
+                action: 'delete_file',
+                item: { path: decoded, root: 'gcodes', size: 0, modified: Date.now() / 1000 },
+              },
+            ]),
+          );
         }
       }
       jsonResult(res, {
@@ -1836,12 +2044,14 @@ export class MoonrakerServer {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
       });
-      res.end(JSON.stringify({
-        elegoo_cc2_compat: true,
-        moonraker_version: MOONRAKER_VERSION,
-        message: 'Moonraker compatibility server for Elegoo CC2',
-        websocket: `ws://HOST:${this.config.moonrakerPort}/websocket`,
-      }));
+      res.end(
+        JSON.stringify({
+          elegoo_cc2_compat: true,
+          moonraker_version: MOONRAKER_VERSION,
+          message: 'Moonraker compatibility server for Elegoo CC2',
+          websocket: `ws://HOST:${this.config.moonrakerPort}/websocket`,
+        }),
+      );
       return;
     }
 
@@ -1852,13 +2062,22 @@ export class MoonrakerServer {
   // ── System info helpers ────────────────────────────────────────
 
   private getSystemInfo(): Record<string, unknown> {
-    const printerName = this.store.attributes?.hostname || this.store.attributes?.machine_model || 'Elegoo Centauri Carbon 2';
+    const printerName =
+      this.store.attributes?.hostname ||
+      this.store.attributes?.machine_model ||
+      'Elegoo Centauri Carbon 2';
     const totalMem = Math.round(totalmem() / 1024); // kB
     const cpuCount = cpus().length;
 
     // Build network info
     const netIfs = networkInterfaces();
-    const network: Record<string, { mac_address: string; ip_addresses: Array<{ family: string; address: string; is_link_local: boolean }> }> = {};
+    const network: Record<
+      string,
+      {
+        mac_address: string;
+        ip_addresses: Array<{ family: string; address: string; is_link_local: boolean }>;
+      }
+    > = {};
     for (const [name, addrs] of Object.entries(netIfs)) {
       if (!addrs || name === 'lo') continue;
       network[name] = {
@@ -1876,10 +2095,14 @@ export class MoonrakerServer {
     // Distribution info
     let distroName = `${platform()} ${release()}`;
     try {
-      const prettyName = execSync('grep PRETTY_NAME /etc/os-release 2>/dev/null', { encoding: 'utf8' });
+      const prettyName = execSync('grep PRETTY_NAME /etc/os-release 2>/dev/null', {
+        encoding: 'utf8',
+      });
       const match = prettyName.match(/PRETTY_NAME="(.+)"/);
       if (match) distroName = match[1];
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     return {
       system_info: {
@@ -1899,7 +2122,11 @@ export class MoonrakerServer {
           name: distroName,
           id: platform(),
           version: release(),
-          version_parts: { major: release().split('.')[0] || '', minor: release().split('.')[1] || '', build_number: '' },
+          version_parts: {
+            major: release().split('.')[0] || '',
+            minor: release().split('.')[1] || '',
+            build_number: '',
+          },
           like: '',
           codename: '',
         },
@@ -1954,9 +2181,15 @@ export class MoonrakerServer {
       const line = execSync('df -B1 / 2>/dev/null', { encoding: 'utf8' }).split('\n')[1];
       if (line) {
         const parts = line.trim().split(/\s+/);
-        return { total: parseInt(parts[1]) || 0, used: parseInt(parts[2]) || 0, free: parseInt(parts[3]) || 0 };
+        return {
+          total: parseInt(parts[1]) || 0,
+          used: parseInt(parts[2]) || 0,
+          free: parseInt(parts[3]) || 0,
+        };
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return { total: 0, used: 0, free: 0 };
   }
 
@@ -1965,29 +2198,34 @@ export class MoonrakerServer {
   // e.g. GET /server/files/gcodes/benchy.gcode
   private handleFileDownload(res: ServerResponse, filePath: string): void {
     log.info(`File download: ${filePath}`);
-    const proxyReq = httpRequest({
-      hostname: this.config.printerIp,
-      port: 80,
-      path: `/download?X-Token=${encodeURIComponent(this.config.printerPassword)}&file_name=${encodeURIComponent(filePath)}`,
-      method: 'GET',
-      timeout: 60_000,
-      // Printer sends both Content-Length and Transfer-Encoding: chunked (invalid HTTP)
-      insecureHTTPParser: true,
-    }, (proxyRes) => {
-      if (proxyRes.statusCode !== 200) {
-        jsonError(res, `Printer returned ${proxyRes.statusCode}`, proxyRes.statusCode ?? 502);
-        proxyRes.resume();
-        return;
-      }
-      const baseName = filePath.split('/').pop() || 'file';
-      res.writeHead(200, {
-        'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${baseName}"`,
-        'Access-Control-Allow-Origin': '*',
-        ...(proxyRes.headers['content-length'] ? { 'Content-Length': proxyRes.headers['content-length'] } : {}),
-      });
-      proxyRes.pipe(res);
-    });
+    const proxyReq = httpRequest(
+      {
+        hostname: this.config.printerIp,
+        port: 80,
+        path: `/download?X-Token=${encodeURIComponent(this.config.printerPassword)}&file_name=${encodeURIComponent(filePath)}`,
+        method: 'GET',
+        timeout: 60_000,
+        // Printer sends both Content-Length and Transfer-Encoding: chunked (invalid HTTP)
+        insecureHTTPParser: true,
+      },
+      (proxyRes) => {
+        if (proxyRes.statusCode !== 200) {
+          jsonError(res, `Printer returned ${proxyRes.statusCode}`, proxyRes.statusCode ?? 502);
+          proxyRes.resume();
+          return;
+        }
+        const baseName = filePath.split('/').pop() || 'file';
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${baseName}"`,
+          'Access-Control-Allow-Origin': '*',
+          ...(proxyRes.headers['content-length']
+            ? { 'Content-Length': proxyRes.headers['content-length'] }
+            : {}),
+        });
+        proxyRes.pipe(res);
+      },
+    );
     proxyReq.on('error', (err) => {
       log.error(`File download error: ${(err as NodeJS.ErrnoException).code} ${err.message}`);
       if (!res.headersSent) jsonError(res, 'Failed to connect to printer', 502);
@@ -2011,137 +2249,186 @@ export class MoonrakerServer {
     const boundary = boundaryMatch[1];
     const MAX_UPLOAD = 500 * 1024 * 1024; // 500 MB
 
-    readBodyRaw(req, MAX_UPLOAD).then(async (body) => {
-      // Parse all multipart parts
-      const parts = parseMultipartParts(body, boundary);
-      let fileData: Buffer | null = null;
-      let fileName = '';
-      let root = 'gcodes';
-      let path = '';
-      let startPrint = false;
+    readBodyRaw(req, MAX_UPLOAD)
+      .then(async (body) => {
+        // Parse all multipart parts
+        const parts = parseMultipartParts(body, boundary);
+        let fileData: Buffer | null = null;
+        let fileName = '';
+        let root = 'gcodes';
+        let path = '';
+        let startPrint = false;
 
-      for (const part of parts) {
-        if (part.name === 'file') {
-          fileData = part.data;
-          fileName = part.filename || 'upload.gcode';
-        } else if (part.name === 'root') {
-          root = part.data.toString('utf-8');
-        } else if (part.name === 'path') {
-          path = part.data.toString('utf-8');
-        } else if (part.name === 'print') {
-          startPrint = part.data.toString('utf-8') === 'true';
-        }
-      }
-
-      if (!fileData) {
-        jsonError(res, 'No file found in upload');
-        return;
-      }
-
-      // Build full path
-      const fullPath = path ? `${path}/${fileName}` : fileName;
-      log.info(`File upload: ${fullPath} (${formatSize(fileData.length)}, root: ${root})`);
-
-      // Only proxy gcodes to printer; config files are not supported
-      if (root !== 'gcodes') {
-        jsonResult(res, {
-          item: { path: fullPath, root, modified: Date.now() / 1000, size: fileData.length, permissions: 'rw' },
-          action: 'create_file',
-        });
-        return;
-      }
-
-      // Upload to printer in 1MB chunks via PUT
-      const md5 = createHash('md5').update(fileData).digest('hex');
-      const CHUNK_SIZE = 1024 * 1024;
-      const totalBytes = fileData.length;
-      let offset = 0;
-
-      while (offset < totalBytes) {
-        const end = Math.min(offset + CHUNK_SIZE, totalBytes);
-        const chunk = fileData.subarray(offset, end);
-        const result = await this.uploadChunk(fileName, md5, chunk, offset, end - 1, totalBytes);
-        if (result.error_code !== 0) {
-          // Retry once on offset mismatch
-          if (result.error_code === 9000) {
-            const retry = await this.uploadChunk(fileName, md5, chunk, offset, end - 1, totalBytes);
-            if (retry.error_code !== 0) {
-              jsonError(res, `Upload failed at offset ${offset} (error ${retry.error_code})`, 502);
-              return;
-            }
-          } else {
-            jsonError(res, `Upload failed at offset ${offset} (error ${result.error_code})`, 502);
-            return;
+        for (const part of parts) {
+          if (part.name === 'file') {
+            fileData = part.data;
+            fileName = part.filename || 'upload.gcode';
+          } else if (part.name === 'root') {
+            root = part.data.toString('utf-8');
+          } else if (part.name === 'path') {
+            path = part.data.toString('utf-8');
+          } else if (part.name === 'print') {
+            startPrint = part.data.toString('utf-8') === 'true';
           }
         }
-        offset = end;
-      }
 
-      log.info(`Upload complete: ${fileName} (${formatSize(totalBytes)}, MD5: ${md5})`);
-
-      // Cache the uploaded gcode on the service for preview
-      if (fileName.toLowerCase().endsWith('.gcode')) {
-        void cacheGcodeBuffer(fileName, fileData);
-      }
-
-      // Refresh file list from printer
-      this.bridge.sendCommand(1044, { storage_media: 'udisk' });
-
-      // Start print if requested
-      if (startPrint) {
-        this.bridge.sendCommand(1020, { filename: fileName, storage_media: 'udisk' });
-      }
-
-      jsonResult(res, {
-        item: { path: fullPath, root: 'gcodes', modified: Date.now() / 1000, size: totalBytes, permissions: 'rw' },
-        print_started: startPrint,
-        action: 'create_file',
-      });
-
-      // Notify WS clients about file change
-      for (const client of this.clients.values()) {
-        if (client.ws.readyState === WebSocket.OPEN) {
-          client.ws.send(rpcNotify('notify_filelist_changed', [{
-            action: 'create_file',
-            item: { path: fullPath, root: 'gcodes', size: totalBytes, modified: Date.now() / 1000 },
-          }]));
+        if (!fileData) {
+          jsonError(res, 'No file found in upload');
+          return;
         }
-      }
-    }).catch((err) => {
-      log.error(`Upload error: ${(err as Error).message}`);
-      if (!res.headersSent) jsonError(res, 'Upload failed', 500);
-    });
+
+        // Build full path
+        const fullPath = path ? `${path}/${fileName}` : fileName;
+        log.info(`File upload: ${fullPath} (${formatSize(fileData.length)}, root: ${root})`);
+
+        // Only proxy gcodes to printer; config files are not supported
+        if (root !== 'gcodes') {
+          jsonResult(res, {
+            item: {
+              path: fullPath,
+              root,
+              modified: Date.now() / 1000,
+              size: fileData.length,
+              permissions: 'rw',
+            },
+            action: 'create_file',
+          });
+          return;
+        }
+
+        // Upload to printer in 1MB chunks via PUT
+        const md5 = createHash('md5').update(fileData).digest('hex');
+        const CHUNK_SIZE = 1024 * 1024;
+        const totalBytes = fileData.length;
+        let offset = 0;
+
+        while (offset < totalBytes) {
+          const end = Math.min(offset + CHUNK_SIZE, totalBytes);
+          const chunk = fileData.subarray(offset, end);
+          const result = await this.uploadChunk(fileName, md5, chunk, offset, end - 1, totalBytes);
+          if (result.error_code !== 0) {
+            // Retry once on offset mismatch
+            if (result.error_code === 9000) {
+              const retry = await this.uploadChunk(
+                fileName,
+                md5,
+                chunk,
+                offset,
+                end - 1,
+                totalBytes,
+              );
+              if (retry.error_code !== 0) {
+                jsonError(
+                  res,
+                  `Upload failed at offset ${offset} (error ${retry.error_code})`,
+                  502,
+                );
+                return;
+              }
+            } else {
+              jsonError(res, `Upload failed at offset ${offset} (error ${result.error_code})`, 502);
+              return;
+            }
+          }
+          offset = end;
+        }
+
+        log.info(`Upload complete: ${fileName} (${formatSize(totalBytes)}, MD5: ${md5})`);
+
+        // Cache the uploaded gcode on the service for preview
+        if (fileName.toLowerCase().endsWith('.gcode')) {
+          void cacheGcodeBuffer(fileName, fileData);
+        }
+
+        // Refresh file list from printer
+        this.bridge.sendCommand(1044, { storage_media: 'udisk' });
+
+        // Start print if requested
+        if (startPrint) {
+          this.bridge.sendCommand(1020, { filename: fileName, storage_media: 'udisk' });
+        }
+
+        jsonResult(res, {
+          item: {
+            path: fullPath,
+            root: 'gcodes',
+            modified: Date.now() / 1000,
+            size: totalBytes,
+            permissions: 'rw',
+          },
+          print_started: startPrint,
+          action: 'create_file',
+        });
+
+        // Notify WS clients about file change
+        for (const client of this.clients.values()) {
+          if (client.ws.readyState === WebSocket.OPEN) {
+            client.ws.send(
+              rpcNotify('notify_filelist_changed', [
+                {
+                  action: 'create_file',
+                  item: {
+                    path: fullPath,
+                    root: 'gcodes',
+                    size: totalBytes,
+                    modified: Date.now() / 1000,
+                  },
+                },
+              ]),
+            );
+          }
+        }
+      })
+      .catch((err) => {
+        log.error(`Upload error: ${(err as Error).message}`);
+        if (!res.headersSent) jsonError(res, 'Upload failed', 500);
+      });
   }
 
   private uploadChunk(
-    fileName: string, md5: string, chunk: Buffer,
-    rangeStart: number, rangeEnd: number, totalSize: number,
+    fileName: string,
+    md5: string,
+    chunk: Buffer,
+    rangeStart: number,
+    rangeEnd: number,
+    totalSize: number,
   ): Promise<{ error_code: number }> {
     return new Promise((resolve, reject) => {
-      const req = httpRequest({
-        hostname: this.config.printerIp,
-        port: 80,
-        path: '/upload',
-        method: 'PUT',
-        timeout: 30_000,
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': chunk.length,
-          'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${totalSize}`,
-          'X-Token': this.config.printerPassword,
-          'X-File-Name': encodeURIComponent(fileName),
-          'X-File-MD5': md5,
+      const req = httpRequest(
+        {
+          hostname: this.config.printerIp,
+          port: 80,
+          path: '/upload',
+          method: 'PUT',
+          timeout: 30_000,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': chunk.length,
+            'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${totalSize}`,
+            'X-Token': this.config.printerPassword,
+            'X-File-Name': encodeURIComponent(fileName),
+            'X-File-MD5': md5,
+          },
         },
-      }, (proxyRes) => {
-        let body = '';
-        proxyRes.on('data', (d: Buffer) => { body += d.toString(); });
-        proxyRes.on('end', () => {
-          try { resolve(JSON.parse(body) as { error_code: number }); }
-          catch { resolve({ error_code: -1 }); }
-        });
-      });
+        (proxyRes) => {
+          let body = '';
+          proxyRes.on('data', (d: Buffer) => {
+            body += d.toString();
+          });
+          proxyRes.on('end', () => {
+            try {
+              resolve(JSON.parse(body) as { error_code: number });
+            } catch {
+              resolve({ error_code: -1 });
+            }
+          });
+        },
+      );
       req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('Upload chunk timeout')); });
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Upload chunk timeout'));
+      });
       req.write(chunk);
       req.end();
     });

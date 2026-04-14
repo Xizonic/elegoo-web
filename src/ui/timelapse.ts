@@ -25,7 +25,8 @@ export function renderTimelapse(state: PrinterState): void {
 
   const videos = state.timelapseList;
   if (!videos || !videos.length) {
-    container.innerHTML = '<div class="file-empty">No timelapse videos found. Click Refresh to load print history.</div>';
+    container.innerHTML =
+      '<div class="file-empty">No timelapse videos found. Click Refresh to load print history.</div>';
     return;
   }
 
@@ -33,8 +34,8 @@ export function renderTimelapse(state: PrinterState): void {
   for (const video of videos) {
     const name = String(video.filename || 'Unknown');
     const status = video.timelapse_status as number;
-    const videoUrl = video.timelapse_url as string || '';
-    const videoDuration = video.timelapse_duration as number || 0;
+    const videoUrl = (video.timelapse_url as string) || '';
+    const videoDuration = (video.timelapse_duration as number) || 0;
     const beginTime = video.begin_time as number | undefined;
     const time = beginTime ? new Date(beginTime * 1000).toLocaleString() : '';
     const durStr = videoDuration > 0 ? `${videoDuration}s` : '';
@@ -60,7 +61,7 @@ export function renderTimelapse(state: PrinterState): void {
   container.innerHTML = html;
 
   // Bind play buttons (for already-exported videos)
-  container.querySelectorAll('.timelapse-play-btn').forEach(btn => {
+  container.querySelectorAll('.timelapse-play-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const url = (e.currentTarget as HTMLElement).dataset.url;
       if (url) showTimelapsePlayer(url);
@@ -68,7 +69,7 @@ export function renderTimelapse(state: PrinterState): void {
   });
 
   // Bind export buttons (triggers method 1051 to generate the video)
-  container.querySelectorAll('.timelapse-export-btn').forEach(btn => {
+  container.querySelectorAll('.timelapse-export-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const url = (e.currentTarget as HTMLElement).dataset.url;
       if (url && playerClient) {
@@ -80,7 +81,7 @@ export function renderTimelapse(state: PrinterState): void {
   });
 }
 
-function formatDuration(seconds: number): string {
+function _formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return h > 0 ? `${h}h${m}m` : `${m}m`;

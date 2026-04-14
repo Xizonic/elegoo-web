@@ -18,11 +18,11 @@ import type { FanInfo } from '../types.js';
 import { getLogger } from './logger.js';
 import { loadavg, freemem } from 'os';
 
-const log = getLogger('Moonraker');
+const _log = getLogger('Moonraker');
 
 export const MOONRAKER_VERSION = 'v0.9.3-0-elegoo-compat';
 
-const fanPct = (f?: FanInfo) => f ? f.speed / 255 : 0; // 0..1 duty cycle
+const fanPct = (f?: FanInfo) => (f ? f.speed / 255 : 0); // 0..1 duty cycle
 
 function json(res: ServerResponse, data: unknown, status = 200): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -61,9 +61,17 @@ function parseQuery(url: string): Record<string, string> {
 
 /** List of Klipper-style printer objects we emulate */
 export const AVAILABLE_OBJECTS = [
-  'heater_bed', 'extruder', 'heaters', 'fan', 'gcode_move',
-  'print_stats', 'virtual_sdcard', 'display_status',
-  'toolhead', 'idle_timeout', 'system_stats',
+  'heater_bed',
+  'extruder',
+  'heaters',
+  'fan',
+  'gcode_move',
+  'print_stats',
+  'virtual_sdcard',
+  'display_status',
+  'toolhead',
+  'idle_timeout',
+  'system_stats',
   'temperature_sensor chamber',
 ];
 
@@ -147,7 +155,8 @@ export function queryObjects(
         const ps = s?.print_status;
         let state = 'standby';
         if (ms?.status === 2) state = 'printing';
-        else if (ms?.status === 3 || ms?.sub_status === 2502 || ms?.sub_status === 2505) state = 'paused';
+        else if (ms?.status === 3 || ms?.sub_status === 2502 || ms?.sub_status === 2505)
+          state = 'paused';
         else if (ms?.sub_status === 2077) state = 'complete';
         else if ((ms?.exception_status?.length ?? 0) > 0) state = 'error';
         result.print_stats = pick({
@@ -196,7 +205,7 @@ export function queryObjects(
           status: 'Ready',
           print_time: s?.print_status?.print_duration ?? 0,
           estimated_print_time: s?.print_status
-            ? (s.print_status.print_duration + s.print_status.remaining_time_sec)
+            ? s.print_status.print_duration + s.print_status.remaining_time_sec
             : 0,
           max_velocity: 500,
           max_accel: 5000,
@@ -234,13 +243,11 @@ export function queryObjects(
   return result;
 }
 
-
 export function createMoonrakerRouter(
   store: StateStore,
   bridge: MqttBridge,
   config: ServiceConfig,
 ): (req: IncomingMessage, res: ServerResponse) => boolean {
-
   /**
    * Returns true if the request was handled, false otherwise.
    * Caller should only invoke this for URLs starting with /moonraker/.
@@ -259,8 +266,12 @@ export function createMoonrakerRouter(
         klippy_connected: bridge.isConnected,
         klippy_state: bridge.isConnected ? 'ready' : 'error',
         components: [
-          'klippy_apis', 'file_manager', 'machine',
-          'data_store', 'history', 'octoprint_compat',
+          'klippy_apis',
+          'file_manager',
+          'machine',
+          'data_store',
+          'history',
+          'octoprint_compat',
         ],
         failed_components: [],
         registered_directories: ['gcodes'],
@@ -321,10 +332,12 @@ export function createMoonrakerRouter(
       };
 
       if (method === 'POST') {
-        readBody(req).then((body) => {
-          const parsed = JSON.parse(body);
-          handleQuery(parsed.objects || {});
-        }).catch(() => errorResponse(res, 'Invalid JSON'));
+        readBody(req)
+          .then((body) => {
+            const parsed = JSON.parse(body);
+            handleQuery(parsed.objects || {});
+          })
+          .catch(() => errorResponse(res, 'Invalid JSON'));
       } else {
         // Parse query string objects: ?gcode_move&toolhead=position,status
         const objects: Record<string, string[] | null> = {};
@@ -342,18 +355,20 @@ export function createMoonrakerRouter(
     if (path === '/printer/print/start' && method === 'POST') {
       const filename = query.filename;
       if (!filename) {
-        readBody(req).then((body) => {
-          const parsed = JSON.parse(body);
-          if (parsed.filename) {
-            bridge.sendCommand(1020, {
-              filename: parsed.filename,
-              storage_media: 'udisk',
-            });
-            json(res, 'ok');
-          } else {
-            errorResponse(res, 'filename required');
-          }
-        }).catch(() => errorResponse(res, 'Invalid JSON'));
+        readBody(req)
+          .then((body) => {
+            const parsed = JSON.parse(body);
+            if (parsed.filename) {
+              bridge.sendCommand(1020, {
+                filename: parsed.filename,
+                storage_media: 'udisk',
+              });
+              json(res, 'ok');
+            } else {
+              errorResponse(res, 'filename required');
+            }
+          })
+          .catch(() => errorResponse(res, 'Invalid JSON'));
       } else {
         bridge.sendCommand(1020, { filename, storage_media: 'udisk' });
         json(res, 'ok');
@@ -391,30 +406,32 @@ export function createMoonrakerRouter(
 
     // --- POST /printer/gcode/script ---
     if (path === '/printer/gcode/script' && method === 'POST') {
-      readBody(req).then((body) => {
-        const parsed = JSON.parse(body);
-        const script = (parsed.script || '').trim().toUpperCase();
-        // Handle common gcodes
-        if (script === 'G28' || script.startsWith('G28 ')) {
-          bridge.sendCommand(1026, { axes: ['x', 'y', 'z'] });
-        } else if (script.startsWith('M104 ')) {
-          const match = script.match(/S(\d+)/);
-          if (match) {
-            bridge.sendCommand(1028, { target: 'extruder', temperature: parseInt(match[1]) });
+      readBody(req)
+        .then((body) => {
+          const parsed = JSON.parse(body);
+          const script = (parsed.script || '').trim().toUpperCase();
+          // Handle common gcodes
+          if (script === 'G28' || script.startsWith('G28 ')) {
+            bridge.sendCommand(1026, { axes: ['x', 'y', 'z'] });
+          } else if (script.startsWith('M104 ')) {
+            const match = script.match(/S(\d+)/);
+            if (match) {
+              bridge.sendCommand(1028, { target: 'extruder', temperature: parseInt(match[1]) });
+            }
+          } else if (script.startsWith('M140 ')) {
+            const match = script.match(/S(\d+)/);
+            if (match) {
+              bridge.sendCommand(1028, { target: 'heater_bed', temperature: parseInt(match[1]) });
+            }
+          } else if (script === 'M112') {
+            bridge.sendCommand(1022, {});
+          } else if (script === 'TURN_OFF_HEATERS') {
+            bridge.sendCommand(1028, { target: 'extruder', temperature: 0 });
+            bridge.sendCommand(1028, { target: 'heater_bed', temperature: 0 });
           }
-        } else if (script.startsWith('M140 ')) {
-          const match = script.match(/S(\d+)/);
-          if (match) {
-            bridge.sendCommand(1028, { target: 'heater_bed', temperature: parseInt(match[1]) });
-          }
-        } else if (script === 'M112') {
-          bridge.sendCommand(1022, {});
-        } else if (script === 'TURN_OFF_HEATERS') {
-          bridge.sendCommand(1028, { target: 'extruder', temperature: 0 });
-          bridge.sendCommand(1028, { target: 'heater_bed', temperature: 0 });
-        }
-        json(res, 'ok');
-      }).catch(() => errorResponse(res, 'Invalid JSON'));
+          json(res, 'ok');
+        })
+        .catch(() => errorResponse(res, 'Invalid JSON'));
       return true;
     }
 
@@ -486,7 +503,10 @@ export function createMoonrakerRouter(
           size: 0,
           modified: Date.now() / 1000,
           filename,
-          estimated_time: ps.total_duration && ps.remaining_time_sec ? ps.total_duration + ps.remaining_time_sec : null,
+          estimated_time:
+            ps.total_duration && ps.remaining_time_sec
+              ? ps.total_duration + ps.remaining_time_sec
+              : null,
           layer_height: null,
           first_layer_height: null,
           object_height: null,
@@ -514,12 +534,12 @@ export function createMoonrakerRouter(
         extruder: {
           temperatures: temps,
           targets: nozzleTargets,
-          powers: nozzleTargets.map((t) => t > 0 ? 1 : 0),
+          powers: nozzleTargets.map((t) => (t > 0 ? 1 : 0)),
         },
         heater_bed: {
           temperatures: bedTemps,
           targets: bedTargets,
-          powers: bedTargets.map((t) => t > 0 ? 1 : 0),
+          powers: bedTargets.map((t) => (t > 0 ? 1 : 0)),
         },
         'temperature_sensor chamber': {
           temperatures: chamberTemps,
@@ -545,24 +565,28 @@ export function createMoonrakerRouter(
 
     // --- GET /server/webcams/list ---
     if (path === '/server/webcams/list' && method === 'GET') {
-      const webcams = config.cameraEnabled ? [{
-        name: 'default',
-        location: 'printer',
-        service: 'mjpegstreamer',
-        enabled: true,
-        icon: 'mdiWebcam',
-        target_fps: 15,
-        target_fps_idle: 5,
-        stream_url: '/api/stream',
-        snapshot_url: '/api/snapshot',
-        flip_horizontal: false,
-        flip_vertical: false,
-        rotation: 0,
-        aspect_ratio: '4:3',
-        extra_data: {},
-        source: 'config',
-        uid: 'default-webcam',
-      }] : [];
+      const webcams = config.cameraEnabled
+        ? [
+            {
+              name: 'default',
+              location: 'printer',
+              service: 'mjpegstreamer',
+              enabled: true,
+              icon: 'mdiWebcam',
+              target_fps: 15,
+              target_fps_idle: 5,
+              stream_url: '/api/stream',
+              snapshot_url: '/api/snapshot',
+              flip_horizontal: false,
+              flip_vertical: false,
+              rotation: 0,
+              aspect_ratio: '4:3',
+              extra_data: {},
+              source: 'config',
+              uid: 'default-webcam',
+            },
+          ]
+        : [];
       json(res, { webcams });
       return true;
     }

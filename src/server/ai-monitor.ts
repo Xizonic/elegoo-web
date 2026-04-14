@@ -22,7 +22,6 @@ import type { StateStore, PrintEvent } from './state-store.js';
 import { getSnapshot } from './rest-api.js';
 import sharp from 'sharp';
 import { getLogger } from './logger.js';
-import { isFilamentChangeSubStatus } from '../types.js';
 
 const log = getLogger('AI');
 
@@ -59,8 +58,8 @@ export interface AIAlert {
 /** Chart data point emitted with each analysis cycle */
 export interface AIChartData {
   t: number;
-  motion: number;                        // 0-100 percentage
-  scores: Record<string, number>;        // group name → 0-100
+  motion: number; // 0-100 percentage
+  scores: Record<string, number>; // group name → 0-100
 }
 
 // ---- Classification Groups (for charting) ----
@@ -73,15 +72,29 @@ const CLASSIFICATION_GROUPS = [
   'Other',
 ] as const;
 
-type ClassificationGroup = typeof CLASSIFICATION_GROUPS[number];
+type ClassificationGroup = (typeof CLASSIFICATION_GROUPS)[number];
 
 /** Map a CLIP label to one of the 5 chart groups (fallback for configs without group field) */
 function categorizeLabel(label: string): ClassificationGroup {
   const l = label.toLowerCase();
-  if (l.includes('actively printing') || l.includes('being extruded') || l.includes('starting layers')) return 'Print in Progress';
-  if (l.includes('spaghetti') || l.includes('tangled') || l.includes('disaster') ||
-      l.includes('layer shift') || l.includes('warping') || l.includes('stringing') || l.includes('strings') ||
-      l.includes('blob') || l.includes('fell off') || l.includes('unstuck'))
+  if (
+    l.includes('actively printing') ||
+    l.includes('being extruded') ||
+    l.includes('starting layers')
+  )
+    return 'Print in Progress';
+  if (
+    l.includes('spaghetti') ||
+    l.includes('tangled') ||
+    l.includes('disaster') ||
+    l.includes('layer shift') ||
+    l.includes('warping') ||
+    l.includes('stringing') ||
+    l.includes('strings') ||
+    l.includes('blob') ||
+    l.includes('fell off') ||
+    l.includes('unstuck')
+  )
     return 'Spaghetti/Failure';
   if (l.includes('empty') && l.includes('bed')) return 'Empty Bed';
   return 'Other';
@@ -106,19 +119,20 @@ const DEFAULT_CLIP_LABELS: readonly string[] = [
 ] as const;
 
 /** Map CLIP label indices to issue types and severity */
-const DEFAULT_LABEL_ISSUE_MAP: Record<number, { type: string; severity: 'warning' | 'critical' }> = {
-  1: { type: 'spaghetti', severity: 'critical' },
-  2: { type: 'spaghetti', severity: 'critical' },
-  3: { type: 'bed_adhesion', severity: 'critical' },
-  4: { type: 'stringing', severity: 'warning' },
-  5: { type: 'layer_shift', severity: 'critical' },
-  6: { type: 'warping', severity: 'warning' },
-  7: { type: 'blob', severity: 'critical' },
-  8: { type: 'empty_bed', severity: 'critical' },
-};
+const DEFAULT_LABEL_ISSUE_MAP: Record<number, { type: string; severity: 'warning' | 'critical' }> =
+  {
+    1: { type: 'spaghetti', severity: 'critical' },
+    2: { type: 'spaghetti', severity: 'critical' },
+    3: { type: 'bed_adhesion', severity: 'critical' },
+    4: { type: 'stringing', severity: 'warning' },
+    5: { type: 'layer_shift', severity: 'critical' },
+    6: { type: 'warping', severity: 'warning' },
+    7: { type: 'blob', severity: 'critical' },
+    8: { type: 'empty_bed', severity: 'critical' },
+  };
 
 const DEFAULT_WARN_THRESHOLD = 0.25;
-const DEFAULT_CRIT_THRESHOLD = 0.40;
+const DEFAULT_CRIT_THRESHOLD = 0.4;
 
 // ---- AI Label Configuration (persisted to disk) ----
 
@@ -226,7 +240,10 @@ const VLM_USER_PROMPT = 'Analyze this 3D print camera image for print quality is
 
 // ---- Local CLIP Analyzer ----
 
-type CLIPClassifier = (image: Blob, labels: string[]) => Promise<Array<{ label: string; score: number }>>;
+type CLIPClassifier = (
+  image: Blob,
+  labels: string[],
+) => Promise<Array<{ label: string; score: number }>>;
 
 class LocalAnalyzer {
   private classifier: CLIPClassifier | null = null;
@@ -238,7 +255,9 @@ class LocalAnalyzer {
     this.model = model;
   }
 
-  get ready(): boolean { return this._ready; }
+  get ready(): boolean {
+    return this._ready;
+  }
 
   async initialize(): Promise<void> {
     if (this._ready || this.loading) return;
@@ -256,11 +275,10 @@ class LocalAnalyzer {
       env.allowLocalModels = true;
       env.cacheDir = '.cache/models';
 
-      this.classifier = await pipeline(
-        'zero-shot-image-classification',
-        this.model,
-        { dtype: 'q8', device: 'cpu' },
-      ) as unknown as CLIPClassifier;
+      this.classifier = (await pipeline('zero-shot-image-classification', this.model, {
+        dtype: 'q8',
+        device: 'cpu',
+      })) as unknown as CLIPClassifier;
 
       this._ready = true;
       log.info(`Model loaded in ${Date.now() - start}ms`);
@@ -286,7 +304,7 @@ class LocalAnalyzer {
     }
 
     try {
-      const labels = labelConfigs.map(c => c.label);
+      const labels = labelConfigs.map((c) => c.label);
       const blob = new Blob([new Uint8Array(jpeg)], { type: 'image/jpeg' });
       const rawResults = await this.classifier(blob, labels);
 
@@ -294,9 +312,10 @@ class LocalAnalyzer {
       // Normalize to a relative distribution (like CLIP softmax) so that
       // existing thresholds (15%, 30%) remain meaningful.
       const sumRaw = rawResults.reduce((s, r) => s + r.score, 0);
-      const results = sumRaw > 0
-        ? rawResults.map(r => ({ label: r.label, score: r.score / sumRaw }))
-        : rawResults;
+      const results =
+        sumRaw > 0
+          ? rawResults.map((r) => ({ label: r.label, score: r.score / sumRaw }))
+          : rawResults;
 
       // Results are sorted by score descending
       const top = results[0];
@@ -314,7 +333,7 @@ class LocalAnalyzer {
       const bestOkScore = results.reduce((max, r) => {
         const idx = labels.indexOf(r.label);
         const c = idx >= 0 ? labelConfigs[idx] : undefined;
-        return (c?.severity === 'ok' && r.score > max) ? r.score : max;
+        return c?.severity === 'ok' && r.score > max ? r.score : max;
       }, 0);
 
       // Check all results for issue labels above confidence threshold
@@ -353,7 +372,7 @@ class LocalAnalyzer {
         description: `${topLabel} (${Math.round(top.score * 100)}%)`,
         durationMs: Date.now() - start,
         classificationScores: groupScores,
-        labelScores: results.map(r => ({ label: r.label, score: r.score })),
+        labelScores: results.map((r) => ({ label: r.label, score: r.score })),
       };
     } catch (err) {
       const msg = (err as Error).message;
@@ -377,45 +396,44 @@ class LocalAnalyzer {
 
 // ---- VLM Analyzer ----
 
-async function analyzeWithVlm(
-  jpeg: Buffer,
-  config: ServiceConfig,
-): Promise<AIAnalysis> {
+async function analyzeWithVlm(jpeg: Buffer, config: ServiceConfig): Promise<AIAnalysis> {
   const start = Date.now();
   const base64 = jpeg.toString('base64');
   const isOllama = config.aiVlmProvider === 'ollama';
 
   try {
     // Build request body — Ollama and OpenAI use different image formats
-    const body = isOllama ? {
-      model: config.aiVlmModel,
-      messages: [
-        { role: 'system', content: VLM_SYSTEM_PROMPT },
-        { role: 'user', content: VLM_USER_PROMPT, images: [base64] },
-      ],
-      stream: false,
-      options: { temperature: 0.1 },
-    } : {
-      model: config.aiVlmModel,
-      messages: [
-        { role: 'system', content: VLM_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: VLM_USER_PROMPT },
+    const body = isOllama
+      ? {
+          model: config.aiVlmModel,
+          messages: [
+            { role: 'system', content: VLM_SYSTEM_PROMPT },
+            { role: 'user', content: VLM_USER_PROMPT, images: [base64] },
+          ],
+          stream: false,
+          options: { temperature: 0.1 },
+        }
+      : {
+          model: config.aiVlmModel,
+          messages: [
+            { role: 'system', content: VLM_SYSTEM_PROMPT },
             {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${base64}`,
-                detail: 'low',
-              },
+              role: 'user',
+              content: [
+                { type: 'text', text: VLM_USER_PROMPT },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${base64}`,
+                    detail: 'low',
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-      max_tokens: 500,
-      temperature: 0.1,
-    };
+          max_tokens: 500,
+          temperature: 0.1,
+        };
 
     // Build endpoint URL
     const endpoint = isOllama
@@ -447,7 +465,7 @@ async function analyzeWithVlm(
       throw new Error(`VLM API ${res.status}: ${errText.slice(0, 200)}`);
     }
 
-    const data = await res.json() as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
 
     // Extract content — Ollama uses data.message.content, OpenAI uses data.choices[0].message.content
     let content: string;
@@ -632,11 +650,13 @@ export class AIMonitor extends EventEmitter {
         source: 'motion',
         status: 'warning',
         confidence: Math.min(0.9, 0.3 + this.consecutiveLowMotion * 0.1),
-        issues: [{
-          type: 'print_stalled',
-          description: `No motion detected for ${this.consecutiveLowMotion} consecutive frames`,
-          confidence: Math.min(0.9, 0.3 + this.consecutiveLowMotion * 0.1),
-        }],
+        issues: [
+          {
+            type: 'print_stalled',
+            description: `No motion detected for ${this.consecutiveLowMotion} consecutive frames`,
+            confidence: Math.min(0.9, 0.3 + this.consecutiveLowMotion * 0.1),
+          },
+        ],
         description: `Print may be stalled — no motion for ${this.consecutiveLowMotion} frames`,
         durationMs: 0,
       };
@@ -650,7 +670,7 @@ export class AIMonitor extends EventEmitter {
     const classScores: Record<string, number> = {};
     for (const g of CLASSIFICATION_GROUPS) classScores[g] = 0;
     // Use local CLIP scores if available, otherwise leave at 0
-    const localResult = results.find(r => r.source === 'local');
+    const localResult = results.find((r) => r.source === 'local');
     if (localResult?.classificationScores) {
       Object.assign(classScores, localResult.classificationScores);
     }
@@ -687,12 +707,12 @@ export class AIMonitor extends EventEmitter {
       const cooldown = this.config.aiAlertCooldownSec * 1000;
       if (now - this.lastAlertTime > cooldown) {
         this.lastAlertTime = now;
-        const allIssues = results.flatMap(r => r.issues);
+        const allIssues = results.flatMap((r) => r.issues);
         const alert: AIAlert = {
           timestamp: now,
           status: worstStatus === 'ok' ? 'warning' : worstStatus,
           issues: allIssues,
-          description: results.map(r => r.description).join(' | '),
+          description: results.map((r) => r.description).join(' | '),
           consecutiveWarnings: this.consecutiveWarnings,
         };
         log.info(`🚨 ALERT: ${alert.description}`);
@@ -717,8 +737,12 @@ export class AIMonitor extends EventEmitter {
     return latest;
   }
 
-  get isRunning(): boolean { return this._running; }
-  get monitoring(): boolean { return this.isPrinting && this.timer !== null; }
+  get isRunning(): boolean {
+    return this._running;
+  }
+  get monitoring(): boolean {
+    return this.isPrinting && this.timer !== null;
+  }
 
   /** Config summary for UI display */
   getConfigSummary(): Record<string, unknown> {
@@ -789,16 +813,20 @@ export class AIMonitor extends EventEmitter {
   async start(): Promise<void> {
     this._running = true;
     log.info('Monitor started');
-    log.info(`VLM: ${this.config.aiVlmEnabled ? `${this.config.aiVlmModel} @ ${this.config.aiVlmBaseUrl} (${this.config.aiVlmProvider})` : 'disabled'}`);
+    log.info(
+      `VLM: ${this.config.aiVlmEnabled ? `${this.config.aiVlmModel} @ ${this.config.aiVlmBaseUrl} (${this.config.aiVlmProvider})` : 'disabled'}`,
+    );
     log.info(`Local: ${this.config.aiLocalEnabled ? this.config.aiLocalModel : 'disabled'}`);
-    log.info(`Interval: ${this.config.aiIntervalSec}s, Alert threshold: ${this.config.aiAlertThreshold}`);
+    log.info(
+      `Interval: ${this.config.aiIntervalSec}s, Alert threshold: ${this.config.aiAlertThreshold}`,
+    );
 
     // Load persisted label configs
     await this.loadLabelConfigs();
 
     // Pre-load CLIP model in background (takes a few seconds on first run)
     if (this.config.aiLocalEnabled) {
-      this.localAnalyzer.initialize().catch(err => {
+      this.localAnalyzer.initialize().catch((err) => {
         log.error('Failed to initialize CLIP:', (err as Error).message);
       });
     }

@@ -17,10 +17,10 @@ export function registerCommands(
   bot.command('start', async (ctx) => {
     await ctx.reply(
       '🖨 *Elegoo CC2 Telegram Bot*\n\n' +
-      'Commands:\n' +
-      '/status — Current printer status\n' +
-      '/photo — Camera snapshot\n' +
-      '/help — Show this message',
+        'Commands:\n' +
+        '/status — Current printer status\n' +
+        '/photo — Camera snapshot\n' +
+        '/help — Show this message',
       { parse_mode: 'MarkdownV2' },
     );
   });
@@ -28,8 +28,8 @@ export function registerCommands(
   bot.command('help', async (ctx) => {
     await ctx.reply(
       '🖨 *Elegoo CC2 Telegram Bot*\n\n' +
-      '/status — Current printer status\n' +
-      '/photo — Camera snapshot',
+        '/status — Current printer status\n' +
+        '/photo — Camera snapshot',
       { parse_mode: 'MarkdownV2' },
     );
   });

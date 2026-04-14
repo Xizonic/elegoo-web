@@ -37,7 +37,11 @@ export class WebSocketTransport {
   private services: ServiceStatusProvider = { telegram: null, aiMonitor: null };
   private startTime = Date.now();
 
-  constructor(server: Server, private store: StateStore, private bridge: MqttBridge) {
+  constructor(
+    server: Server,
+    private store: StateStore,
+    private bridge: MqttBridge,
+  ) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
     this.wss.on('connection', (ws) => {
@@ -88,13 +92,19 @@ export class WebSocketTransport {
       this.broadcast({ type: 'filament_usage', usage });
     });
 
-    store.on('zone_change', (data: { from: string; to: string; x: number; y: number; timestamp: number }) => {
-      this.broadcast({ type: 'zone_change', ...data });
-    });
+    store.on(
+      'zone_change',
+      (data: { from: string; to: string; x: number; y: number; timestamp: number }) => {
+        this.broadcast({ type: 'zone_change', ...data });
+      },
+    );
 
-    store.on('ai_chart_data', (point: { t: number; motion: number; scores: Record<string, number> }) => {
-      this.broadcast({ type: 'ai_chart_data', ...point });
-    });
+    store.on(
+      'ai_chart_data',
+      (point: { t: number; motion: number; scores: Record<string, number> }) => {
+        this.broadcast({ type: 'ai_chart_data', ...point });
+      },
+    );
 
     bridge.on('connected', () => {
       this.broadcast({ type: 'connection', connected: true, sn: bridge.serialNumber });
@@ -138,10 +148,16 @@ export class WebSocketTransport {
       printerIp: this.bridge.ip,
       wsClients: this.wss.clients.size,
       telegram: this.services.telegram
-        ? (this.services.telegram.isRunning ? 'running' : 'stopped')
+        ? this.services.telegram.isRunning
+          ? 'running'
+          : 'stopped'
         : 'disabled',
       ai: this.services.aiMonitor
-        ? (this.services.aiMonitor.monitoring ? 'monitoring' : (this.services.aiMonitor.isRunning ? 'idle' : 'stopped'))
+        ? this.services.aiMonitor.monitoring
+          ? 'monitoring'
+          : this.services.aiMonitor.isRunning
+            ? 'idle'
+            : 'stopped'
         : 'disabled',
       aiConfig: this.services.aiMonitor?.getConfigSummary() ?? null,
       camera: getCameraHealth(),

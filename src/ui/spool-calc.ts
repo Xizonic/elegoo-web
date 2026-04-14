@@ -1,6 +1,5 @@
 /** Spool Calculator — visualizes remaining filament on a spool */
 
-import { $ } from './helpers';
 
 // Material densities in g/cm³
 const MATERIALS: Record<string, number> = {
@@ -11,7 +10,7 @@ const MATERIALS: Record<string, number> = {
   ASA: 1.07,
   TPU: 1.21,
   PA: 1.14,
-  PC: 1.20,
+  PC: 1.2,
   HIPS: 1.04,
   PVA: 1.23,
 };
@@ -19,14 +18,14 @@ const MATERIALS: Record<string, number> = {
 const STORAGE_KEY = 'elegoo-web-spool-calc';
 
 interface SpoolParams {
-  hubDiameter: number;      // mm — inner diameter (the core around which filament is wound)
-  flangeDiameter: number;   // mm — outer diameter of the spool flanges
-  spoolWidth: number;       // mm — width/depth of the spool
-  emptyWeight: number;      // g — weight of the empty spool (no filament)
-  currentWeight: number;    // g — current total weight (spool + remaining filament)
+  hubDiameter: number; // mm — inner diameter (the core around which filament is wound)
+  flangeDiameter: number; // mm — outer diameter of the spool flanges
+  spoolWidth: number; // mm — width/depth of the spool
+  emptyWeight: number; // g — weight of the empty spool (no filament)
+  currentWeight: number; // g — current total weight (spool + remaining filament)
   filamentDiameter: number; // mm — 1.75 or 2.85
-  material: string;         // key into MATERIALS
-  fullWeight: number;       // g — full spool weight (spool + full filament, e.g. empty + 1000)
+  material: string; // key into MATERIALS
+  fullWeight: number; // g — full spool weight (spool + full filament, e.g. empty + 1000)
   currentOuterDiameter: number; // mm — measured outer diameter of remaining filament on spool
 }
 
@@ -46,7 +45,9 @@ function loadParams(): SpoolParams {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return { ...DEFAULTS };
 }
 
@@ -55,7 +56,12 @@ function saveParams(p: SpoolParams): void {
 }
 
 /** Convert outer diameter (mm) to filament mass (grams) using spool geometry */
-function outerDiameterToMass(outerDiameter: number, hubDiameter: number, spoolWidth: number, material: string): number {
+function outerDiameterToMass(
+  outerDiameter: number,
+  hubDiameter: number,
+  spoolWidth: number,
+  material: string,
+): number {
   const density = MATERIALS[material] ?? 1.24;
   const outerR = outerDiameter / 2 / 10; // cm
   const hubR = hubDiameter / 2 / 10; // cm
@@ -89,10 +95,14 @@ function calculate(p: SpoolParams) {
   const hubRadiusCm = hubRadius / 10; // cm
 
   // V = π × (R² - r²) × W → R = sqrt(V / (π × W) + r²)
-  const currentOuterRadiusCm = Math.sqrt(volume / (Math.PI * spoolWidthCm) + hubRadiusCm * hubRadiusCm);
+  const currentOuterRadiusCm = Math.sqrt(
+    volume / (Math.PI * spoolWidthCm) + hubRadiusCm * hubRadiusCm,
+  );
   const currentOuterRadius = currentOuterRadiusCm * 10; // back to mm
 
-  const fullOuterRadiusCm = Math.sqrt(fullVolume / (Math.PI * spoolWidthCm) + hubRadiusCm * hubRadiusCm);
+  const fullOuterRadiusCm = Math.sqrt(
+    fullVolume / (Math.PI * spoolWidthCm) + hubRadiusCm * hubRadiusCm,
+  );
   const fullOuterRadius = fullOuterRadiusCm * 10; // mm
 
   const percentRemaining = fullFilamentMass > 0 ? (filamentMass / fullFilamentMass) * 100 : 0;
@@ -302,9 +312,12 @@ export function renderSpoolCalc(): void {
           <div class="form-group">
             <label for="sc-material">Material</label>
             <select id="sc-material" class="log-select">
-              ${Object.keys(MATERIALS).map(m =>
-                `<option value="${m}"${m === p.material ? ' selected' : ''}>${m} (${MATERIALS[m]} g/cm³)</option>`
-              ).join('')}
+              ${Object.keys(MATERIALS)
+                .map(
+                  (m) =>
+                    `<option value="${m}"${m === p.material ? ' selected' : ''}>${m} (${MATERIALS[m]} g/cm³)</option>`,
+                )
+                .join('')}
             </select>
           </div>
           <div class="form-group">
@@ -407,8 +420,9 @@ function updateCalc(p: SpoolParams): void {
   // Sync outer diameter display from calculated value (when weight is edited manually)
   const outerDiaEl = document.getElementById('sc-outer-dia') as HTMLInputElement | null;
   if (outerDiaEl && document.activeElement !== outerDiaEl) {
-    outerDiaEl.value = calc.currentOuterRadius > p.hubDiameter / 2
-      ? Math.round(calc.currentOuterRadius * 2).toString()
-      : '';
+    outerDiaEl.value =
+      calc.currentOuterRadius > p.hubDiameter / 2
+        ? Math.round(calc.currentOuterRadius * 2).toString()
+        : '';
   }
 }

@@ -6,7 +6,10 @@ let controlsBound = false;
 
 /** Track in-flight commands by unique ID → method + elements to re-enable */
 let nextCmdId = 0;
-const inFlight = new Map<number, { method: number; elements: HTMLElement[]; timer: ReturnType<typeof setTimeout> }>();
+const inFlight = new Map<
+  number,
+  { method: number; elements: HTMLElement[]; timer: ReturnType<typeof setTimeout> }
+>();
 
 /** Per-method throttle: timestamp of last command sent */
 const THROTTLE_MS = 100;
@@ -49,8 +52,8 @@ function guardedSend(
   const timeouts: Record<number, number> = {
     1024: 300_000, // Feed — 5 min
     1025: 300_000, // Retreat — 5 min
-    1026: 50_000,  // Home — 50s
-    1027: 25_000,  // Move — 25s
+    1026: 50_000, // Home — 50s
+    1027: 25_000, // Move — 25s
     1032: 300_000, // AutoLevel — 5 min
     1033: 300_000, // VibrationOptimize — 5 min
     1034: 300_000, // PID — 5 min
@@ -124,7 +127,7 @@ export function bindControls(client: CommandSender): void {
   });
 
   // Move buttons — XY pad and Z column
-  document.querySelectorAll('.move-btn:not(.home-btn)').forEach(btn => {
+  document.querySelectorAll('.move-btn:not(.home-btn)').forEach((btn) => {
     btn.addEventListener('click', () => {
       const el = btn as HTMLElement;
       const axis = el.dataset.axis;
@@ -150,16 +153,16 @@ export function bindControls(client: CommandSender): void {
   btnHomeAllZ.addEventListener('click', homeAll);
 
   // Distance buttons
-  document.querySelectorAll('.dist-btn').forEach(btn => {
+  document.querySelectorAll('.dist-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       currentMoveDistance = parseFloat((btn as HTMLElement).dataset.dist ?? '10');
-      document.querySelectorAll('.dist-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.dist-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
     });
   });
 
   // Speed mode
-  document.querySelectorAll('.speed-btn').forEach(btn => {
+  document.querySelectorAll('.speed-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const mode = parseInt((btn as HTMLElement).dataset.mode ?? '100');
       guardedSend(client, 1031, { mode }, btn as HTMLElement);
@@ -181,12 +184,13 @@ export function bindControls(client: CommandSender): void {
   });
 
   // Fan +/- buttons
-  document.querySelectorAll('.fan-dec, .fan-inc').forEach(btn => {
+  document.querySelectorAll('.fan-dec, .fan-inc').forEach((btn) => {
     btn.addEventListener('click', () => {
       const el = btn as HTMLElement;
       const fanKey = el.dataset.fan!;
       const step = parseInt(el.dataset.step ?? '13'); // ~5% of 255
-      const barId = fanKey === 'fan' ? 'fan-model-bar' : fanKey === 'aux_fan' ? 'fan-aux-bar' : 'fan-case-bar';
+      const barId =
+        fanKey === 'fan' ? 'fan-model-bar' : fanKey === 'aux_fan' ? 'fan-aux-bar' : 'fan-case-bar';
       const bar = $(barId) as HTMLElement;
       const currentPct = parseFloat(bar.style.width) || 0;
       const currentVal = Math.round((currentPct / 100) * 255);
@@ -202,7 +206,7 @@ export function bindControls(client: CommandSender): void {
   });
 
   // Temperature presets
-  document.querySelectorAll('.temp-preset-btn').forEach(btn => {
+  document.querySelectorAll('.temp-preset-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const el = btn as HTMLElement;
       const nozzle = parseInt(el.dataset.nozzle ?? '0');
@@ -221,15 +225,22 @@ export function bindControls(client: CommandSender): void {
     captureBtn.disabled = true;
     captureBtn.textContent = `⏳ ${duration}s...`;
     try {
-      const res = await fetchTimeout('/api/debug/capture', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duration }),
-      }, 30_000);
-      const data = await res.json() as { ok?: boolean; file?: string; error?: string };
+      const res = await fetchTimeout(
+        '/api/debug/capture',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ duration }),
+        },
+        30_000,
+      );
+      const data = (await res.json()) as { ok?: boolean; file?: string; error?: string };
       if (!res.ok) {
         captureBtn.textContent = '❌ ' + (data.error ?? 'Error');
-        setTimeout(() => { captureBtn.textContent = '📥 Capture'; captureBtn.disabled = false; }, 3000);
+        setTimeout(() => {
+          captureBtn.textContent = '📥 Capture';
+          captureBtn.disabled = false;
+        }, 3000);
         return;
       }
       // Countdown
@@ -241,12 +252,18 @@ export function bindControls(client: CommandSender): void {
         } else {
           clearInterval(timer);
           captureBtn.textContent = '✅ Saved!';
-          setTimeout(() => { captureBtn.textContent = '📥 Capture'; captureBtn.disabled = false; }, 3000);
+          setTimeout(() => {
+            captureBtn.textContent = '📥 Capture';
+            captureBtn.disabled = false;
+          }, 3000);
         }
       }, 1000);
     } catch {
       captureBtn.textContent = '❌ Failed';
-      setTimeout(() => { captureBtn.textContent = '📥 Capture'; captureBtn.disabled = false; }, 3000);
+      setTimeout(() => {
+        captureBtn.textContent = '📥 Capture';
+        captureBtn.disabled = false;
+      }, 3000);
     }
   });
 }

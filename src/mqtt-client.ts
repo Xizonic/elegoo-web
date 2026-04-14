@@ -40,9 +40,9 @@ export class CC2MqttClient {
   }
 
   private generateRequestId(): string {
-    const uuid = Array.from({ length: 16 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('');
+    const uuid = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join(
+      '',
+    );
     const tsHex = Date.now().toString(16);
     return `${uuid}${tsHex}`;
   }
@@ -134,7 +134,9 @@ export class CC2MqttClient {
       } else if (code === 3) {
         // Too many clients — printer only allows 2 concurrent connections
         this.opts.onStateChange('error');
-        console.error('Registration rejected: too many clients (max 2). Disconnect another client and retry.');
+        console.error(
+          'Registration rejected: too many clients (max 2). Disconnect another client and retry.',
+        );
       }
     } else if (topic.includes('/api_response')) {
       const method = data.method as number;
@@ -149,7 +151,7 @@ export class CC2MqttClient {
     this.client.subscribe(`elegoo/${this.sn}/${this.requestId}/register_response`, { qos: 1 });
     this.client.publish(
       `elegoo/${this.sn}/api_register`,
-      JSON.stringify({ client_id: this.clientId, request_id: this.requestId })
+      JSON.stringify({ client_id: this.clientId, request_id: this.requestId }),
     );
   }
 
@@ -175,7 +177,7 @@ export class CC2MqttClient {
         }
         this.client.publish(
           `elegoo/${this.sn}/${this.clientId}/api_request`,
-          JSON.stringify({ type: 'PING' })
+          JSON.stringify({ type: 'PING' }),
         );
       }
     }, 30_000);

@@ -8,19 +8,30 @@ import { loadUISettings, saveUISettings } from './ui-settings';
 let autoScroll = true;
 let paused = false;
 let searchText = '';
-let directionFilter: 'all' | 'sent' | 'received' = loadUISettings().slogDirection as 'all' | 'sent' | 'received';
-let typeFilter: 'all' | 'status' | 'command' | 'response' | 'heartbeat' = loadUISettings().slogType as 'all' | 'status' | 'command' | 'response' | 'heartbeat';
-let methodFilter: number | 'all' = (() => { const v = loadUISettings().slogMethod; return v === 'all' ? 'all' : parseInt(v) || 'all'; })();
+let directionFilter: 'all' | 'sent' | 'received' = loadUISettings().slogDirection as
+  | 'all'
+  | 'sent'
+  | 'received';
+let typeFilter: 'all' | 'status' | 'command' | 'response' | 'heartbeat' = loadUISettings()
+  .slogType as 'all' | 'status' | 'command' | 'response' | 'heartbeat';
+let methodFilter: number | 'all' = (() => {
+  const v = loadUISettings().slogMethod;
+  return v === 'all' ? 'all' : parseInt(v) || 'all';
+})();
 let showDiff = false;
-let expandedEntries = new Set<number>();
-let pinnedEntries = new Set<number>();
+const expandedEntries = new Set<number>();
+const pinnedEntries = new Set<number>();
 let pendingCount = 0;
 let lastRenderedTs = '';
 let lastRenderedCount = '';
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts);
-  return d.toLocaleTimeString('nb-NO', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  return (
+    d.toLocaleTimeString('nb-NO', { hour12: false }) +
+    '.' +
+    String(d.getMilliseconds()).padStart(3, '0')
+  );
 }
 
 function classifyEntry(entry: LogEntry): 'status' | 'command' | 'response' | 'heartbeat' | 'other' {
@@ -90,11 +101,16 @@ function methodLabel(entry: LogEntry): string {
 function typeIcon(entry: LogEntry): string {
   const cls = classifyEntry(entry);
   switch (cls) {
-    case 'status': return '📊';
-    case 'command': return '📤';
-    case 'response': return '📥';
-    case 'heartbeat': return '💓';
-    default: return '📋';
+    case 'status':
+      return '📊';
+    case 'command':
+      return '📤';
+    case 'response':
+      return '📥';
+    case 'heartbeat':
+      return '💓';
+    default:
+      return '📋';
   }
 }
 
@@ -113,7 +129,13 @@ function computeDiff(prev: unknown, curr: unknown, prefix = ''): string[] {
       changes.push(`+ ${path}: ${JSON.stringify(c[key])}`);
     } else if (!(key in c)) {
       changes.push(`- ${path}: ${JSON.stringify(p[key])}`);
-    } else if (typeof p[key] === 'object' && typeof c[key] === 'object' && p[key] && c[key] && !Array.isArray(p[key])) {
+    } else if (
+      typeof p[key] === 'object' &&
+      typeof c[key] === 'object' &&
+      p[key] &&
+      c[key] &&
+      !Array.isArray(p[key])
+    ) {
       changes.push(...computeDiff(p[key], c[key], path));
     } else if (JSON.stringify(p[key]) !== JSON.stringify(c[key])) {
       changes.push(`~ ${path}: ${JSON.stringify(p[key])} → ${JSON.stringify(c[key])}`);
@@ -130,7 +152,7 @@ function compactPayload(entry: LogEntry): string {
   // For status events, show key changed fields
   if (classifyEntry(entry) === 'status') {
     const keys = Object.keys(raw);
-    const interesting = keys.filter(k => k !== 'method' && k !== 'id');
+    const interesting = keys.filter((k) => k !== 'method' && k !== 'id');
     if (interesting.length <= 4) return interesting.join(', ');
     return `${interesting.slice(0, 3).join(', ')} +${interesting.length - 3} more`;
   }
@@ -173,7 +195,7 @@ function renderSlogRow(e: LogEntry, prevStatusRaw: unknown): string {
     if (showDiff && classifyEntry(e) === 'status' && prevStatusRaw) {
       const diffs = computeDiff(prevStatusRaw, e.raw);
       if (diffs.length) {
-        row += `<pre class="slog-detail slog-diff">${diffs.map(d => escapeHtml(d)).join('\n')}</pre>`;
+        row += `<pre class="slog-detail slog-diff">${diffs.map((d) => escapeHtml(d)).join('\n')}</pre>`;
       } else {
         row += `<pre class="slog-detail slog-diff">No changes from previous status</pre>`;
       }
@@ -204,9 +226,8 @@ export function renderStructuredLog(store: LogStore): void {
   lastRenderedCount = countKey;
 
   // Render pinned entries first at the top
-  const pinned = pinnedEntries.size > 0
-    ? store.getEntries().filter(e => pinnedEntries.has(e.timestamp))
-    : [];
+  const pinned =
+    pinnedEntries.size > 0 ? store.getEntries().filter((e) => pinnedEntries.has(e.timestamp)) : [];
 
   let html = '';
 
@@ -272,7 +293,9 @@ export function bindStructuredLogControls(store: LogStore): void {
 
   // Populate method filter dropdown
   const methodSelect = $('slog-method-filter') as HTMLSelectElement;
-  const sortedMethods = Object.entries(METHOD_NAMES).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+  const sortedMethods = Object.entries(METHOD_NAMES).sort(
+    (a, b) => parseInt(a[0]) - parseInt(b[0]),
+  );
   for (const [code, name] of sortedMethods) {
     const opt = document.createElement('option');
     opt.value = code;
@@ -282,11 +305,11 @@ export function bindStructuredLogControls(store: LogStore): void {
 
   // Tab switching
   const savedTab = loadUISettings().logTab;
-  document.querySelectorAll('.log-tab').forEach(tab => {
+  document.querySelectorAll('.log-tab').forEach((tab) => {
     const tabName = (tab as HTMLElement).dataset.tab;
     tab.classList.toggle('active', tabName === savedTab);
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.log-tab').forEach((t) => t.classList.remove('active'));
       tab.classList.add('active');
       const name = (tab as HTMLElement).dataset.tab;
       $('log-tab-structured').classList.toggle('hidden', name !== 'structured');
@@ -301,7 +324,8 @@ export function bindStructuredLogControls(store: LogStore): void {
   // Restore saved filter values on selects
   ($('slog-direction-filter') as HTMLSelectElement).value = directionFilter;
   ($('slog-type-filter') as HTMLSelectElement).value = typeFilter;
-  ($('slog-method-filter') as HTMLSelectElement).value = methodFilter === 'all' ? 'all' : String(methodFilter);
+  ($('slog-method-filter') as HTMLSelectElement).value =
+    methodFilter === 'all' ? 'all' : String(methodFilter);
 
   // Search
   $('slog-search').addEventListener('input', (e) => {

@@ -38,7 +38,7 @@ export function renderSystemInfo(state: PrinterState): void {
   if (sysInfo) {
     for (const [k, v] of Object.entries(sysInfo)) {
       if (typeof v === 'string' || typeof v === 'number') {
-        const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const label = k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
         rows.push([label, String(v)]);
       }
     }

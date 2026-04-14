@@ -34,9 +34,18 @@ export function bindMaintenanceControls(): void {
 
   btnSelfCheck.addEventListener('click', () => {
     if (!maintenanceClient) return;
-    if (!confirm('Run full self-check?\nThis performs auto-level, vibration optimization, and PID calibration sequentially.\nThe printer must be idle (not printing).')) return;
+    if (
+      !confirm(
+        'Run full self-check?\nThis performs auto-level, vibration optimization, and PID calibration sequentially.\nThe printer must be idle (not printing).',
+      )
+    )
+      return;
     toast('Starting self-check...', 'info');
-    maintenanceClient.sendCommand(1035, { ringing_optimize: true, pid_check: true, auto_bed_leveling: true });
+    maintenanceClient.sendCommand(1035, {
+      ringing_optimize: true,
+      pid_check: true,
+      auto_bed_leveling: true,
+    });
   });
 
   btnAutoLevel.addEventListener('click', () => {
@@ -48,7 +57,12 @@ export function bindMaintenanceControls(): void {
 
   btnVibration.addEventListener('click', () => {
     if (!maintenanceClient) return;
-    if (!confirm('Run vibration optimization (input shaper calibration)?\nThe printer must be idle (not printing).')) return;
+    if (
+      !confirm(
+        'Run vibration optimization (input shaper calibration)?\nThe printer must be idle (not printing).',
+      )
+    )
+      return;
     toast('Starting vibration optimization...', 'info');
     maintenanceClient.sendCommand(1033, {});
   });
@@ -93,7 +107,12 @@ export function renderMaintenance(state: PrinterState): void {
 
   // Disable buttons during any maintenance operation
   const isBusy = machineStatus != null && machineStatus !== 1;
-  const btns = ['btn-self-check', 'btn-maintenance-level', 'btn-maintenance-vibration', 'btn-maintenance-pid'];
+  const btns = [
+    'btn-self-check',
+    'btn-maintenance-level',
+    'btn-maintenance-vibration',
+    'btn-maintenance-pid',
+  ];
   for (const id of btns) {
     const btn = $(id) as HTMLButtonElement;
     if (btn) btn.disabled = isBusy;

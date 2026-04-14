@@ -5,13 +5,12 @@
  */
 
 import PDFDocument from 'pdfkit';
-import { readFile } from 'fs/promises';
 import { join } from 'path';
 import type { PrintReport, ReportSnapshot } from './print-report-collector.js';
 import type { ChartPoint } from './state-store.js';
 import { getLogger } from './logger.js';
 
-const log = getLogger('PDF');
+const _log = getLogger('PDF');
 
 /** Color palette matching the web UI dark theme */
 const COLORS = {
@@ -68,7 +67,12 @@ export async function generateReportPDF(
   });
 }
 
-function drawReport(doc: PDFKit.PDFDocument, report: PrintReport, chartData: ChartPoint[], reportsDir: string): void {
+function drawReport(
+  doc: PDFKit.PDFDocument,
+  report: PrintReport,
+  chartData: ChartPoint[],
+  reportsDir: string,
+): void {
   const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
   // === HEADER ===
@@ -126,8 +130,15 @@ function drawReport(doc: PDFKit.PDFDocument, report: PrintReport, chartData: Cha
 
   // === FOOTER on last page ===
   const footerY = doc.page.height - doc.page.margins.bottom - 15;
-  doc.fontSize(8).fillColor(COLORS.muted)
-    .text(`Generated ${new Date().toISOString()} — Elegoo CC2 Web Frontend`, doc.page.margins.left, footerY, { align: 'center', width: pageW });
+  doc
+    .fontSize(8)
+    .fillColor(COLORS.muted)
+    .text(
+      `Generated ${new Date().toISOString()} — Elegoo CC2 Web Frontend`,
+      doc.page.margins.left,
+      footerY,
+      { align: 'center', width: pageW },
+    );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -135,9 +146,12 @@ function drawReport(doc: PDFKit.PDFDocument, report: PrintReport, chartData: Cha
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function drawHeader(doc: PDFKit.PDFDocument, report: PrintReport, pageW: number): void {
-  const outcomeColor = report.outcome === 'completed' ? COLORS.success
-    : report.outcome === 'failed' ? COLORS.error
-    : COLORS.warning;
+  const outcomeColor =
+    report.outcome === 'completed'
+      ? COLORS.success
+      : report.outcome === 'failed'
+        ? COLORS.error
+        : COLORS.warning;
 
   const thumbSize = 60;
   const hasThumb = !!report.thumbnail;
@@ -149,7 +163,11 @@ function drawHeader(doc: PDFKit.PDFDocument, report: PrintReport, pageW: number)
   if (hasThumb) {
     try {
       const imgBuf = Buffer.from(report.thumbnail!, 'base64');
-      doc.image(imgBuf, doc.page.margins.left, startY, { width: thumbSize, height: thumbSize, fit: [thumbSize, thumbSize] });
+      doc.image(imgBuf, doc.page.margins.left, startY, {
+        width: thumbSize,
+        height: thumbSize,
+        fit: [thumbSize, thumbSize],
+      });
     } catch {
       // Thumbnail decode failed, skip
     }
@@ -165,13 +183,26 @@ function drawHeader(doc: PDFKit.PDFDocument, report: PrintReport, pageW: number)
   const badgeH = 16;
   doc.fontSize(11);
   const badgeTextW = doc.widthOfString(outcomeText) + 16;
-  doc.save()
+  doc
+    .save()
     .roundedRect(textX, badgeY, badgeTextW, badgeH, 3)
-    .fillColor(outcomeColor).fillOpacity(0.15).fill()
+    .fillColor(outcomeColor)
+    .fillOpacity(0.15)
+    .fill()
     .restore();
-  doc.fontSize(11).fillColor(outcomeColor).text(outcomeText, textX + 8, badgeY + 2, { lineBreak: false });
-  doc.fontSize(10).fillColor(COLORS.muted)
-    .text(`${formatDuration(report.duration)}  |  ${new Date(report.startedAt).toLocaleString()}`, textX + badgeTextW + 10, badgeY + 3, { lineBreak: false });
+  doc
+    .fontSize(11)
+    .fillColor(outcomeColor)
+    .text(outcomeText, textX + 8, badgeY + 2, { lineBreak: false });
+  doc
+    .fontSize(10)
+    .fillColor(COLORS.muted)
+    .text(
+      `${formatDuration(report.duration)}  |  ${new Date(report.startedAt).toLocaleString()}`,
+      textX + badgeTextW + 10,
+      badgeY + 3,
+      { lineBreak: false },
+    );
   doc.y = badgeY + badgeH + 4;
 
   // Ensure we're below the thumbnail
@@ -187,8 +218,7 @@ function drawSummaryCard(doc: PDFKit.PDFDocument, report: PrintReport, pageW: nu
 
   // Card background
   doc.save();
-  doc.roundedRect(doc.page.margins.left, startY, pageW, 110, 4)
-    .fillColor(COLORS.cardBg).fill();
+  doc.roundedRect(doc.page.margins.left, startY, pageW, 110, 4).fillColor(COLORS.cardBg).fill();
   doc.restore();
 
   const leftX = doc.page.margins.left + cardPad;
@@ -247,7 +277,13 @@ function drawTemperatureChart(doc: PDFKit.PDFDocument, data: ChartPoint[], pageW
   // Find max temp for Y scale
   let maxTemp = 0;
   for (const p of data) {
-    const vals = [p.values.nozzle, p.values.nozzle_tgt, p.values.bed, p.values.bed_tgt, p.values.chamber];
+    const vals = [
+      p.values.nozzle,
+      p.values.nozzle_tgt,
+      p.values.bed,
+      p.values.bed_tgt,
+      p.values.chamber,
+    ];
     for (const v of vals) {
       if (v > maxTemp) maxTemp = v;
     }
@@ -282,7 +318,12 @@ function drawTemperatureChart(doc: PDFKit.PDFDocument, data: ChartPoint[], pageW
   ];
   doc.fontSize(7).fillColor(COLORS.muted);
   for (const item of legendItems) {
-    doc.save().rect(legendX, legendY + 1, 8, 6).fillColor(item.color).fill().restore();
+    doc
+      .save()
+      .rect(legendX, legendY + 1, 8, 6)
+      .fillColor(item.color)
+      .fill()
+      .restore();
     doc.text(item.label, legendX + 10, legendY, { continued: false });
     legendX += doc.widthOfString(item.label) + 20;
   }
@@ -311,8 +352,16 @@ function drawFanChart(doc: PDFKit.PDFDocument, data: ChartPoint[], pageW: number
     { label: 'Aux Fan', color: COLORS.fanAux },
     { label: 'Case Fan', color: COLORS.fanCase },
   ]) {
-    doc.save().rect(legendX, legendY + 1, 8, 6).fillColor(item.color).fill().restore();
-    doc.fontSize(7).fillColor(COLORS.muted).text(item.label, legendX + 10, legendY, { continued: false });
+    doc
+      .save()
+      .rect(legendX, legendY + 1, 8, 6)
+      .fillColor(item.color)
+      .fill()
+      .restore();
+    doc
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text(item.label, legendX + 10, legendY, { continued: false });
     legendX += doc.widthOfString(item.label) + 20;
   }
   doc.y = legendY + 18;
@@ -338,9 +387,17 @@ function drawLayerChart(doc: PDFKit.PDFDocument, report: PrintReport, pageW: num
   const ySteps = 4;
   for (let i = 0; i <= ySteps; i++) {
     const val = (maxDuration / ySteps) * i;
-    const y = chartY + chartH - (chartH * (val / maxDuration));
-    doc.moveTo(chartX, y).lineTo(chartX + chartW, y).strokeColor(COLORS.grid).lineWidth(0.25).stroke();
-    doc.fontSize(7).fillColor(COLORS.muted).text(`${val.toFixed(0)}s`, chartX - 30, y - 4, { width: 25, align: 'right' });
+    const y = chartY + chartH - chartH * (val / maxDuration);
+    doc
+      .moveTo(chartX, y)
+      .lineTo(chartX + chartW, y)
+      .strokeColor(COLORS.grid)
+      .lineWidth(0.25)
+      .stroke();
+    doc
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text(`${val.toFixed(0)}s`, chartX - 30, y - 4, { width: 25, align: 'right' });
   }
   doc.restore();
 
@@ -354,16 +411,21 @@ function drawLayerChart(doc: PDFKit.PDFDocument, report: PrintReport, pageW: num
   let first = true;
   for (let i = 0; i < layers.length; i++) {
     const x = chartX + i * step;
-    const y = chartY + chartH - (chartH * (layers[i][1] / maxDuration));
-    if (first) { doc.moveTo(x, y); first = false; }
-    else doc.lineTo(x, y);
+    const y = chartY + chartH - chartH * (layers[i][1] / maxDuration);
+    if (first) {
+      doc.moveTo(x, y);
+      first = false;
+    } else doc.lineTo(x, y);
   }
   doc.stroke();
 
   // Average line
-  const avgY = chartY + chartH - (chartH * (report.layerStats.avgDuration / maxDuration));
+  const avgY = chartY + chartH - chartH * (report.layerStats.avgDuration / maxDuration);
   doc.strokeColor(COLORS.layerAvg).lineWidth(0.5).dash(3, { space: 2 });
-  doc.moveTo(chartX, avgY).lineTo(chartX + chartW, avgY).stroke();
+  doc
+    .moveTo(chartX, avgY)
+    .lineTo(chartX + chartW, avgY)
+    .stroke();
   doc.undash();
 
   doc.restore();
@@ -375,9 +437,22 @@ function drawLayerChart(doc: PDFKit.PDFDocument, report: PrintReport, pageW: num
 
   // Legend
   const legendY = chartY + chartH + 15;
-  doc.save().rect(chartX, legendY + 1, 8, 6).fillColor(COLORS.layerLine).fill().restore();
-  doc.fontSize(7).fillColor(COLORS.muted).text('Layer Time', chartX + 10, legendY);
-  doc.save().rect(chartX + 70, legendY + 1, 8, 6).fillColor(COLORS.layerAvg).fill().restore();
+  doc
+    .save()
+    .rect(chartX, legendY + 1, 8, 6)
+    .fillColor(COLORS.layerLine)
+    .fill()
+    .restore();
+  doc
+    .fontSize(7)
+    .fillColor(COLORS.muted)
+    .text('Layer Time', chartX + 10, legendY);
+  doc
+    .save()
+    .rect(chartX + 70, legendY + 1, 8, 6)
+    .fillColor(COLORS.layerAvg)
+    .fill()
+    .restore();
   doc.text(`Average (${report.layerStats.avgDuration.toFixed(1)}s)`, chartX + 80, legendY);
 
   doc.y = legendY + 18;
@@ -395,7 +470,12 @@ function drawFilamentTable(doc: PDFKit.PDFDocument, report: PrintReport, pageW: 
     doc.text(headers[i], x + sumBefore(colWidths, i), y, { width: colWidths[i] });
   }
   y += 14;
-  doc.moveTo(x, y).lineTo(x + pageW, y).strokeColor(COLORS.grid).lineWidth(0.5).stroke();
+  doc
+    .moveTo(x, y)
+    .lineTo(x + pageW, y)
+    .strokeColor(COLORS.grid)
+    .lineWidth(0.5)
+    .stroke();
   y += 4;
 
   // Data rows
@@ -407,12 +487,21 @@ function drawFilamentTable(doc: PDFKit.PDFDocument, report: PrintReport, pageW: 
     // Color swatch
     const swatchX = x + colWidths[0] + colWidths[1] + 2;
     if (f.color) {
-      doc.save().rect(swatchX, y + 1, 10, 8).fillColor(f.color).fill().restore();
+      doc
+        .save()
+        .rect(swatchX, y + 1, 10, 8)
+        .fillColor(f.color)
+        .fill()
+        .restore();
       doc.fillColor(COLORS.text).text(f.color, swatchX + 14, y, { width: colWidths[2] - 14 });
     }
 
-    doc.text(f.meters.toFixed(2), x + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3] });
-    doc.text(f.grams.toFixed(1), x + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], y, { width: colWidths[4] });
+    doc.text(f.meters.toFixed(2), x + colWidths[0] + colWidths[1] + colWidths[2], y, {
+      width: colWidths[3],
+    });
+    doc.text(f.grams.toFixed(1), x + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], y, {
+      width: colWidths[4],
+    });
     y += 16;
   }
 
@@ -437,7 +526,12 @@ function selectSnapshotsByProgress(snapshots: ReportSnapshot[]): ReportSnapshot[
   return selected;
 }
 
-function drawSnapshots(doc: PDFKit.PDFDocument, report: PrintReport, reportsDir: string, pageW: number): void {
+function drawSnapshots(
+  doc: PDFKit.PDFDocument,
+  report: PrintReport,
+  reportsDir: string,
+  pageW: number,
+): void {
   const snaps = selectSnapshotsByProgress(report.snapshots);
   const gap = 15;
   const imgW = (pageW - gap) / 2;
@@ -462,18 +556,19 @@ function drawSnapshots(doc: PDFKit.PDFDocument, report: PrintReport, reportsDir:
       const imgPath = join(reportsDir, report.id, snap.filename);
       doc.image(imgPath, imgX, imgY, { width: imgW, height: imgH, fit: [imgW, imgH] });
     } catch {
-      doc.save()
-        .rect(imgX, imgY, imgW, imgH)
-        .fillColor('#eeeeee').fill()
-        .restore();
-      doc.fontSize(9).fillColor(COLORS.muted)
+      doc.save().rect(imgX, imgY, imgW, imgH).fillColor('#eeeeee').fill().restore();
+      doc
+        .fontSize(9)
+        .fillColor(COLORS.muted)
         .text('Image unavailable', imgX + imgW / 2 - 30, imgY + imgH / 2 - 5);
     }
 
     // Caption
     const captionY = imgY + imgH + 2;
     const time = new Date(snap.timestamp).toLocaleTimeString();
-    doc.fontSize(7).fillColor(COLORS.muted)
+    doc
+      .fontSize(7)
+      .fillColor(COLORS.muted)
       .text(`${time} — ${snap.progress}% — Layer ${snap.layer}`, imgX, captionY, { width: imgW });
 
     // After second column (or last image), advance Y past the row
@@ -499,9 +594,15 @@ function drawEventLog(doc: PDFKit.PDFDocument, report: PrintReport): void {
     const y = doc.y;
     const time = new Date(evt.ts).toLocaleTimeString();
     doc.fontSize(8).fillColor(COLORS.muted).text(time, x, y, { width: timeW });
-    doc.fontSize(8).fillColor(COLORS.text).text(evt.summary, x + timeW + 8, y, { width: descW });
+    doc
+      .fontSize(8)
+      .fillColor(COLORS.text)
+      .text(evt.summary, x + timeW + 8, y, { width: descW });
     // Advance past the taller of the two columns
-    const lineH = Math.max(doc.heightOfString(time, { width: timeW }), doc.heightOfString(evt.summary, { width: descW }));
+    const lineH = Math.max(
+      doc.heightOfString(time, { width: timeW }),
+      doc.heightOfString(evt.summary, { width: descW }),
+    );
     doc.y = y + lineH + 2;
   }
 }
@@ -512,8 +613,12 @@ function drawEventLog(doc: PDFKit.PDFDocument, report: PrintReport): void {
 
 function drawChartGrid(
   doc: PDFKit.PDFDocument,
-  x: number, y: number, w: number, h: number,
-  maxVal: number, unit: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  maxVal: number,
+  unit: string,
   data: ChartPoint[],
 ): void {
   doc.save();
@@ -525,11 +630,19 @@ function drawChartGrid(
   const ySteps = 4;
   for (let i = 0; i <= ySteps; i++) {
     const val = (maxVal / ySteps) * i;
-    const lineY = y + h - (h * (val / maxVal));
+    const lineY = y + h - h * (val / maxVal);
     if (i > 0 && i < ySteps) {
-      doc.moveTo(x, lineY).lineTo(x + w, lineY).strokeColor(COLORS.grid).lineWidth(0.25).stroke();
+      doc
+        .moveTo(x, lineY)
+        .lineTo(x + w, lineY)
+        .strokeColor(COLORS.grid)
+        .lineWidth(0.25)
+        .stroke();
     }
-    doc.fontSize(7).fillColor(COLORS.muted).text(`${val.toFixed(0)}${unit}`, x - 35, lineY - 4, { width: 30, align: 'right' });
+    doc
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text(`${val.toFixed(0)}${unit}`, x - 35, lineY - 4, { width: 30, align: 'right' });
   }
 
   // X time labels
@@ -539,9 +652,12 @@ function drawChartGrid(
     const ticks = 5;
     for (let i = 0; i <= ticks; i++) {
       const t = startT + ((endT - startT) / ticks) * i;
-      const px = x + (w * ((t - startT) / (endT - startT)));
+      const px = x + w * ((t - startT) / (endT - startT));
       const label = new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      doc.fontSize(6).fillColor(COLORS.muted).text(label, px - 15, y + h + 3, { width: 30, align: 'center' });
+      doc
+        .fontSize(6)
+        .fillColor(COLORS.muted)
+        .text(label, px - 15, y + h + 3, { width: 30, align: 'center' });
     }
   }
 
@@ -552,7 +668,10 @@ function drawLineSeries(
   doc: PDFKit.PDFDocument,
   data: ChartPoint[],
   key: string,
-  chartX: number, chartY: number, chartW: number, chartH: number,
+  chartX: number,
+  chartY: number,
+  chartW: number,
+  chartH: number,
   maxVal: number,
   color: string,
   dash?: number[],
@@ -578,7 +697,7 @@ function drawLineSeries(
     const p = data[i];
     const v = p.values[key] ?? 0;
     const px = chartX + chartW * ((p.t - startT) / timeRange);
-    const py = chartY + chartH - (chartH * (v / maxVal));
+    const py = chartY + chartH - chartH * (v / maxVal);
 
     if (!started) {
       doc.moveTo(px, py);

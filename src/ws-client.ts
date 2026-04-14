@@ -40,9 +40,24 @@ export interface WsClientOptions {
   /** Called when server clears layer data (new print) */
   onLayerClear?: () => void;
   /** Called with filament usage updates per spool */
-  onFilamentUsage?: (usage: Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }>) => void;
+  onFilamentUsage?: (
+    usage: Array<{
+      trayKey: string;
+      filamentType: string;
+      color: string;
+      extruded_mm: number;
+      grams: number;
+      meters: number;
+    }>,
+  ) => void;
   /** Called when toolhead enters a different zone */
-  onZoneChange?: (data: { from: string; to: string; x: number; y: number; timestamp: number }) => void;
+  onZoneChange?: (data: {
+    from: string;
+    to: string;
+    x: number;
+    y: number;
+    timestamp: number;
+  }) => void;
 }
 
 export class WsClient {
@@ -199,7 +214,14 @@ export class WsClient {
       }
 
       case 'filament_usage': {
-        const usage = msg.usage as Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }>;
+        const usage = msg.usage as Array<{
+          trayKey: string;
+          filamentType: string;
+          color: string;
+          extruded_mm: number;
+          grams: number;
+          meters: number;
+        }>;
         if (Array.isArray(usage)) {
           this.opts.onFilamentUsage?.(usage);
         }
@@ -207,7 +229,9 @@ export class WsClient {
       }
 
       case 'zone_change': {
-        this.opts.onZoneChange?.(msg as unknown as { from: string; to: string; x: number; y: number; timestamp: number });
+        this.opts.onZoneChange?.(
+          msg as unknown as { from: string; to: string; x: number; y: number; timestamp: number },
+        );
         break;
       }
     }
@@ -242,6 +266,10 @@ export class WsClient {
     }, this.reconnectDelay);
   }
 
-  get serialNumber(): string { return this._sn; }
-  get printerIp(): string { return this._printerIp; }
+  get serialNumber(): string {
+    return this._sn;
+  }
+  get printerIp(): string {
+    return this._printerIp;
+  }
 }

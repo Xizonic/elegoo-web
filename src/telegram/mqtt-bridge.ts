@@ -7,8 +7,10 @@ import mqtt from 'mqtt';
 import { EventEmitter } from 'events';
 import type { PrinterStatus, PrinterAttributes, CanvasInfo } from '../types.js';
 import {
-  STATUS_NAMES, SUB_STATUS_NAMES, SPEED_MODE_NAMES,
-  EXCEPTION_NAMES, CRITICAL_EXCEPTIONS,
+  STATUS_NAMES,
+  SUB_STATUS_NAMES,
+  SPEED_MODE_NAMES,
+  EXCEPTION_NAMES,
 } from '../types.js';
 import { esc } from './notifications.js';
 
@@ -24,18 +26,34 @@ export type BridgeEvent =
   | { type: 'print_started'; filename: string }
   | { type: 'print_completed'; filename: string; duration: number }
   | { type: 'print_failed'; filename: string; reason: string }
-  | { type: 'print_progress'; filename: string; progress: number; layer: number; totalLayers: number; remaining: number }
+  | {
+      type: 'print_progress';
+      filename: string;
+      progress: number;
+      layer: number;
+      totalLayers: number;
+      remaining: number;
+    }
   | { type: 'error'; codes: number[]; names: string[] }
   | { type: 'filament_runout' }
   | { type: 'first_layer_complete'; filename: string; totalLayers: number; durationSec: number };
 
 /** Deep-merge delta into base (same logic as printer-state.ts) */
-function deepMerge(base: Record<string, unknown>, update: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  base: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...base };
   for (const key of Object.keys(update)) {
     const bVal = result[key];
     const uVal = update[key];
-    if (bVal && uVal && typeof bVal === 'object' && typeof uVal === 'object' && !Array.isArray(uVal)) {
+    if (
+      bVal &&
+      uVal &&
+      typeof bVal === 'object' &&
+      typeof uVal === 'object' &&
+      !Array.isArray(uVal)
+    ) {
       result[key] = deepMerge(bVal as Record<string, unknown>, uVal as Record<string, unknown>);
     } else {
       result[key] = uVal;
@@ -216,7 +234,9 @@ export class MqttBridge extends EventEmitter {
         break;
       }
       case 1046: {
-        const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as number | undefined;
+        const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as
+          | number
+          | undefined;
         if (layers != null && layers > 0) {
           this.totalLayers = layers;
           console.log(`[MQTT] File total layers: ${layers}`);
@@ -310,8 +330,11 @@ export class MqttBridge extends EventEmitter {
     }
 
     // Print stopped/failed
-    if ((subStatus === 2503 || subStatus === 2504) &&
-        this.lastSubStatus !== 2503 && this.lastSubStatus !== 2504) {
+    if (
+      (subStatus === 2503 || subStatus === 2504) &&
+      this.lastSubStatus !== 2503 &&
+      this.lastSubStatus !== 2504
+    ) {
       const reason = SUB_STATUS_NAMES[subStatus] || `Sub-status ${subStatus}`;
       this.emit('event', {
         type: 'print_failed',
@@ -369,7 +392,9 @@ export class MqttBridge extends EventEmitter {
     const exceptions = ms?.exception_status ?? [];
     const newExceptions = exceptions.filter((e: number) => !this.lastExceptions.includes(e));
     if (newExceptions.length > 0) {
-      const names = newExceptions.map((code: number) => EXCEPTION_NAMES[code] || `Unknown (${code})`);
+      const names = newExceptions.map(
+        (code: number) => EXCEPTION_NAMES[code] || `Unknown (${code})`,
+      );
       this.emit('event', {
         type: 'error',
         codes: newExceptions,
@@ -450,8 +475,8 @@ export class MqttBridge extends EventEmitter {
 
     // Fans
     if (s.fans) {
-      const partFan = Math.round((s.fans.fan?.speed ?? 0) / 255 * 100);
-      const auxFan = Math.round((s.fans.aux_fan?.speed ?? 0) / 255 * 100);
+      const partFan = Math.round(((s.fans.fan?.speed ?? 0) / 255) * 100);
+      const auxFan = Math.round(((s.fans.aux_fan?.speed ?? 0) / 255) * 100);
       summary += `\n🌀 *Part fan:* ${partFan}%  *Aux fan:* ${auxFan}%\n`;
     }
 

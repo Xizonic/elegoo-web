@@ -3,12 +3,21 @@ import type { PrinterAttributes, PrinterStatus, CanvasInfo, FileEntry, ZoneState
 export type StateListener = () => void;
 
 /** Deep-merge delta updates into base state */
-function deepMerge(base: Record<string, unknown>, update: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  base: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...base };
   for (const key of Object.keys(update)) {
     const bVal = result[key];
     const uVal = update[key];
-    if (bVal && uVal && typeof bVal === 'object' && typeof uVal === 'object' && !Array.isArray(uVal)) {
+    if (
+      bVal &&
+      uVal &&
+      typeof bVal === 'object' &&
+      typeof uVal === 'object' &&
+      !Array.isArray(uVal)
+    ) {
       result[key] = deepMerge(bVal as Record<string, unknown>, uVal as Record<string, unknown>);
     } else {
       result[key] = uVal;
@@ -21,12 +30,18 @@ function deepMerge(base: Record<string, unknown>, update: Record<string, unknown
 function mapTaskStatus(status: number | string | undefined): string {
   if (typeof status === 'string') return status;
   switch (status) {
-    case 0: return 'unknown';
-    case 1: return 'printing';
-    case 2: return 'completed';
-    case 3: return 'failed';
-    case 4: return 'stopped';
-    default: return 'unknown';
+    case 0:
+      return 'unknown';
+    case 1:
+      return 'printing';
+    case 2:
+      return 'completed';
+    case 3:
+      return 'failed';
+    case 4:
+      return 'stopped';
+    default:
+      return 'unknown';
   }
 }
 
@@ -48,20 +63,41 @@ export class PrinterState {
   /** Color map from last file detail (method 1046) for multi-color printing */
   colorMap: Array<{ t: number; color: string; name: string }> = [];
   /** Full file detail from last 1046 response */
-  lastFileDetail: { filename?: string; print_time?: number; layer?: number; thumbnail?: string } | null = null;
+  lastFileDetail: {
+    filename?: string;
+    print_time?: number;
+    layer?: number;
+    thumbnail?: string;
+  } | null = null;
   systemInfo: Record<string, unknown> | null = null;
   storageCapacity: { total: number; free: number; used: number } | null = null;
   monoFilament: Record<string, unknown> | null = null;
   /** Layer timing: records [layer, durationSec] for each completed layer */
   layerTimes: Array<{ layer: number; duration: number; timestamp: number }> = [];
   /** Per-spool filament usage (from server) */
-  filamentUsage: Array<{ trayKey: string; filamentType: string; color: string; extruded_mm: number; grams: number; meters: number }> = [];
+  filamentUsage: Array<{
+    trayKey: string;
+    filamentType: string;
+    color: string;
+    extruded_mm: number;
+    grams: number;
+    meters: number;
+  }> = [];
   timelapseList: Record<string, unknown>[] = [];
   videoUrl: string | null = null;
   /** Toolhead zone state (from server) */
   zones: ZoneState = { current: 'outside', previous: 'outside', enteredAt: 0, history: [] };
   /** Print history from method 1036 */
-  printHistory: Array<{ uuid: string; filename: string; status: string; begin_time: number; end_time: number; timelapse_status: number; timelapse_url: string; timelapse_duration: number }> = [];
+  printHistory: Array<{
+    uuid: string;
+    filename: string;
+    status: string;
+    begin_time: number;
+    end_time: number;
+    timelapse_status: number;
+    timelapse_url: string;
+    timelapse_duration: number;
+  }> = [];
   printHistoryTotal = 0;
   /** Auto-report sequence tracking for gap detection */
   private lastAutoReportId: number | null = null;
@@ -71,7 +107,7 @@ export class PrinterState {
   subscribe(listener: StateListener): () => void {
     this.listeners.push(listener);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
+      this.listeners = this.listeners.filter((l) => l !== listener);
     };
   }
 
@@ -103,7 +139,7 @@ export class PrinterState {
     } else {
       this.status = deepMerge(
         this.status as unknown as Record<string, unknown>,
-        data
+        data,
       ) as unknown as PrinterStatus;
     }
 
@@ -121,7 +157,7 @@ export class PrinterState {
       if (this.canvas) {
         this.canvas = deepMerge(
           this.canvas as unknown as Record<string, unknown>,
-          canvasDelta as unknown as Record<string, unknown>
+          canvasDelta as unknown as Record<string, unknown>,
         ) as unknown as CanvasInfo;
       } else {
         this.canvas = canvasDelta;
@@ -159,25 +195,28 @@ export class PrinterState {
       case 1002: // GET_STATUS
         this.setFullStatus(result as unknown as PrinterStatus);
         break;
-      case 2005: { // GET_CANVAS_STATUS
+      case 2005: {
+        // GET_CANVAS_STATUS
         const canvasInfo = result.canvas_info as CanvasInfo | undefined;
         if (canvasInfo) {
           this.setCanvas(canvasInfo);
         }
         break;
       }
-      case 1044: { // GET_FILE_LIST
+      case 1044: {
+        // GET_FILE_LIST
         const fileList = result.file_list as FileEntry[] | undefined;
         if (fileList) {
           this.setFiles(fileList);
         }
         break;
       }
-      case 1045: { // GET_FILE_THUMBNAIL
+      case 1045: {
+        // GET_FILE_THUMBNAIL
         const purpose = this.thumbnailRequestQueue.shift();
         const errorCode = result.error_code as number | undefined;
         const thumb = result.thumbnail as string | undefined;
-        this._lastRawThumbnail = (thumb && errorCode === 0) ? thumb : null;
+        this._lastRawThumbnail = thumb && errorCode === 0 ? thumb : null;
         this._lastThumbnailPurpose = purpose;
         if (purpose === 'print') {
           if (thumb && errorCode === 0) {
@@ -190,16 +229,23 @@ export class PrinterState {
         this.notify();
         break;
       }
-      case 1046: { // GET_FILE_DETAIL
-        const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as number | undefined;
+      case 1046: {
+        // GET_FILE_DETAIL
+        const layers = (result.TotalLayers ?? result.layer ?? result.total_layer) as
+          | number
+          | undefined;
         if (layers != null) {
           this.fileTotalLayers = layers;
         }
-        const filament = (result.total_filament_used ?? result.TotalFilamentUsed) as number | undefined;
+        const filament = (result.total_filament_used ?? result.TotalFilamentUsed) as
+          | number
+          | undefined;
         if (filament != null) {
           this.fileFilamentUsed = filament;
         }
-        const cm = result.color_map as Array<{ t: number; color: string; name: string }> | undefined;
+        const cm = result.color_map as
+          | Array<{ t: number; color: string; name: string }>
+          | undefined;
         this.colorMap = Array.isArray(cm) ? cm : [];
         this.lastFileDetail = {
           filename: result.filename as string | undefined,
@@ -210,7 +256,8 @@ export class PrinterState {
         this.notify();
         break;
       }
-      case 1062: { // GET_SYSTEM_INFO
+      case 1062: {
+        // GET_SYSTEM_INFO
         const errorCode = result.error_code as number | undefined;
         if (errorCode === 0) {
           const info = { ...result };
@@ -220,19 +267,21 @@ export class PrinterState {
         }
         break;
       }
-      case 1048: { // GET_DISK_INFO
+      case 1048: {
+        // GET_DISK_INFO
         const errorCode = result.error_code as number | undefined;
         if (errorCode === 0) {
           this.storageCapacity = {
-            total: result.total_bytes as number ?? 0,
-            free: result.free_bytes as number ?? 0,
-            used: result.used_bytes as number ?? 0,
+            total: (result.total_bytes as number) ?? 0,
+            free: (result.free_bytes as number) ?? 0,
+            used: (result.used_bytes as number) ?? 0,
           };
           this.notify();
         }
         break;
       }
-      case 2006: { // GET_MONO_FILAMENT
+      case 2006: {
+        // GET_MONO_FILAMENT
         const errorCode = result.error_code as number | undefined;
         if (errorCode === 0) {
           const info = result.mono_filament_info as Record<string, unknown> | undefined;
@@ -250,7 +299,8 @@ export class PrinterState {
         }
         break;
       }
-      case 1050: { // GET_VIDEO_URL
+      case 1050: {
+        // GET_VIDEO_URL
         const errorCode = result.error_code as number | undefined;
         const url = result.url as string | undefined;
         if (errorCode === 0 && url) {
@@ -259,7 +309,8 @@ export class PrinterState {
         }
         break;
       }
-      case 1051: { // EXPORT_TIMELAPSE
+      case 1051: {
+        // EXPORT_TIMELAPSE
         const errorCode = result.error_code as number | undefined;
         const url = result.url as string | undefined;
         if (errorCode === 0) {
@@ -270,13 +321,16 @@ export class PrinterState {
         }
         break;
       }
-      case 1036: { // PRINT_TASK_LIST
+      case 1036: {
+        // PRINT_TASK_LIST
         const errorCode = result.error_code as number | undefined;
         if (errorCode === 0) {
-          const tasks = (result.history_task_list ?? result.task_list) as Array<Record<string, unknown>> | undefined;
+          const tasks = (result.history_task_list ?? result.task_list) as
+            | Array<Record<string, unknown>>
+            | undefined;
           const total = result.total as number | undefined;
           if (tasks) {
-            this.printHistory = tasks.map(t => ({
+            this.printHistory = tasks.map((t) => ({
               uuid: (t.task_id as string) || (t.uuid as string) || '',
               filename: (t.task_name ?? t.filename ?? t.name ?? '') as string,
               status: mapTaskStatus((t.task_status ?? t.status) as number | string | undefined),
@@ -291,8 +345,8 @@ export class PrinterState {
             // Status: 0=NotCaptured, 1=NotExported, 2=Exported, 3=Failed
             // Also include entries with non-zero duration (captured but status may vary)
             this.timelapseList = this.printHistory
-              .filter(t => t.timelapse_status > 0 || t.timelapse_duration > 0)
-              .map(t => ({
+              .filter((t) => t.timelapse_status > 0 || t.timelapse_duration > 0)
+              .map((t) => ({
                 filename: t.filename,
                 timelapse_status: t.timelapse_status,
                 timelapse_url: t.timelapse_url,
@@ -360,7 +414,9 @@ export class PrinterState {
     if (reportId != null) {
       if (this.lastAutoReportId != null && reportId !== this.lastAutoReportId + 1) {
         // Gap detected — request full status refresh
-        console.warn(`Auto-report gap: expected ${this.lastAutoReportId + 1}, got ${reportId}. Requesting full refresh.`);
+        console.warn(
+          `Auto-report gap: expected ${this.lastAutoReportId + 1}, got ${reportId}. Requesting full refresh.`,
+        );
         this.refreshCallback?.();
       }
       this.lastAutoReportId = reportId;

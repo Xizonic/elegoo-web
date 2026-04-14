@@ -36,7 +36,9 @@ export function loadUISettings(): UISettings {
       cached = { ...defaults, ...JSON.parse(raw) };
       return cached!;
     }
-  } catch { /* use defaults */ }
+  } catch {
+    /* use defaults */
+  }
   cached = { ...defaults };
   return cached;
 }
@@ -47,7 +49,9 @@ export function saveUISettings(partial: Partial<UISettings>): void {
   cached = current;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
-  } catch { /* storage full, ignore */ }
+  } catch {
+    /* storage full, ignore */
+  }
 }
 
 /** Save a single chart window setting */

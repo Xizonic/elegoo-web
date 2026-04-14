@@ -27,19 +27,32 @@ function fmtDuration(sec: number): string {
 /** Get icon and CSS class for event type */
 function eventMeta(type: string): { icon: string; cls: string } {
   switch (type) {
-    case 'connected':       return { icon: '🔗', cls: 'event-success' };
-    case 'disconnected':    return { icon: '🔌', cls: 'event-warning' };
-    case 'print_started':   return { icon: '▶️', cls: 'event-info' };
-    case 'print_completed': return { icon: '✅', cls: 'event-success' };
-    case 'print_failed':    return { icon: '❌', cls: 'event-error' };
-    case 'print_progress':  return { icon: '📊', cls: 'event-muted' };
-    case 'error':           return { icon: '🚨', cls: 'event-error' };
-    case 'filament_runout': return { icon: '🧵', cls: 'event-error' };
-    case 'layer_change':        return { icon: '📏', cls: 'event-muted' };
-    case 'first_layer_complete': return { icon: '🥇', cls: 'event-success' };
-    case 'status_change':       return { icon: '🔄', cls: 'event-info' };
-    case 'sub_status_change':   return { icon: '↪️', cls: 'event-muted' };
-    default:                    return { icon: '📋', cls: 'event-muted' };
+    case 'connected':
+      return { icon: '🔗', cls: 'event-success' };
+    case 'disconnected':
+      return { icon: '🔌', cls: 'event-warning' };
+    case 'print_started':
+      return { icon: '▶️', cls: 'event-info' };
+    case 'print_completed':
+      return { icon: '✅', cls: 'event-success' };
+    case 'print_failed':
+      return { icon: '❌', cls: 'event-error' };
+    case 'print_progress':
+      return { icon: '📊', cls: 'event-muted' };
+    case 'error':
+      return { icon: '🚨', cls: 'event-error' };
+    case 'filament_runout':
+      return { icon: '🧵', cls: 'event-error' };
+    case 'layer_change':
+      return { icon: '📏', cls: 'event-muted' };
+    case 'first_layer_complete':
+      return { icon: '🥇', cls: 'event-success' };
+    case 'status_change':
+      return { icon: '🔄', cls: 'event-info' };
+    case 'sub_status_change':
+      return { icon: '↪️', cls: 'event-muted' };
+    default:
+      return { icon: '📋', cls: 'event-muted' };
   }
 }
 
@@ -69,24 +82,29 @@ function eventDescription(e: Record<string, unknown>): string {
       const pct = e.progress as number;
       const layer = e.layer as number;
       const total = e.totalLayers as number;
-      const rem = typeof e.remaining === 'number' ? ` (${fmtDuration(e.remaining as number)} remaining)` : '';
+      const rem =
+        typeof e.remaining === 'number' ? ` (${fmtDuration(e.remaining as number)} remaining)` : '';
       return `Progress: ${pct}% — Layer ${layer}/${total}${rem}`;
     }
     case 'error': {
       const names = (e.names as string[]) || [];
-      return `Error: ${names.map(n => escapeHtml(n)).join(', ') || 'Unknown'}`;
+      return `Error: ${names.map((n) => escapeHtml(n)).join(', ') || 'Unknown'}`;
     }
     case 'filament_runout':
       return 'Filament runout detected';
     case 'layer_change': {
       const layer = e.layer as number;
       const total = e.totalLayers as number;
-      const dur = typeof e.durationSec === 'number' ? ` (layer took ${fmtDuration(e.durationSec as number)})` : '';
+      const dur =
+        typeof e.durationSec === 'number'
+          ? ` (layer took ${fmtDuration(e.durationSec as number)})`
+          : '';
       return `Layer ${layer}${total ? '/' + total : ''}${dur}`;
     }
     case 'first_layer_complete': {
       const fn = escapeHtml(String(e.filename || 'unknown'));
-      const dur = typeof e.durationSec === 'number' ? ` (${fmtDuration(e.durationSec as number)})` : '';
+      const dur =
+        typeof e.durationSec === 'number' ? ` (${fmtDuration(e.durationSec as number)})` : '';
       return `First layer complete: ${fn}${dur}`;
     }
     case 'status_change':
@@ -106,7 +124,9 @@ export function handleEventLog(data: { ts: number; event: Record<string, unknown
 }
 
 /** Load event log history from init snapshot */
-export function loadEventLogHistory(history: Array<{ ts: number; event: Record<string, unknown> }>): void {
+export function loadEventLogHistory(
+  history: Array<{ ts: number; event: Record<string, unknown> }>,
+): void {
   entries.length = 0;
   for (const e of history) {
     entries.push(e);
@@ -127,16 +147,20 @@ export function renderEventLog(): void {
   }
 
   // Most recent first
-  const html = entries.slice().reverse().map(entry => {
-    const type = (entry.event.type as string) || 'unknown';
-    const meta = eventMeta(type);
-    const desc = eventDescription(entry.event);
-    return `<div class="event-log-row ${meta.cls}">
+  const html = entries
+    .slice()
+    .reverse()
+    .map((entry) => {
+      const type = (entry.event.type as string) || 'unknown';
+      const meta = eventMeta(type);
+      const desc = eventDescription(entry.event);
+      return `<div class="event-log-row ${meta.cls}">
       <span class="event-log-icon">${meta.icon}</span>
       <span class="event-log-time">${fmtTime(entry.ts)}</span>
       <span class="event-log-desc">${desc}</span>
     </div>`;
-  }).join('');
+    })
+    .join('');
 
   container.innerHTML = html;
 }

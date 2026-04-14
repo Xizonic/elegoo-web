@@ -1,7 +1,15 @@
 /** Gcode preview — 3D toolpath visualization using gcode-preview library */
 
 import { WebGLPreview } from 'gcode-preview';
-import { ConeGeometry, MeshBasicMaterial, Mesh, EdgesGeometry, LineSegments, LineBasicMaterial, Group } from 'three';
+import {
+  ConeGeometry,
+  MeshBasicMaterial,
+  Mesh,
+  EdgesGeometry,
+  LineSegments,
+  LineBasicMaterial,
+  Group,
+} from 'three';
 import type { Object3D } from 'three';
 import type { PrinterState } from '../printer-state';
 import { $, fetchTimeout } from './helpers';
@@ -74,7 +82,7 @@ function buildExtrusionColors(colorMap: Array<{ t: number; color: string }>): st
   if (colorMap.length === 0) return '#2196f3';
   if (colorMap.length === 1) return `#${colorMap[0].color.replace(/^#/, '')}`;
   // Multi-color: array indexed by tool number
-  const maxTool = Math.max(...colorMap.map(c => c.t));
+  const maxTool = Math.max(...colorMap.map((c) => c.t));
   const colors: string[] = new Array(maxTool + 1).fill('#888888');
   for (const entry of colorMap) {
     colors[entry.t] = `#${entry.color.replace(/^#/, '')}`;
@@ -85,7 +93,7 @@ function buildExtrusionColors(colorMap: Array<{ t: number; color: string }>): st
 /** Re-init preview with updated colors if colorMap changed */
 function updateFilamentColor(state: PrinterState): void {
   if (!preview || !loadedFile) return;
-  const sig = state.colorMap.map(c => `${c.t}:${c.color}`).join(',');
+  const sig = state.colorMap.map((c) => `${c.t}:${c.color}`).join(',');
   if (sig === lastFilamentColor || sig === '') return;
   lastFilamentColor = sig;
   cachedColorMap = state.colorMap;
@@ -139,7 +147,7 @@ export function renderGcodePreview(state: PrinterState): void {
   if (isPrinting && filename && filename !== lastPrinterFile) {
     lastPrinterFile = filename;
     cachedColorMap = state.colorMap;
-    lastFilamentColor = state.colorMap.map(c => `${c.t}:${c.color}`).join(',');
+    lastFilamentColor = state.colorMap.map((c) => `${c.t}:${c.color}`).join(',');
     if (filename !== loadedFile) {
       setTimeout(() => loadGcode(filename), 3000);
     }
@@ -180,14 +188,17 @@ function initPreview(colorMap?: Array<{ t: number; color: string }>): WebGLPrevi
 
   // Dispose previous instance
   if (preview) {
-    try { preview.dispose(); } catch { /* ignore */ }
+    try {
+      preview.dispose();
+    } catch {
+      /* ignore */
+    }
     preview = null;
     nozzleMesh = null;
   }
 
-  const extrusionColor = colorMap && colorMap.length > 0
-    ? buildExtrusionColors(colorMap)
-    : '#2196f3';
+  const extrusionColor =
+    colorMap && colorMap.length > 0 ? buildExtrusionColors(colorMap) : '#2196f3';
 
   const p = new WebGLPreview({
     canvas,
@@ -231,7 +242,7 @@ export async function loadGcode(filename: string, source = 'local'): Promise<voi
       } catch (e) {
         if (attempt < 3) {
           if (statusEl) statusEl.textContent = `Retry ${attempt}/2 — download failed`;
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 2000));
         } else {
           throw e;
         }
@@ -416,7 +427,11 @@ export function bindGcodePreviewControls(): void {
 /** Dispose the preview (if navigating away, cleanup) */
 export function disposeGcodePreview(): void {
   if (preview) {
-    try { preview.dispose(); } catch { /* ignore */ }
+    try {
+      preview.dispose();
+    } catch {
+      /* ignore */
+    }
     preview = null;
     nozzleMesh = null;
   }

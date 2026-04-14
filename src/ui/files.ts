@@ -15,32 +15,47 @@ const thumbnailCache = new Map<string, string>();
 let thumbnailQueue: string[] = [];
 /** Currently fetching thumbnail for this file */
 let thumbnailFetching: string | null = null;
-export function currentFileSource(): string { return currentSource; }
-export function currentFileDir(): string { return currentDir; }
+export function currentFileSource(): string {
+  return currentSource;
+}
+export function currentFileDir(): string {
+  return currentDir;
+}
 
 /** Fetch which files are cached on the server and update markers */
 let _fetchingCached = false;
-async function fetchCachedStatus(files: { filename: string; type?: string }[], client: CommandSender): Promise<void> {
+async function fetchCachedStatus(
+  files: { filename: string; type?: string }[],
+  client: CommandSender,
+): Promise<void> {
   if (_fetchingCached) return;
   const gcodeFiles = files
-    .filter(f => f.type !== 'folder' && f.filename.toLowerCase().endsWith('.gcode'))
-    .map(f => currentDir === '/' ? f.filename : currentDir.replace(/^\//, '') + '/' + f.filename);
-  if (!gcodeFiles.length) { cachedFiles = new Set(); return; }
+    .filter((f) => f.type !== 'folder' && f.filename.toLowerCase().endsWith('.gcode'))
+    .map((f) =>
+      currentDir === '/' ? f.filename : currentDir.replace(/^\//, '') + '/' + f.filename,
+    );
+  if (!gcodeFiles.length) {
+    cachedFiles = new Set();
+    return;
+  }
   _fetchingCached = true;
   try {
-    const params = gcodeFiles.map(f => `file=${encodeURIComponent(f)}`).join('&');
+    const params = gcodeFiles.map((f) => `file=${encodeURIComponent(f)}`).join('&');
     const resp = await fetch(`/api/files/cached?${params}`);
     if (resp.ok) {
-      const data = await resp.json() as { cached: string[] };
+      const data = (await resp.json()) as { cached: string[] };
       const newCached = new Set(data.cached);
-      const changed = newCached.size !== cachedFiles.size || [...newCached].some(f => !cachedFiles.has(f));
+      const changed =
+        newCached.size !== cachedFiles.size || [...newCached].some((f) => !cachedFiles.has(f));
       cachedFiles = newCached;
       if (changed && cachedFiles.size > 0 && _lastState) {
         // Re-render to show cache markers in HTML
         renderFiles(_lastState, client);
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   _fetchingCached = false;
 }
 
@@ -48,13 +63,22 @@ let _lastState: PrinterState | null = null;
 
 /** Fetch inline thumbnails for visible gcode files (serialized via queue) */
 let _thumbClient: CommandSender | null = null;
-function fetchInlineThumbnails(files: { filename: string; type?: string }[], client: CommandSender): void {
+function fetchInlineThumbnails(
+  files: { filename: string; type?: string }[],
+  client: CommandSender,
+): void {
   _thumbClient = client;
   for (const file of files) {
     if (file.type === 'folder') continue;
     if (!file.filename.toLowerCase().endsWith('.gcode')) continue;
-    const fullPath = currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
-    if (thumbnailCache.has(fullPath) || thumbnailQueue.includes(fullPath) || thumbnailFetching === fullPath) continue;
+    const fullPath =
+      currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
+    if (
+      thumbnailCache.has(fullPath) ||
+      thumbnailQueue.includes(fullPath) ||
+      thumbnailFetching === fullPath
+    )
+      continue;
     thumbnailQueue.push(fullPath);
   }
   fetchNextThumbnail();
@@ -77,7 +101,7 @@ export function handleInlineThumbnail(base64: string | null): void {
   if (fullPath && base64) {
     thumbnailCache.set(fullPath, base64);
     // Find the DOM element and insert thumbnail
-    document.querySelectorAll('.file-item[data-type="file"]').forEach(el => {
+    document.querySelectorAll('.file-item[data-type="file"]').forEach((el) => {
       const fn = (el as HTMLElement).dataset.filename;
       if (!fn) return;
       const fp = currentDir === '/' ? fn : currentDir.replace(/^\//, '') + '/' + fn;
@@ -117,9 +141,9 @@ function parseFilamentFromName(filename: string): { types: string[]; count: numb
   const found: string[] = [];
   for (const part of parts) {
     const trimmed = part.trim();
-    if (typeKeywords.some(kw => trimmed.toUpperCase().includes(kw))) {
+    if (typeKeywords.some((kw) => trimmed.toUpperCase().includes(kw))) {
       // Split on + for multi-filament
-      trimmed.split('+').forEach(seg => {
+      trimmed.split('+').forEach((seg) => {
         const s = seg.trim();
         if (s) found.push(s);
       });
@@ -131,7 +155,8 @@ function parseFilamentFromName(filename: string): { types: string[]; count: numb
 
 function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
   closeFilePopover();
-  const fullPath = currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
+  const fullPath =
+    currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
   const thumb = thumbnailCache.get(fullPath);
   const isCached = cachedFiles.has(fullPath);
   const filamentInfo = parseFilamentFromName(file.filename);
@@ -147,9 +172,11 @@ function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
   html += `<div class="file-popover-name">${escapeHtml(file.filename)}</div>`;
   html += '<table class="file-popover-table">';
   html += `<tr><td>Size</td><td>${formatBytes(file.size)}</td></tr>`;
-  if (file.print_time) html += `<tr><td>Print time</td><td>${formatTime(file.print_time)}</td></tr>`;
+  if (file.print_time)
+    html += `<tr><td>Print time</td><td>${formatTime(file.print_time)}</td></tr>`;
   if (file.layer) html += `<tr><td>Layers</td><td>${file.layer}</td></tr>`;
-  if (file.total_filament_used) html += `<tr><td>Filament</td><td>${file.total_filament_used.toFixed(1)}g</td></tr>`;
+  if (file.total_filament_used)
+    html += `<tr><td>Filament</td><td>${file.total_filament_used.toFixed(1)}g</td></tr>`;
   if (filamentInfo) {
     html += `<tr><td>Material</td><td>${escapeHtml(filamentInfo.types.join(', '))}`;
     if (filamentInfo.count > 1) html += ` (${filamentInfo.count} filaments)`;
@@ -158,10 +185,12 @@ function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
   // Show color map info if available from last file detail matching this file
   if (_lastState?.lastFileDetail?.filename === fullPath && _lastState.colorMap.length > 0) {
     const cm = _lastState.colorMap;
-    const swatches = cm.map(c => {
-      const hex = c.color.startsWith('#') ? c.color : `#${c.color}`;
-      return `<span class="filament-swatch" style="background:${escapeAttr(hex)}" title="${escapeAttr(c.name)}"></span>`;
-    }).join(' ');
+    const swatches = cm
+      .map((c) => {
+        const hex = c.color.startsWith('#') ? c.color : `#${c.color}`;
+        return `<span class="filament-swatch" style="background:${escapeAttr(hex)}" title="${escapeAttr(c.name)}"></span>`;
+      })
+      .join(' ');
     html += `<tr><td>Filaments</td><td>${swatches} (${cm.length})</td></tr>`;
   }
   if (file.create_time) {
@@ -206,7 +235,12 @@ function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
     if (confirm(`Delete ${file.filename}?`)) {
       _popoverClient?.sendCommand(1047, { storage_media: currentSource, file_path: [fullPath] });
       setTimeout(() => {
-        _popoverClient?.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+        _popoverClient?.sendCommand(1044, {
+          storage_media: currentSource,
+          dir: currentDir,
+          offset: 0,
+          limit: 200,
+        });
         _popoverClient?.sendCommand(1048, { storage_media: currentSource });
       }, 500);
     }
@@ -235,13 +269,22 @@ function showFilePopover(file: FileEntry, anchor: HTMLElement): void {
     closePopoverTimeout = setTimeout(() => closeFilePopover(), 150);
   });
   el.addEventListener('mouseenter', () => {
-    if (closePopoverTimeout) { clearTimeout(closePopoverTimeout); closePopoverTimeout = null; }
+    if (closePopoverTimeout) {
+      clearTimeout(closePopoverTimeout);
+      closePopoverTimeout = null;
+    }
   });
 }
 
 function closeFilePopover(): void {
-  if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
-  if (filePopover) { filePopover.remove(); filePopover = null; }
+  if (popoverTimeout) {
+    clearTimeout(popoverTimeout);
+    popoverTimeout = null;
+  }
+  if (filePopover) {
+    filePopover.remove();
+    filePopover = null;
+  }
 }
 
 let closePopoverTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -253,34 +296,51 @@ function ensureFileDelegation(container: HTMLElement): void {
   fileDelegationBound = true;
 
   // Delegated mouseenter/mouseleave for file popovers (use capture for mouseenter)
-  container.addEventListener('mouseenter', (e) => {
-    const target = e.target as HTMLElement;
-    const item = target.closest('.file-item[data-type="file"]') as HTMLElement | null;
-    if (!item) return;
-    if (target.closest('.file-print-btn')) return;
-    const fn = item.dataset.filename;
-    if (!fn) return;
-    const file = _fileMap.get(fn);
-    if (!file) return;
+  container.addEventListener(
+    'mouseenter',
+    (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest('.file-item[data-type="file"]') as HTMLElement | null;
+      if (!item) return;
+      if (target.closest('.file-print-btn')) return;
+      const fn = item.dataset.filename;
+      if (!fn) return;
+      const file = _fileMap.get(fn);
+      if (!file) return;
 
-    if (closePopoverTimeout) { clearTimeout(closePopoverTimeout); closePopoverTimeout = null; }
-    if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
-    if (filePopover) {
-      showFilePopover(file, item);
-    } else {
-      popoverTimeout = setTimeout(() => showFilePopover(file, item), 300);
-    }
-  }, true);
+      if (closePopoverTimeout) {
+        clearTimeout(closePopoverTimeout);
+        closePopoverTimeout = null;
+      }
+      if (popoverTimeout) {
+        clearTimeout(popoverTimeout);
+        popoverTimeout = null;
+      }
+      if (filePopover) {
+        showFilePopover(file, item);
+      } else {
+        popoverTimeout = setTimeout(() => showFilePopover(file, item), 300);
+      }
+    },
+    true,
+  );
 
-  container.addEventListener('mouseleave', (e) => {
-    const target = e.target as HTMLElement;
-    const item = target.closest('.file-item[data-type="file"]') as HTMLElement | null;
-    if (!item) return;
-    if (popoverTimeout) { clearTimeout(popoverTimeout); popoverTimeout = null; }
-    closePopoverTimeout = setTimeout(() => {
-      if (filePopover && !filePopover.matches(':hover')) closeFilePopover();
-    }, 150);
-  }, true);
+  container.addEventListener(
+    'mouseleave',
+    (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest('.file-item[data-type="file"]') as HTMLElement | null;
+      if (!item) return;
+      if (popoverTimeout) {
+        clearTimeout(popoverTimeout);
+        popoverTimeout = null;
+      }
+      closePopoverTimeout = setTimeout(() => {
+        if (filePopover && !filePopover.matches(':hover')) closeFilePopover();
+      }, 150);
+    },
+    true,
+  );
 
   // Delegated click for folders, breadcrumbs, and print buttons
   container.addEventListener('click', (e) => {
@@ -293,7 +353,8 @@ function ensureFileDelegation(container: HTMLElement): void {
       const item = printBtn.closest('.file-item') as HTMLElement;
       const filename = item?.dataset.filename;
       if (filename && _lastState && _popoverClient) {
-        const fullPath = currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
+        const fullPath =
+          currentDir === '/' ? filename : currentDir.replace(/^\//, '') + '/' + filename;
         requestPrintDialog(filename, fullPath, _popoverClient, _lastState);
       }
       return;
@@ -308,7 +369,12 @@ function ensureFileDelegation(container: HTMLElement): void {
       thumbnailQueue = [];
       thumbnailFetching = null;
       container.innerHTML = '<div class="loading">Loading...</div>';
-      _popoverClient.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+      _popoverClient.sendCommand(1044, {
+        storage_media: currentSource,
+        dir: currentDir,
+        offset: 0,
+        limit: 200,
+      });
       return;
     }
 
@@ -321,12 +387,17 @@ function ensureFileDelegation(container: HTMLElement): void {
       thumbnailQueue = [];
       thumbnailFetching = null;
       container.innerHTML = '<div class="loading">Loading...</div>';
-      _popoverClient.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+      _popoverClient.sendCommand(1044, {
+        storage_media: currentSource,
+        dir: currentDir,
+        offset: 0,
+        limit: 200,
+      });
     }
   });
 }
 
-function bindFilePopovers(container: HTMLElement): void {
+function _bindFilePopovers(_container: HTMLElement): void {
   // No-op: popovers now handled by delegation in ensureFileDelegation
 }
 
@@ -337,7 +408,7 @@ function formatBytes(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }
 
-function renderBreadcrumb(client: CommandSender): string {
+function renderBreadcrumb(_client: CommandSender): string {
   if (currentDir === '/') return '';
   const parts = currentDir.split('/').filter(Boolean);
   let html = '<div class="file-breadcrumb">';
@@ -398,7 +469,11 @@ function closeThumbnailPopup(): void {
 
 // Close thumbnail popup on click outside
 document.addEventListener('click', (e) => {
-  if (thumbnailPopup && !(e.target as HTMLElement).closest('.file-thumbnail-btn') && !(e.target as HTMLElement).closest('.file-thumbnail-popup')) {
+  if (
+    thumbnailPopup &&
+    !(e.target as HTMLElement).closest('.file-thumbnail-btn') &&
+    !(e.target as HTMLElement).closest('.file-thumbnail-popup')
+  ) {
     closeThumbnailPopup();
   }
 });
@@ -448,13 +523,20 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
     const sizeMB = isFolder ? '' : (file.size / (1024 * 1024)).toFixed(1);
     const timeInfo = file.print_time ? formatTime(file.print_time) : '';
     const layerInfo = file.layer ? `${file.layer} layers` : '';
-    const filamentInfo = file.total_filament_used ? `${file.total_filament_used.toFixed(1)}g filament` : '';
-    const meta = isFolder ? 'Folder' : [sizeMB + ' MB', timeInfo, layerInfo, filamentInfo].filter(Boolean).join(' · ');
+    const filamentInfo = file.total_filament_used
+      ? `${file.total_filament_used.toFixed(1)}g filament`
+      : '';
+    const meta = isFolder
+      ? 'Folder'
+      : [sizeMB + ' MB', timeInfo, layerInfo, filamentInfo].filter(Boolean).join(' · ');
 
-    const fullPath = currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
+    const fullPath =
+      currentDir === '/' ? file.filename : currentDir.replace(/^\//, '') + '/' + file.filename;
     const isCached = cachedFiles.has(fullPath);
     const cachedThumb = thumbnailCache.get(fullPath);
-    const cacheMarker = isCached ? ' <span class="file-cache-marker" title="Cached on server">⚡</span>' : '';
+    const cacheMarker = isCached
+      ? ' <span class="file-cache-marker" title="Cached on server">⚡</span>'
+      : '';
 
     let iconHtml: string;
     if (isFolder) {
@@ -486,7 +568,7 @@ export function renderFiles(state: PrinterState, client: CommandSender): void {
   ensureFileDelegation(container);
 
   // Build file map for popover lookups
-  _fileMap = new Map(sorted.filter(f => f.type !== 'folder').map(f => [f.filename, f]));
+  _fileMap = new Map(sorted.filter((f) => f.type !== 'folder').map((f) => [f.filename, f]));
   _popoverClient = client;
 
   // Close any stale popover from previous render
@@ -503,14 +585,14 @@ export function bindFileControls(client: CommandSender): void {
   if (fileControlsBound) return;
   fileControlsBound = true;
 
-  document.querySelectorAll('.file-source-tab').forEach(tab => {
+  document.querySelectorAll('.file-source-tab').forEach((tab) => {
     tab.addEventListener('click', () => {
       const source = (tab as HTMLElement).dataset.source as 'local' | 'u-disk';
       currentSource = source;
       currentDir = '/';
       thumbnailQueue = [];
       thumbnailFetching = null;
-      document.querySelectorAll('.file-source-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.file-source-tab').forEach((t) => t.classList.remove('active'));
       tab.classList.add('active');
       $('file-list').innerHTML = '<div class="loading">Loading...</div>';
       client.sendCommand(1044, { storage_media: source, dir: '/', offset: 0, limit: 200 });
@@ -585,7 +667,11 @@ async function uploadFile(file: File, client: CommandSender): Promise<void> {
           resolve();
         } else {
           let msg = `Upload failed (HTTP ${xhr.status})`;
-          try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* ignore */ }
+          try {
+            msg = JSON.parse(xhr.responseText).error || msg;
+          } catch {
+            /* ignore */
+          }
           reject(new Error(msg));
         }
       };
@@ -596,7 +682,12 @@ async function uploadFile(file: File, client: CommandSender): Promise<void> {
     fillEl.style.width = '100%';
     textEl.textContent = `✓ ${file.name} uploaded`;
     // Refresh file list
-    client.sendCommand(1044, { storage_media: currentSource, dir: currentDir, offset: 0, limit: 200 });
+    client.sendCommand(1044, {
+      storage_media: currentSource,
+      dir: currentDir,
+      offset: 0,
+      limit: 200,
+    });
     client.sendCommand(1048, { storage_media: currentSource });
   } catch (err) {
     textEl.textContent = `✗ ${(err as Error).message}`;

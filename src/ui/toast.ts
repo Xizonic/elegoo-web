@@ -28,15 +28,18 @@ function ensureContainer(): HTMLElement {
 
 function render(): void {
   const el = ensureContainer();
-  el.innerHTML = toasts.map(t =>
-    `<div class="toast toast-${t.level}" data-id="${t.id}">` +
-    `<span class="toast-icon">${iconFor(t.level)}</span>` +
-    `<span class="toast-msg">${escapeHtml(t.message)}</span>` +
-    `<button class="toast-close">✕</button>` +
-    `</div>`
-  ).join('');
+  el.innerHTML = toasts
+    .map(
+      (t) =>
+        `<div class="toast toast-${t.level}" data-id="${t.id}">` +
+        `<span class="toast-icon">${iconFor(t.level)}</span>` +
+        `<span class="toast-msg">${escapeHtml(t.message)}</span>` +
+        `<button class="toast-close">✕</button>` +
+        `</div>`,
+    )
+    .join('');
 
-  el.querySelectorAll('.toast-close').forEach(btn => {
+  el.querySelectorAll('.toast-close').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = parseInt((btn.parentElement as HTMLElement).dataset.id ?? '0');
       dismiss(id);
@@ -46,10 +49,14 @@ function render(): void {
 
 function iconFor(level: ToastLevel): string {
   switch (level) {
-    case 'success': return '✅';
-    case 'warning': return '⚠️';
-    case 'error': return '❌';
-    default: return 'ℹ️';
+    case 'success':
+      return '✅';
+    case 'warning':
+      return '⚠️';
+    case 'error':
+      return '❌';
+    default:
+      return 'ℹ️';
   }
 }
 
@@ -60,7 +67,7 @@ function escapeHtml(s: string): string {
 }
 
 function dismiss(id: number): void {
-  const idx = toasts.findIndex(t => t.id === id);
+  const idx = toasts.findIndex((t) => t.id === id);
   if (idx >= 0) {
     clearTimeout(toasts[idx].timer);
     toasts.splice(idx, 1);

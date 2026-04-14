@@ -48,18 +48,18 @@ export function renderCanvas(state: PrinterState): void {
     // Reorder: grid[0]=tray0, grid[1]=tray3, grid[2]=tray1, grid[3]=tray2
     const gridOrder = [0, 3, 1, 2];
     const orderedTrays = gridOrder
-      .filter(i => i < unit.tray_list.length)
-      .map(i => unit.tray_list[i]);
+      .filter((i) => i < unit.tray_list.length)
+      .map((i) => unit.tray_list[i]);
     for (const tray of orderedTrays) {
-      const isActive = tray.status === 2 || (
-        unit.canvas_id === canvas.active_canvas_id &&
-        tray.tray_id === canvas.active_tray_id);
+      const isActive =
+        tray.status === 2 ||
+        (unit.canvas_id === canvas.active_canvas_id && tray.tray_id === canvas.active_tray_id);
       const isEmpty = tray.status === 0;
       const color = `#${(tray.filament_color || '434343').replace(/^#/, '')}`;
       const statusClass = isActive ? 'spool-active' : isEmpty ? 'spool-empty' : 'spool-loaded';
       const typeLabel = tray.filament_type || (isEmpty ? '' : '?');
-      const tempRange = (!isEmpty && tray.min_nozzle_temp) ?
-        `${tray.min_nozzle_temp}–${tray.max_nozzle_temp}°C` : '';
+      const tempRange =
+        !isEmpty && tray.min_nozzle_temp ? `${tray.min_nozzle_temp}–${tray.max_nozzle_temp}°C` : '';
 
       html += `<div class="canvas-spool-slot ${statusClass}" title="${escapeAttr(tray.filament_name || typeLabel)} — click to edit" data-canvas-id="${unit.canvas_id}" data-tray-id="${tray.tray_id}" data-type="${escapeAttr(tray.filament_type || '')}" data-color="${escapeAttr(tray.filament_color || '')}" data-brand="${escapeAttr(tray.brand || 'ELEGOO')}" data-name="${escapeAttr(tray.filament_name || '')}" data-min-temp="${tray.min_nozzle_temp || ''}" data-max-temp="${tray.max_nozzle_temp || ''}">`;
       html += `<div class="spool-number">${tray.tray_id + 1}</div>`;
@@ -105,7 +105,7 @@ export function renderCanvas(state: PrinterState): void {
   container.innerHTML = html;
 
   // Set cursor on spool slots (no event binding needed — delegation below)
-  container.querySelectorAll('.canvas-spool-slot').forEach(slot => {
+  container.querySelectorAll('.canvas-spool-slot').forEach((slot) => {
     (slot as HTMLElement).style.cursor = 'pointer';
   });
 
@@ -154,16 +154,22 @@ export function renderCanvas(state: PrinterState): void {
       if (slot) {
         const canvasId = parseInt(slot.dataset.canvasId ?? '0');
         const trayId = parseInt(slot.dataset.trayId ?? '0');
-        const isPrinting = (container.closest('#canvas-status') ?? container)
-          .getAttribute('data-printing') === '1';
-        openFilamentEditor(canvasId, trayId, {
-          type: slot.dataset.type || 'PLA',
-          color: slot.dataset.color || '#ffffff',
-          name: slot.dataset.name || '',
-          brand: slot.dataset.brand || 'ELEGOO',
-          minTemp: parseInt(slot.dataset.minTemp || '190'),
-          maxTemp: parseInt(slot.dataset.maxTemp || '230'),
-        }, canvasClient, isPrinting);
+        const isPrinting =
+          (container.closest('#canvas-status') ?? container).getAttribute('data-printing') === '1';
+        openFilamentEditor(
+          canvasId,
+          trayId,
+          {
+            type: slot.dataset.type || 'PLA',
+            color: slot.dataset.color || '#ffffff',
+            name: slot.dataset.name || '',
+            brand: slot.dataset.brand || 'ELEGOO',
+            minTemp: parseInt(slot.dataset.minTemp || '190'),
+            maxTemp: parseInt(slot.dataset.maxTemp || '230'),
+          },
+          canvasClient,
+          isPrinting,
+        );
       }
     });
   }
@@ -183,7 +189,7 @@ function renderMonoFilament(container: HTMLElement, info: Record<string, unknown
 
   const colorHex = color ? `#${color.replace(/^#/, '')}` : '#666';
   const label = name || type || 'Unknown';
-  const tempRange = (minTemp && maxTemp) ? `${minTemp}–${maxTemp}°C` : '';
+  const tempRange = minTemp && maxTemp ? `${minTemp}–${maxTemp}°C` : '';
   const brandLabel = brand ? escapeHtml(brand) + ' ' : '';
 
   let html = '<div class="mono-filament">';
@@ -200,7 +206,20 @@ function renderMonoFilament(container: HTMLElement, info: Record<string, unknown
   html += '</div>';
 
   // Show raw fields if we got unexpected structure (helps debug)
-  const knownKeys = new Set(['filament_type', 'type', 'filament_color', 'color', 'filament_name', 'name', 'min_nozzle_temp', 'minTemp', 'max_nozzle_temp', 'maxTemp', 'brand', 'error_code']);
+  const knownKeys = new Set([
+    'filament_type',
+    'type',
+    'filament_color',
+    'color',
+    'filament_name',
+    'name',
+    'min_nozzle_temp',
+    'minTemp',
+    'max_nozzle_temp',
+    'maxTemp',
+    'brand',
+    'error_code',
+  ]);
   const extra = Object.entries(info).filter(([k]) => !knownKeys.has(k));
   if (extra.length > 0 && !type && !name) {
     html += '<div class="mono-filament-raw">';

@@ -11,7 +11,13 @@
 import type { PrinterState } from '../printer-state';
 import type { CommandSender } from '../ws-client';
 import type { CanvasInfo, CanvasTray } from '../types';
-import { escapeHtml, escapeAttr, formatTime, fetchTimeout, applyDarkThumbnailCheck } from './helpers';
+import {
+  escapeHtml,
+  escapeAttr,
+  formatTime,
+  fetchTimeout,
+  applyDarkThumbnailCheck,
+} from './helpers';
 import { toast } from './toast';
 import { currentFileSource } from './files';
 
@@ -23,7 +29,12 @@ function formatSize(bytes: number): string {
 }
 
 /** Pending dialog state while waiting for 1046 response */
-let pendingPrint: { filename: string; fullPath: string; client: CommandSender; state: PrinterState } | null = null;
+let pendingPrint: {
+  filename: string;
+  fullPath: string;
+  client: CommandSender;
+  state: PrinterState;
+} | null = null;
 
 /** Each color from the gcode mapped to a Canvas tray */
 interface ColorMapping {
@@ -99,7 +110,7 @@ function contrastColor(hex: string): string {
     const g = parseInt(c.slice(2, 4), 16);
     const b = parseInt(c.slice(4, 6), 16);
     // Relative luminance
-    return (r * 0.299 + g * 0.587 + b * 0.114) > 128 ? '#000' : '#fff';
+    return r * 0.299 + g * 0.587 + b * 0.114 > 128 ? '#000' : '#fff';
   } catch {
     return '#fff';
   }
@@ -112,7 +123,8 @@ function getAvailableTrays(canvas: CanvasInfo | null): FlatTray[] {
   for (const unit of canvas.canvas_list) {
     if (!unit.connected) continue;
     for (const tray of unit.tray_list) {
-      if (tray.status !== 0) { // not empty
+      if (tray.status !== 0) {
+        // not empty
         trays.push({ canvasId: unit.canvas_id, tray });
       }
     }
@@ -128,7 +140,7 @@ function autoMap(
   const trays = getAvailableTrays(canvas);
   const usedTrays = new Set<string>(); // "canvasId:trayId"
 
-  return colorMap.map(cm => {
+  return colorMap.map((cm) => {
     const mapping: ColorMapping = {
       t: cm.t,
       gcodeColor: cm.color.startsWith('#') ? cm.color : `#${cm.color}`,
@@ -162,7 +174,8 @@ function autoMap(
       }
     }
 
-    if (bestMatch && bestDist < 200) { // threshold: allow reasonable matches
+    if (bestMatch && bestDist < 200) {
+      // threshold: allow reasonable matches
       const key = `${bestMatch.canvasId}:${bestMatch.tray.tray_id}`;
       usedTrays.add(key);
       mapping.canvasId = bestMatch.canvasId;
@@ -188,14 +201,14 @@ function showDialog(
   document.getElementById('print-dialog-overlay')?.remove();
 
   const canvas = state.canvas;
-  const hasCanvas = !!(canvas?.canvas_list?.length);
+  const hasCanvas = !!canvas?.canvas_list?.length;
   const colorMap = state.colorMap;
   const isMultiColor = hasCanvas && colorMap.length > 0;
   const detail = state.lastFileDetail;
   const trays = getAvailableTrays(canvas);
 
   // Auto-map colors to Canvas trays
-  let mappings = isMultiColor ? autoMap(colorMap, canvas) : [];
+  const mappings = isMultiColor ? autoMap(colorMap, canvas) : [];
   const autoRefill = canvas?.auto_refill ?? false;
 
   // Build dialog HTML
@@ -228,13 +241,15 @@ function showDialog(
       <div class="print-dialog-body">
         <div class="print-dialog-file-info">
           <div class="print-dialog-thumbnail" id="print-dialog-thumb">
-            ${(detail?.thumbnail || state.thumbnail)
-              ? `<img src="data:image/png;base64,${detail?.thumbnail || state.thumbnail}" alt="Preview" id="print-dialog-thumb-img">`
-              : '<div class="print-dialog-no-thumb">No preview</div>'}
+            ${
+              detail?.thumbnail || state.thumbnail
+                ? `<img src="data:image/png;base64,${detail?.thumbnail || state.thumbnail}" alt="Preview" id="print-dialog-thumb-img">`
+                : '<div class="print-dialog-no-thumb">No preview</div>'
+            }
           </div>
           <div class="print-dialog-meta">
             <div class="print-dialog-filename">${escapeHtml(filename)}</div>
-            ${metaParts.length ? `<div class="print-dialog-meta-row">${metaParts.map(p => `<span>${escapeHtml(p)}</span>`).join(' · ')}</div>` : ''}
+            ${metaParts.length ? `<div class="print-dialog-meta-row">${metaParts.map((p) => `<span>${escapeHtml(p)}</span>`).join(' · ')}</div>` : ''}
           </div>
         </div>
         ${mappingHtml}
@@ -278,9 +293,9 @@ function showDialog(
   }
 
   // Bind bed plate toggle buttons
-  overlay.querySelectorAll('.print-bed-btn').forEach(btn => {
+  overlay.querySelectorAll('.print-bed-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      overlay.querySelectorAll('.print-bed-btn').forEach(b => b.classList.remove('active'));
+      overlay.querySelectorAll('.print-bed-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
     });
   });
@@ -297,19 +312,20 @@ function showDialog(
   document.getElementById('print-dialog-confirm')!.addEventListener('click', async () => {
     // Check all colors are mapped if multi-color
     if (isMultiColor) {
-      const unmapped = mappings.filter(m => m.trayId === -1);
+      const unmapped = mappings.filter((m) => m.trayId === -1);
       if (unmapped.length > 0) {
         toast(`${unmapped.length} color(s) not mapped to Canvas trays`, 'error');
         return;
       }
     }
 
-    const bedType = (overlay.querySelector('.print-bed-btn.active') as HTMLElement)?.dataset.bed || 'A';
+    const bedType =
+      (overlay.querySelector('.print-bed-btn.active') as HTMLElement)?.dataset.bed || 'A';
     const leveling = (document.getElementById('print-opt-leveling') as HTMLInputElement).checked;
     const timelapse = (document.getElementById('print-opt-timelapse') as HTMLInputElement).checked;
 
     const slotMap = isMultiColor
-      ? mappings.map(m => ({ t: m.t, canvas_id: m.canvasId, tray_id: m.trayId }))
+      ? mappings.map((m) => ({ t: m.t, canvas_id: m.canvasId, tray_id: m.trayId }))
       : [];
 
     const confirmBtn = document.getElementById('print-dialog-confirm') as HTMLButtonElement;
@@ -341,17 +357,28 @@ function showDialog(
       fillEl.style.width = '30%';
 
       try {
-        const resp = await fetchTimeout('/api/files/precache', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file: fullPath, source: currentFileSource() }),
-        }, 120_000);
+        const resp = await fetchTimeout(
+          '/api/files/precache',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: fullPath, source: currentFileSource() }),
+          },
+          120_000,
+        );
 
-        const result = await resp.json() as { ok: boolean; cached: boolean; size: number; error?: string };
+        const result = (await resp.json()) as {
+          ok: boolean;
+          cached: boolean;
+          size: number;
+          error?: string;
+        };
         fillEl.style.width = '100%';
 
         if (result.ok) {
-          textEl.textContent = result.cached ? 'Already cached' : `Cached (${formatSize(result.size)})`;
+          textEl.textContent = result.cached
+            ? 'Already cached'
+            : `Cached (${formatSize(result.size)})`;
         } else {
           // Precache failed — warn but still allow printing
           textEl.textContent = `Cache failed: ${result.error ?? 'unknown'} — printing anyway`;
@@ -366,13 +393,15 @@ function showDialog(
       }
 
       // Brief pause so user sees the result
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 400));
       progressEl.remove();
     }
 
     // Update auto refill setting if changed
     if (isMultiColor) {
-      const autoRefillEl = document.getElementById('print-opt-auto-refill') as HTMLInputElement | null;
+      const autoRefillEl = document.getElementById(
+        'print-opt-auto-refill',
+      ) as HTMLInputElement | null;
       if (autoRefillEl && autoRefillEl.checked !== (canvas?.auto_refill ?? false)) {
         client.sendCommand(2004, { auto_refill: autoRefillEl.checked });
       }
@@ -405,30 +434,34 @@ function renderMappings(mappings: ColorMapping[], trays: FlatTray[]): string {
     canvasUnits.set(ft.canvasId, list);
   }
 
-  return mappings.map((m, idx) => {
-    const gcColor = m.gcodeColor;
-    const gcContrast = contrastColor(gcColor);
+  return mappings
+    .map((m, idx) => {
+      const gcColor = m.gcodeColor;
+      const gcContrast = contrastColor(gcColor);
 
-    // Render a 2×2 spool grid for each canvas unit
-    // Physical layout CCW from top-left: tray 0=TL, 1=BL, 2=BR, 3=TR
-    // CSS grid row-major: pos0=TL, pos1=TR, pos2=BL, pos3=BR
-    const gridOrder = [0, 3, 1, 2]; // maps grid position → tray index
+      // Render a 2×2 spool grid for each canvas unit
+      // Physical layout CCW from top-left: tray 0=TL, 1=BL, 2=BR, 3=TR
+      // CSS grid row-major: pos0=TL, pos1=TR, pos2=BL, pos3=BR
+      const gridOrder = [0, 3, 1, 2]; // maps grid position → tray index
 
-    let gridsHtml = '';
-    for (const [canvasId, unitTrays] of canvasUnits) {
-      const spoolsHtml = gridOrder.map(trayIdx => {
-        const ft = unitTrays.find(t => t.tray.tray_id === trayIdx);
-        if (!ft) return '<div class="print-spool print-spool-empty"></div>';
+      let gridsHtml = '';
+      for (const [canvasId, unitTrays] of canvasUnits) {
+        const spoolsHtml = gridOrder
+          .map((trayIdx) => {
+            const ft = unitTrays.find((t) => t.tray.tray_id === trayIdx);
+            if (!ft) return '<div class="print-spool print-spool-empty"></div>';
 
-        const color = ft.tray.filament_color.startsWith('#') ? ft.tray.filament_color : `#${ft.tray.filament_color}`;
-        const isEmpty = ft.tray.status === 0;
-        const isSelected = ft.canvasId === m.canvasId && ft.tray.tray_id === m.trayId;
-        const spoolColor = isEmpty ? '#434343' : color;
-        const typeLabel = isEmpty ? '/' : ft.tray.filament_type;
-        const trayNum = ft.tray.tray_id + 1;
-        const labelContrast = contrastColor(spoolColor);
+            const color = ft.tray.filament_color.startsWith('#')
+              ? ft.tray.filament_color
+              : `#${ft.tray.filament_color}`;
+            const isEmpty = ft.tray.status === 0;
+            const isSelected = ft.canvasId === m.canvasId && ft.tray.tray_id === m.trayId;
+            const spoolColor = isEmpty ? '#434343' : color;
+            const typeLabel = isEmpty ? '/' : ft.tray.filament_type;
+            const trayNum = ft.tray.tray_id + 1;
+            const labelContrast = contrastColor(spoolColor);
 
-        return `<div class="print-spool ${isEmpty ? 'print-spool-empty' : ''} ${isSelected ? 'print-spool-selected' : ''}"
+            return `<div class="print-spool ${isEmpty ? 'print-spool-empty' : ''} ${isSelected ? 'print-spool-selected' : ''}"
           data-idx="${idx}" data-canvas="${ft.canvasId}" data-tray="${ft.tray.tray_id}"
           style="--spool-color: ${escapeAttr(spoolColor)}"
           title="${escapeAttr(typeLabel)} (C${canvasId + 1}:T${trayNum})">
@@ -436,12 +469,13 @@ function renderMappings(mappings: ColorMapping[], trays: FlatTray[]): string {
           <div class="print-spool-num" style="color:${labelContrast}">${trayNum}</div>
           <div class="print-spool-type" style="color:${labelContrast}">${escapeHtml(typeLabel)}</div>
         </div>`;
-      }).join('');
+          })
+          .join('');
 
-      gridsHtml += `<div class="print-spool-grid" data-canvas="${canvasId}">${spoolsHtml}</div>`;
-    }
+        gridsHtml += `<div class="print-spool-grid" data-canvas="${canvasId}">${spoolsHtml}</div>`;
+      }
 
-    return `
+      return `
       <div class="print-mapping-row" data-idx="${idx}">
         <div class="print-mapping-gcode" style="background:${escapeAttr(gcColor)};color:${gcContrast}">
           ${escapeHtml(m.gcodeType)}
@@ -451,7 +485,8 @@ function renderMappings(mappings: ColorMapping[], trays: FlatTray[]): string {
           ${gridsHtml}
         </div>
       </div>`;
-  }).join('');
+    })
+    .join('');
 }
 
 /** Bind click events on spool grid items */
@@ -468,7 +503,7 @@ function bindMappingDropdowns(mappings: ColorMapping[], trays: FlatTray[]): void
     const trayId = parseInt(spool.dataset.tray ?? '-1');
     if (idx < 0 || idx >= mappings.length) return;
 
-    const ft = trays.find(t => t.canvasId === canvasId && t.tray.tray_id === trayId);
+    const ft = trays.find((t) => t.canvasId === canvasId && t.tray.tray_id === trayId);
     if (!ft) return;
 
     // Toggle: clicking already-selected spool deselects it
@@ -481,7 +516,8 @@ function bindMappingDropdowns(mappings: ColorMapping[], trays: FlatTray[]): void
       mappings[idx].canvasId = canvasId;
       mappings[idx].trayId = trayId;
       mappings[idx].mappedColor = ft.tray.filament_color.startsWith('#')
-        ? ft.tray.filament_color : `#${ft.tray.filament_color}`;
+        ? ft.tray.filament_color
+        : `#${ft.tray.filament_color}`;
       mappings[idx].mappedType = ft.tray.filament_type;
     }
 

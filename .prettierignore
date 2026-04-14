@@ -1,0 +1,4 @@
+dist/
+data/
+pnpm-lock.yaml
+*.md

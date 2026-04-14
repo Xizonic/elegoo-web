@@ -8,8 +8,15 @@ let lastThumbnailFile = '';
 
 // Filament densities (g/cm³) for length calculation
 const FILAMENT_DENSITY: Record<string, number> = {
-  PLA: 1.24, ABS: 1.04, ASA: 1.07, PETG: 1.27, TPU: 1.21,
-  PA: 1.14, PC: 1.20, PVA: 1.23, HIPS: 1.04,
+  PLA: 1.24,
+  ABS: 1.04,
+  ASA: 1.07,
+  PETG: 1.27,
+  TPU: 1.21,
+  PA: 1.14,
+  PC: 1.2,
+  PVA: 1.23,
+  HIPS: 1.04,
 };
 const FILAMENT_DIAMETER_CM = 0.175; // 1.75mm
 const CROSS_SECTION_CM2 = Math.PI * (FILAMENT_DIAMETER_CM / 2) ** 2;
@@ -182,10 +189,18 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
   } else if (machineStatus?.status === 5) {
     badge.textContent = `📐 ${statusName}${subLabel}`;
     badge.className = 'print-status-badge badge-busy';
-  } else if (machineStatus?.status === 3 || machineStatus?.status === 4 || machineStatus?.status === 13) {
+  } else if (
+    machineStatus?.status === 3 ||
+    machineStatus?.status === 4 ||
+    machineStatus?.status === 13
+  ) {
     badge.textContent = `🔄 ${statusName}${subLabel}`;
     badge.className = 'print-status-badge badge-busy';
-  } else if (machineStatus?.status === 6 || machineStatus?.status === 7 || machineStatus?.status === 8) {
+  } else if (
+    machineStatus?.status === 6 ||
+    machineStatus?.status === 7 ||
+    machineStatus?.status === 8
+  ) {
     badge.textContent = `⚙️ ${statusName}${subLabel}`;
     badge.className = 'print-status-badge badge-busy';
   } else if (machineStatus?.status === 14) {
@@ -272,8 +287,8 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
 
   // Remaining time
   const remaining = formatTime(ps?.remaining_time_sec);
-  $('print-remaining').textContent = (isPrinting || isPaused) && remaining !== '--'
-    ? `Remaining: ${remaining}` : '--';
+  $('print-remaining').textContent =
+    (isPrinting || isPaused) && remaining !== '--' ? `Remaining: ${remaining}` : '--';
 
   // Elapsed time
   const printDur = ps?.print_duration;
@@ -311,7 +326,10 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     ($('temp-nozzle-bar') as HTMLElement).style.width = `${nozzlePct}%`;
     const nozzleBar = $('temp-nozzle-bar') as HTMLElement;
     nozzleBar.classList.toggle('heating', ext.temperature < ext.target - 2 && ext.target > 0);
-    nozzleBar.classList.toggle('at-target', Math.abs(ext.temperature - ext.target) <= 2 && ext.target > 0);
+    nozzleBar.classList.toggle(
+      'at-target',
+      Math.abs(ext.temperature - ext.target) <= 2 && ext.target > 0,
+    );
   }
 
   const bed = s.heater_bed;
@@ -322,7 +340,10 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     ($('temp-bed-bar') as HTMLElement).style.width = `${bedPct}%`;
     const bedBar = $('temp-bed-bar') as HTMLElement;
     bedBar.classList.toggle('heating', bed.temperature < bed.target - 2 && bed.target > 0);
-    bedBar.classList.toggle('at-target', Math.abs(bed.temperature - bed.target) <= 2 && bed.target > 0);
+    bedBar.classList.toggle(
+      'at-target',
+      Math.abs(bed.temperature - bed.target) <= 2 && bed.target > 0,
+    );
   }
 
   const chamber = s.ztemperature_sensor;
@@ -376,9 +397,11 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
     _prevE = currentE;
     _prevETime = now;
   }
-  $('live-extrusion').textContent = _lastExtRate > 0 ? `${_lastExtRate.toFixed(1)} mm/s` : '-- mm/s';
+  $('live-extrusion').textContent =
+    _lastExtRate > 0 ? `${_lastExtRate.toFixed(1)} mm/s` : '-- mm/s';
   $('live-flow').textContent = _lastFlowRate > 0 ? `${_lastFlowRate.toFixed(1)} mm³/s` : '-- mm³/s';
-  $('live-mass-flow').textContent = _lastMassFlow > 0 ? `${_lastMassFlow.toFixed(1)} mg/s` : '-- mg/s';
+  $('live-mass-flow').textContent =
+    _lastMassFlow > 0 ? `${_lastMassFlow.toFixed(1)} mg/s` : '-- mg/s';
 
   // Per-spool filament usage
   renderFilamentUsage(state);
@@ -394,7 +417,7 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
   // Speed mode buttons — status reports 0/1/2/3, buttons use command values 50/100/130/160
   const speedModeMap: Record<number, number> = { 0: 50, 1: 100, 2: 130, 3: 160 };
   const speedMode = speedModeMap[pos?.speed_mode ?? 1] ?? 100;
-  document.querySelectorAll('.speed-btn').forEach(btn => {
+  document.querySelectorAll('.speed-btn').forEach((btn) => {
     const mode = parseInt((btn as HTMLElement).dataset.mode ?? '100');
     btn.classList.toggle('active', mode === speedMode);
   });
@@ -413,7 +436,8 @@ export function renderDashboard(state: PrinterState, client: CommandSender): voi
 export function renderHeader(state: PrinterState): void {
   const attrs = state.attributes;
   if (attrs) {
-    $('printer-name').textContent = `${attrs.hostname} (${attrs.machine_model}) — FW ${attrs.software_version?.ota_version}`;
+    $('printer-name').textContent =
+      `${attrs.hostname} (${attrs.machine_model}) — FW ${attrs.software_version?.ota_version}`;
   }
 }
 
@@ -432,7 +456,7 @@ function renderExceptions(codes: number[]): void {
   if (key === lastExceptionKey) return;
   lastExceptionKey = key;
 
-  const items = codes.map(code => {
+  const items = codes.map((code) => {
     const name = EXCEPTION_NAMES[code] ?? `Unknown Error (${code})`;
     const isCritical = CRITICAL_EXCEPTIONS.has(code);
     const cls = isCritical ? 'exception-item critical' : 'exception-item warning';

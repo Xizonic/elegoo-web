@@ -9,7 +9,12 @@
 import { EventEmitter } from 'events';
 import { mkdir, writeFile, readdir, readFile, rm } from 'fs/promises';
 import { join } from 'path';
-import type { StateStore, ChartPoint, PrintEvent, EventLogEntry, FilamentUsage } from './state-store.js';
+import type {
+  StateStore,
+  ChartPoint,
+  PrintEvent,
+  FilamentUsage,
+} from './state-store.js';
 import type { ServiceConfig } from './config.js';
 import { getSnapshot } from './rest-api.js';
 import { getLogger } from './logger.js';
@@ -115,7 +120,10 @@ export class PrintReportCollector extends EventEmitter {
 
   private handleEvent(event: PrintEvent): void {
     // Update filename as soon as it becomes available (CC2 may send it in a later delta)
-    if (this.activeReport && (!this.activeReport.filename || this.activeReport.filename === 'unknown')) {
+    if (
+      this.activeReport &&
+      (!this.activeReport.filename || this.activeReport.filename === 'unknown')
+    ) {
       const fn = 'filename' in event ? (event as { filename?: string }).filename : undefined;
       if (fn && fn !== 'unknown') {
         log.info(`Report filename resolved: ${fn}`);
@@ -155,7 +163,9 @@ export class PrintReportCollector extends EventEmitter {
       case 'layer_change':
         // Only log milestone layers
         if (event.layer % 50 === 0 || event.layer === event.totalLayers) {
-          this.recordEvent(`Layer ${event.layer}/${event.totalLayers} (${event.durationSec.toFixed(1)}s)`);
+          this.recordEvent(
+            `Layer ${event.layer}/${event.totalLayers} (${event.durationSec.toFixed(1)}s)`,
+          );
         }
         break;
     }
@@ -187,10 +197,17 @@ export class PrintReportCollector extends EventEmitter {
     // Delay initial snapshot by 10s to let CC2 send fresh state deltas
     setTimeout(() => this.captureSnapshot(), 10_000);
     // Start periodic snapshot timer
-    this.activeReport!.snapshotTimer = setInterval(() => this.captureSnapshot(), SNAPSHOT_INTERVAL_MS);
+    this.activeReport!.snapshotTimer = setInterval(
+      () => this.captureSnapshot(),
+      SNAPSHOT_INTERVAL_MS,
+    );
   }
 
-  private async finalizeReport(outcome: 'completed' | 'failed' | 'stopped', duration?: number, failureReason?: string): Promise<void> {
+  private async finalizeReport(
+    outcome: 'completed' | 'failed' | 'stopped',
+    duration?: number,
+    failureReason?: string,
+  ): Promise<void> {
     const active = this.activeReport;
     if (!active) return;
 
@@ -210,9 +227,9 @@ export class PrintReportCollector extends EventEmitter {
     const status = this.store.status;
 
     // Compute chart statistics from data collected during print window
-    const chartData = this.store.getChartHistory().filter(
-      p => p.t >= active.startedAt && p.t <= endedAt,
-    );
+    const chartData = this.store
+      .getChartHistory()
+      .filter((p) => p.t >= active.startedAt && p.t <= endedAt);
     const layerTimes = this.store.layerTimes;
 
     // Re-read filename from current state if it was empty at start time
@@ -268,7 +285,9 @@ export class PrintReportCollector extends EventEmitter {
       await writeFile(join(active.reportDir, 'report.json'), JSON.stringify(report, null, 2));
       // Save chart data separately (can be large)
       await writeFile(join(active.reportDir, 'chart-data.json'), JSON.stringify(chartData));
-      log.info(`Report saved: ${active.id} (${active.snapshots.length} snapshots, ${chartData.length} chart points)`);
+      log.info(
+        `Report saved: ${active.id} (${active.snapshots.length} snapshots, ${chartData.length} chart points)`,
+      );
     } catch (err) {
       log.error(`Failed to save report: ${err}`);
     }
@@ -330,10 +349,26 @@ export class PrintReportCollector extends EventEmitter {
   }
 
   /** List all saved reports (most recent first) */
-  async listReports(): Promise<Array<{ id: string; filename: string; outcome: string; startedAt: number; endedAt: number; duration: number }>> {
+  async listReports(): Promise<
+    Array<{
+      id: string;
+      filename: string;
+      outcome: string;
+      startedAt: number;
+      endedAt: number;
+      duration: number;
+    }>
+  > {
     try {
       const entries = await readdir(this.reportsDir, { withFileTypes: true });
-      const reports: Array<{ id: string; filename: string; outcome: string; startedAt: number; endedAt: number; duration: number }> = [];
+      const reports: Array<{
+        id: string;
+        filename: string;
+        outcome: string;
+        startedAt: number;
+        endedAt: number;
+        duration: number;
+      }> = [];
 
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
@@ -387,7 +422,7 @@ export class PrintReportCollector extends EventEmitter {
     const safeId = id.replace(/[^a-zA-Z0-9._-]/g, '');
     const safeName = snapFilename.replace(/[^a-zA-Z0-9._-]/g, '');
     try {
-      return await readFile(join(this.reportsDir, safeId, safeName)) as Buffer;
+      return (await readFile(join(this.reportsDir, safeId, safeName))) as Buffer;
     } catch {
       return null;
     }
@@ -423,7 +458,10 @@ interface ActivePrint {
 }
 
 function computeStats(data: ChartPoint[], key: string): MinMaxAvg {
-  let min = Infinity, max = -Infinity, sum = 0, count = 0;
+  let min = Infinity,
+    max = -Infinity,
+    sum = 0,
+    count = 0;
   for (const p of data) {
     const v = p.values[key];
     if (v == null || v === 0) continue;
@@ -440,11 +478,15 @@ function computeStats(data: ChartPoint[], key: string): MinMaxAvg {
   };
 }
 
-function computeLayerStats(layerTimes: Array<{ layer: number; duration: number; timestamp: number }>): PrintReport['layerStats'] {
+function computeLayerStats(
+  layerTimes: Array<{ layer: number; duration: number; timestamp: number }>,
+): PrintReport['layerStats'] {
   if (layerTimes.length === 0) {
     return { count: 0, avgDuration: 0, minDuration: 0, maxDuration: 0, layers: [] };
   }
-  let min = Infinity, max = -Infinity, sum = 0;
+  let min = Infinity,
+    max = -Infinity,
+    sum = 0;
   const layers: Array<[number, number]> = [];
   for (const lt of layerTimes) {
     const d = lt.duration;

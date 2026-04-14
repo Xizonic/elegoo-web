@@ -58,7 +58,7 @@ export function loadConfig(): ServiceConfig {
     throw new Error(`Invalid PRINTER_IP: "${printerIp}" (must be a valid IPv4 address)`);
   }
   const octets = printerIp.split('.').map(Number);
-  if (octets.some(o => o > 255)) {
+  if (octets.some((o) => o > 255)) {
     throw new Error(`Invalid PRINTER_IP: "${printerIp}" (octet out of range)`);
   }
 
@@ -90,7 +90,7 @@ export function loadConfig(): ServiceConfig {
     // AI monitoring
     aiEnabled: env('AI_ENABLED') === 'true',
     aiVlmEnabled: env('AI_VLM_ENABLED', 'true') !== 'false',
-    aiVlmProvider: (env('AI_VLM_PROVIDER', 'ollama') as 'openai' | 'ollama'),
+    aiVlmProvider: env('AI_VLM_PROVIDER', 'ollama') as 'openai' | 'ollama',
     aiVlmApiKey: env('AI_VLM_API_KEY'),
     aiVlmBaseUrl: env('AI_VLM_BASE_URL', 'http://172.20.100.9:3000'),
     aiVlmModel: env('AI_VLM_MODEL', 'llava'),
