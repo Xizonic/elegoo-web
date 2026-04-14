@@ -108,7 +108,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
 
   // ── Resources ──────────────────────────────────────────────
 
-  mcp.resource(
+  mcp.registerResource(
     'printer-status',
     'printer://status',
     {
@@ -119,7 +119,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     }),
   );
 
-  mcp.resource(
+  mcp.registerResource(
     'printer-files',
     'printer://files',
     {
@@ -140,7 +140,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     }),
   );
 
-  mcp.resource(
+  mcp.registerResource(
     'printer-metrics',
     'printer://metrics',
     {
@@ -197,7 +197,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.resource(
+  mcp.registerResource(
     'printer-events',
     'printer://events',
     {
@@ -214,7 +214,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     }),
   );
 
-  mcp.resource(
+  mcp.registerResource(
     'printer-system',
     'printer://system',
     {
@@ -235,7 +235,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     }),
   );
 
-  mcp.resource(
+  mcp.registerResource(
     'printer-zones',
     'printer://zones',
     {
@@ -254,19 +254,25 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
 
   // ── Read-only tools ────────────────────────────────────────
 
-  mcp.tool('status', 'Get printer status summary', async () => txt(buildStatusText(store)));
+  mcp.registerTool('status', { description: 'Get printer status summary' }, async () =>
+    txt(buildStatusText(store)),
+  );
 
-  mcp.tool('temperatures', 'Get nozzle, bed, chamber temperatures', async () => {
-    const s = store.status;
-    if (!s) return err('Printer not connected');
-    return json({
-      nozzle: { current: s.extruder?.temperature, target: s.extruder?.target },
-      bed: { current: s.heater_bed?.temperature, target: s.heater_bed?.target },
-      chamber: s.ztemperature_sensor?.temperature ?? null,
-    });
-  });
+  mcp.registerTool(
+    'temperatures',
+    { description: 'Get nozzle, bed, chamber temperatures' },
+    async () => {
+      const s = store.status;
+      if (!s) return err('Printer not connected');
+      return json({
+        nozzle: { current: s.extruder?.temperature, target: s.extruder?.target },
+        bed: { current: s.heater_bed?.temperature, target: s.heater_bed?.target },
+        chamber: s.ztemperature_sensor?.temperature ?? null,
+      });
+    },
+  );
 
-  mcp.tool('print_progress', 'Get active print progress', async () => {
+  mcp.registerTool('print_progress', { description: 'Get active print progress' }, async () => {
     const s = store.status;
     if (!s) return err('Not connected');
     const ms = s.machine_status;
@@ -284,52 +290,68 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     });
   });
 
-  mcp.tool('files', 'List gcode files on printer', async () => {
+  mcp.registerTool('files', { description: 'List gcode files on printer' }, async () => {
     if (!store.files.length) return txt('No files loaded yet');
     return txt(
       store.files.map((f) => `${f.filename} (${(f.size / 1024).toFixed(0)}KB)`).join('\n'),
     );
   });
 
-  mcp.tool(
+  mcp.registerTool(
     'events',
-    'Get recent event log entries',
-    { count: z.number().optional().describe('Number of recent events (default 20)') },
+    {
+      description: 'Get recent event log entries',
+      inputSchema: {
+        count: z.number().optional().describe('Number of recent events (default 20)'),
+      },
+    },
     async (args) => json(store.getEventLog().slice(-(args.count ?? 20))),
   );
 
-  mcp.tool('system_info', 'Get firmware, hardware, network info', async () => {
-    return json({ attributes: store.attributes, systemInfo: store.systemInfo });
-  });
+  mcp.registerTool(
+    'system_info',
+    { description: 'Get firmware, hardware, network info' },
+    async () => {
+      return json({ attributes: store.attributes, systemInfo: store.systemInfo });
+    },
+  );
 
-  mcp.tool('zones', 'Get toolhead zone state', async () => json(store.zones));
+  mcp.registerTool('zones', { description: 'Get toolhead zone state' }, async () =>
+    json(store.zones),
+  );
 
-  mcp.tool(
+  mcp.registerTool(
     'layers',
-    'Get layer time history',
-    { last: z.number().optional().describe('Number of recent layers (default all)') },
+    {
+      description: 'Get layer time history',
+      inputSchema: {
+        last: z.number().optional().describe('Number of recent layers (default all)'),
+      },
+    },
     async (args) => {
       const l = store.layerTimes;
       return json(args.last ? l.slice(-args.last) : l);
     },
   );
 
-  mcp.tool('filament_usage', 'Get per-spool filament usage', async () =>
+  mcp.registerTool('filament_usage', { description: 'Get per-spool filament usage' }, async () =>
     json(store.getFilamentUsageArray()),
   );
 
-  mcp.tool('canvas_info', 'Get Canvas/AMS spool status', async () => {
+  mcp.registerTool('canvas_info', { description: 'Get Canvas/AMS spool status' }, async () => {
     return store.canvas ? json(store.canvas) : txt('No Canvas data');
   });
 
   // ── Control tools ──────────────────────────────────────────
 
-  mcp.tool(
+  mcp.registerTool(
     'set_temperature',
-    'Set nozzle and/or bed temperature',
     {
-      nozzle: z.number().optional().describe('Nozzle °C (0-300)'),
-      bed: z.number().optional().describe('Bed °C (0-120)'),
+      description: 'Set nozzle and/or bed temperature',
+      inputSchema: {
+        nozzle: z.number().optional().describe('Nozzle °C (0-300)'),
+        bed: z.number().optional().describe('Bed °C (0-120)'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -349,12 +371,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'fan',
-    'Set fan speed',
     {
-      name: z.enum(['part', 'aux', 'case']).describe('Fan: part, aux, or case'),
-      speed: z.number().describe('Speed 0-100%'),
+      description: 'Set fan speed',
+      inputSchema: {
+        name: z.enum(['part', 'aux', 'case']).describe('Fan: part, aux, or case'),
+        speed: z.number().describe('Speed 0-100%'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -367,10 +391,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'speed_mode',
-    'Set print speed mode',
-    { mode: z.enum(['silent', 'balanced', 'sport', 'ludicrous']).describe('Speed mode') },
+    {
+      description: 'Set print speed mode',
+      inputSchema: {
+        mode: z.enum(['silent', 'balanced', 'sport', 'ludicrous']).describe('Speed mode'),
+      },
+    },
     async (args) => {
       const c = needConn(bridge);
       if (c) return c;
@@ -380,10 +408,12 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'led',
-    'Toggle LED light',
-    { on: z.boolean().describe('true=on, false=off') },
+    {
+      description: 'Toggle LED light',
+      inputSchema: { on: z.boolean().describe('true=on, false=off') },
+    },
     async (args) => {
       const c = needConn(bridge);
       if (c) return c;
@@ -392,10 +422,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'home',
-    'Home printer axes',
-    { axes: z.enum(['xy', 'z', 'xyz']).optional().describe('Axes to home (default xyz)') },
+    {
+      description: 'Home printer axes',
+      inputSchema: {
+        axes: z.enum(['xy', 'z', 'xyz']).optional().describe('Axes to home (default xyz)'),
+      },
+    },
     async (args) => {
       const c = needConn(bridge);
       if (c) return c;
@@ -404,12 +438,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'move',
-    'Jog a single axis',
     {
-      axis: z.enum(['x', 'y', 'z']).describe('Axis'),
-      distance: z.number().describe('Distance in mm (negative for reverse)'),
+      description: 'Jog a single axis',
+      inputSchema: {
+        axis: z.enum(['x', 'y', 'z']).describe('Axis'),
+        distance: z.number().describe('Distance in mm (negative for reverse)'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -419,12 +455,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'start_print',
-    'Start printing a file',
     {
-      filename: z.string().describe('Filename to print'),
-      source: z.enum(['local', 'u-disk']).optional().describe('Storage (default local)'),
+      description: 'Start printing a file',
+      inputSchema: {
+        filename: z.string().describe('Filename to print'),
+        source: z.enum(['local', 'u-disk']).optional().describe('Storage (default local)'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -434,62 +472,72 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool('pause_print', 'Pause current print', async () => {
+  mcp.registerTool('pause_print', { description: 'Pause current print' }, async () => {
     const c = needConn(bridge);
     if (c) return c;
     bridge.sendCommand(1021, {});
     return txt('Paused');
   });
 
-  mcp.tool('resume_print', 'Resume paused print', async () => {
+  mcp.registerTool('resume_print', { description: 'Resume paused print' }, async () => {
     const c = needConn(bridge);
     if (c) return c;
     bridge.sendCommand(1023, {});
     return txt('Resumed');
   });
 
-  mcp.tool('stop_print', 'Stop/cancel current print', async () => {
+  mcp.registerTool('stop_print', { description: 'Stop/cancel current print' }, async () => {
     const c = needConn(bridge);
     if (c) return c;
     bridge.sendCommand(1022, {});
     return txt('Stopped');
   });
 
-  mcp.tool('emergency_stop', 'Emergency stop — immediately halts printer', async () => {
-    const c = needConn(bridge);
-    if (c) return c;
-    bridge.sendCommand(1007, {});
-    return txt('EMERGENCY STOP sent');
-  });
+  mcp.registerTool(
+    'emergency_stop',
+    { description: 'Emergency stop — immediately halts printer' },
+    async () => {
+      const c = needConn(bridge);
+      if (c) return c;
+      bridge.sendCommand(1007, {});
+      return txt('EMERGENCY STOP sent');
+    },
+  );
 
-  mcp.tool('auto_level', 'Start auto bed leveling', async () => {
+  mcp.registerTool('auto_level', { description: 'Start auto bed leveling' }, async () => {
     const c = needConn(bridge);
     if (c) return c;
     bridge.sendCommand(1032, {});
     return txt('Auto-leveling started');
   });
 
-  mcp.tool('pid_calibrate', 'Start PID auto-tune', async () => {
+  mcp.registerTool('pid_calibrate', { description: 'Start PID auto-tune' }, async () => {
     const c = needConn(bridge);
     if (c) return c;
     bridge.sendCommand(1034, {});
     return txt('PID calibration started');
   });
 
-  mcp.tool('vibration_calibrate', 'Start resonance optimization', async () => {
-    const c = needConn(bridge);
-    if (c) return c;
-    bridge.sendCommand(1033, {});
-    return txt('Vibration calibration started');
-  });
+  mcp.registerTool(
+    'vibration_calibrate',
+    { description: 'Start resonance optimization' },
+    async () => {
+      const c = needConn(bridge);
+      if (c) return c;
+      bridge.sendCommand(1033, {});
+      return txt('Vibration calibration started');
+    },
+  );
 
-  mcp.tool(
+  mcp.registerTool(
     'self_check',
-    'Run combined self-test',
     {
-      ringing: z.boolean().optional().describe('Include resonance test (default true)'),
-      pid: z.boolean().optional().describe('Include PID test (default true)'),
-      leveling: z.boolean().optional().describe('Include bed leveling (default true)'),
+      description: 'Run combined self-test',
+      inputSchema: {
+        ringing: z.boolean().optional().describe('Include resonance test (default true)'),
+        pid: z.boolean().optional().describe('Include PID test (default true)'),
+        leveling: z.boolean().optional().describe('Include bed leveling (default true)'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -503,12 +551,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'delete_file',
-    'Delete a file from printer storage',
     {
-      path: z.string().describe('File path (e.g. /model.gcode)'),
-      source: z.enum(['local', 'u-disk']).optional().describe('Storage (default local)'),
+      description: 'Delete a file from printer storage',
+      inputSchema: {
+        path: z.string().describe('File path (e.g. /model.gcode)'),
+        source: z.enum(['local', 'u-disk']).optional().describe('Storage (default local)'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -518,24 +568,34 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool('load_filament', 'Feed/load filament into extruder', async () => {
-    const c = needConn(bridge);
-    if (c) return c;
-    bridge.sendCommand(1024, {});
-    return txt('Loading filament');
-  });
+  mcp.registerTool(
+    'load_filament',
+    { description: 'Feed/load filament into extruder' },
+    async () => {
+      const c = needConn(bridge);
+      if (c) return c;
+      bridge.sendCommand(1024, {});
+      return txt('Loading filament');
+    },
+  );
 
-  mcp.tool('unload_filament', 'Retract/unload filament from extruder', async () => {
-    const c = needConn(bridge);
-    if (c) return c;
-    bridge.sendCommand(1025, {});
-    return txt('Unloading filament');
-  });
+  mcp.registerTool(
+    'unload_filament',
+    { description: 'Retract/unload filament from extruder' },
+    async () => {
+      const c = needConn(bridge);
+      if (c) return c;
+      bridge.sendCommand(1025, {});
+      return txt('Unloading filament');
+    },
+  );
 
-  mcp.tool(
+  mcp.registerTool(
     'set_auto_refill',
-    'Enable/disable Canvas auto-refill',
-    { enabled: z.boolean().describe('true=enable, false=disable') },
+    {
+      description: 'Enable/disable Canvas auto-refill',
+      inputSchema: { enabled: z.boolean().describe('true=enable, false=disable') },
+    },
     async (args) => {
       const c = needConn(bridge);
       if (c) return c;
@@ -544,10 +604,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'enable_video_stream',
-    'Enable camera MJPEG stream via SDCP',
-    { method: z.enum(['sdcp', 'mqtt']).optional().describe('Method: sdcp (default) or mqtt') },
+    {
+      description: 'Enable camera MJPEG stream via SDCP',
+      inputSchema: {
+        method: z.enum(['sdcp', 'mqtt']).optional().describe('Method: sdcp (default) or mqtt'),
+      },
+    },
     async (args) => {
       const c = needConn(bridge);
       if (c) return c;
@@ -562,12 +626,14 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  mcp.tool(
+  mcp.registerTool(
     'send_command',
-    'Send raw MQTT command (advanced)',
     {
-      method: z.number().describe('CC2 method code (e.g. 1001, 1028)'),
-      params: z.string().optional().describe('JSON params string (default "{}")'),
+      description: 'Send raw MQTT command (advanced)',
+      inputSchema: {
+        method: z.number().describe('CC2 method code (e.g. 1001, 1028)'),
+        params: z.string().optional().describe('JSON params string (default "{}")'),
+      },
     },
     async (args) => {
       const c = needConn(bridge);
@@ -583,7 +649,7 @@ export function createMcpServer(store: StateStore, bridge: MqttBridge): McpServe
     },
   );
 
-  log.info('MCP server configured (6 resources, 30 tools)');
+  log.info('MCP server configured (6 resources, 31 tools)');
   return mcp;
 }
 

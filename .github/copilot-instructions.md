@@ -33,7 +33,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - `src/server/moonraker-compat.ts` — Moonraker API compatibility layer
 - `src/server/moonraker-server.ts` — Moonraker standalone server on port 7125
 - `src/server/octoprint-compat.ts` — OctoPrint API compatibility layer
-- `src/server/mcp-server.ts` — Model Context Protocol server (6 resources, 30 tools)
+- `src/server/mcp-server.ts` — Model Context Protocol server (6 resources, 31 tools)
 - `src/server/state-persistence.ts` — Persist/restore state across restarts
 - `src/server/print-report-collector.ts` — Collect print data for PDF reports
 - `src/server/print-report-pdf.ts` — Generate PDF print reports

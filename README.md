@@ -23,7 +23,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - **Timelapse viewer**: Download/play timelapse videos
 - **Spool calculator**: Remaining weight/meters from measured thickness
 - **Moonraker/OctoPrint compatibility**: API layers for Mainsail/Fluidd/KlipperScreen and OctoPrint clients
-- **MCP server**: Model Context Protocol for AI agent integration — [6 resources, 30 tools](MCP.md)
+- **MCP server**: Model Context Protocol for AI agent integration — [6 resources, 31 tools](MCP.md)
 - **Prometheus metrics**: `/api/metrics/prometheus` endpoint for monitoring
 - **PWA support**: Installable app with manifest + service worker
 - **Dark theme**: Modern UI with CSS custom properties, responsive at 1200/800/480px breakpoints
@@ -120,6 +120,17 @@ docker run -d -p 8088:8088 -p 7125:7125 -e PRINTER_IP=172.20.100.236 ghcr.io/run
 | `TELEGRAM_CHAT_ID` | — | Telegram chat ID |
 | `PROGRESS_INTERVAL` | `25` | Notify every N% progress |
 | `DATA_DIR` | `./data` | Data directory for state, reports, logs |
+| `AI_ENABLED` | `false` | Enable AI print monitoring |
+| `AI_VLM_ENABLED` | `true` | Enable VLM analysis (when AI enabled) |
+| `AI_VLM_PROVIDER` | `ollama` | VLM provider: `ollama` or `openai` |
+| `AI_VLM_API_KEY` | — | API key for OpenAI VLM provider |
+| `AI_VLM_BASE_URL` | `http://172.20.100.9:3000` | VLM API endpoint |
+| `AI_VLM_MODEL` | `llava` | VLM model name |
+| `AI_LOCAL_ENABLED` | `true` | Enable local CLIP/SigLIP classification |
+| `AI_LOCAL_MODEL` | `Xenova/siglip-base-patch16-224` | Local classification model |
+| `AI_INTERVAL` | `60` | Seconds between AI analysis |
+| `AI_ALERT_THRESHOLD` | `3` | Consecutive alerts before notification |
+| `AI_ALERT_COOLDOWN` | `300` | Seconds between alert notifications |
 
 ### Volumes
 
@@ -132,11 +143,6 @@ All persistent data lives under `/app/data` inside the container:
 | `/app/data/reports/` | Print reports with snapshots and PDFs |
 | `/app/data/gcode-cache/` | Downloaded gcode files for 3D preview |
 | `/app/data/logs/` | MQTT capture logs (from debug panel) |
-| `AI_ENABLED` | `false` | Enable AI print monitoring |
-| `AI_VLM_PROVIDER` | `ollama` | VLM provider: `ollama` or `openai` |
-| `AI_VLM_BASE_URL` | `http://172.20.100.9:3000` | VLM API endpoint |
-| `AI_VLM_MODEL` | `llava` | VLM model name |
-| `AI_INTERVAL` | `60` | Seconds between AI analysis |
 
 ### Ports
 
@@ -222,6 +228,13 @@ src/
 │   ├── state-persistence.ts # Persist/restore state across restarts
 │   ├── print-report-collector.ts  # Collect print data for reports
 │   └── print-report-pdf.ts       # PDF report generation
+├── telegram/
+│   ├── bot.ts               # Telegram bot initialization
+│   ├── camera.ts            # Camera snapshot handling
+│   ├── commands.ts          # Bot command handlers
+│   ├── config.ts            # Telegram configuration
+│   ├── mqtt-bridge.ts       # Bridge for MQTT event handling
+│   └── notifications.ts     # Notification formatting + sending
 ├── ui/
 │   ├── dashboard.ts       # Re-export barrel for all UI modules
 │   ├── helpers.ts         # Shared DOM/formatting utilities
@@ -233,7 +246,9 @@ src/
 │   ├── charts.ts          # Canvas 2D live charts with zoom/pan
 │   ├── gcode-preview.ts   # 3D gcode toolpath (Three.js)
 │   ├── log.ts             # MQTT log panel
+│   ├── log-methods.ts     # MQTT method ID labels and filtering
 │   ├── structured-log.ts  # Structured log with diff/pin/filter
+│   ├── system-info.ts     # System information display component
 │   ├── debug-panel.ts     # Live state tree, change tracking, export
 │   ├── settings.ts        # Card layout + tab management
 │   ├── event-log.ts       # Print event log
