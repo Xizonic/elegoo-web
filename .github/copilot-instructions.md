@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers. The Node.js service maintains a single MQTT connection to the printer and exposes state to browsers via WebSocket, REST API, and Prometheus metrics. Integrations: Telegram notifications, AI print monitoring (CLIP + VLM + motion detection), Moonraker/OctoPrint compatibility APIs, MCP server.
+A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers. The Node.js service maintains a single MQTT connection to the printer and exposes state to browsers via WebSocket, REST API, and Prometheus metrics. Integrations: Telegram notifications, AI print monitoring (SigLIP + VLM + motion detection), Moonraker/OctoPrint compatibility APIs, MCP server.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - `src/server/config.ts` — Environment-based configuration (`.env`)
 - `src/server/logger.ts` — Winston structured logging with rotation
 - `src/server/telegram.ts` — Telegram bot notifications (print events, progress, snapshots)
-- `src/server/ai-monitor.ts` — AI print monitoring (motion detection, CLIP classification, VLM), zone-aware stall suppression
+- `src/server/ai-monitor.ts` — AI print monitoring (motion detection, SigLIP zero-shot classification, VLM), zone-aware stall suppression
 - `src/server/moonraker-compat.ts` — Moonraker API compatibility layer
 - `src/server/moonraker-server.ts` — Moonraker standalone server on port 7125
 - `src/server/octoprint-compat.ts` — OctoPrint API compatibility layer
@@ -62,7 +62,7 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - `debug-panel.ts` — Live state tree, change tracking with watched paths, export
 - `settings.ts` — Card layout management (sidebar/main/hidden/collapsed), tab switching
 - `event-log.ts` — Event log panel (print events, errors, milestones)
-- `ai-panel.ts` — AI monitor panel (CLIP scores, VLM results, motion)
+- `ai-panel.ts` — AI monitor panel (SigLIP scores, VLM results, motion)
 - `print-history.ts` — Print history from method 1036
 - `print-reports.ts` — Print report viewer (PDF generation)
 - `print-dialog.ts` — Print start confirmation dialog with settings

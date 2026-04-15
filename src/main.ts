@@ -53,6 +53,7 @@ import {
   trackStateChanges,
 } from './ui/dashboard';
 import { renderLog, bindLogControls } from './ui/log';
+import type { PrinterStatus, PrinterAttributes, CanvasInfo, FileEntry } from './types';
 
 const state = new PrinterState();
 const logStore = new LogStore();
@@ -339,16 +340,16 @@ function connectToService(): void {
     onInit(initData) {
       // Hydrate state from service snapshot
       if (initData.status) {
-        state.setFullStatus(initData.status as any);
+        state.setFullStatus(initData.status as PrinterStatus);
       }
       if (initData.attributes) {
-        state.setAttributes(initData.attributes as any);
+        state.setAttributes(initData.attributes as PrinterAttributes);
       }
       if (initData.canvas) {
-        state.setCanvas(initData.canvas as any);
+        state.setCanvas(initData.canvas as CanvasInfo);
       }
       if (initData.files && Array.isArray(initData.files)) {
-        state.setFiles(initData.files as any);
+        state.setFiles(initData.files as FileEntry[]);
       }
       if (initData.thumbnail) {
         state.thumbnail = initData.thumbnail as string;

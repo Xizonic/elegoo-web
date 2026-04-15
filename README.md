@@ -13,8 +13,8 @@ A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers
 - **Printer control**: Temperature presets, fans, speed mode, LED toggle, XY/Z movement, emergency stop
 - **Print management**: File browser with thumbnails/popovers, start dialog, pause/resume/stop, USB support
 - **Zone detection**: Server-side toolhead zone tracking (print area, cutter, purge) for AI/event suppression
-- **AI print monitoring**: Motion detection, CLIP/SigLIP classification, VLM analysis, zone-aware stall suppression
-- **Telegram notifications**: Print events, progress updates, camera snapshots
+- **AI print monitoring**: Motion-based stall detection, SigLIP zero-shot classification, VLM analysis, zone-aware suppression, customizable labels
+- **Telegram notifications**: Print events, progress updates, camera snapshots, AI alerts
 - **MQTT Log**: Real-time structured log with diff view, method filtering, pinning
 - **Debug panel**: Live state tree with change tracking, watched paths, export
 - **Event log**: Print events, errors, milestones with timestamps and severity
@@ -126,7 +126,7 @@ docker run -d -p 8088:8088 -p 7125:7125 -e PRINTER_IP=172.20.100.236 ghcr.io/run
 | `AI_VLM_API_KEY` | — | API key for OpenAI VLM provider |
 | `AI_VLM_BASE_URL` | `http://172.20.100.9:3000` | VLM API endpoint |
 | `AI_VLM_MODEL` | `llava` | VLM model name |
-| `AI_LOCAL_ENABLED` | `true` | Enable local CLIP/SigLIP classification |
+| `AI_LOCAL_ENABLED` | `true` | Enable local SigLIP zero-shot classification |
 | `AI_LOCAL_MODEL` | `Xenova/siglip-base-patch16-224` | Local classification model |
 | `AI_INTERVAL` | `60` | Seconds between AI analysis |
 | `AI_ALERT_THRESHOLD` | `3` | Consecutive alerts before notification |
@@ -220,7 +220,7 @@ src/
 │   ├── config.ts            # Environment-based configuration (.env)
 │   ├── logger.ts            # Winston structured logging with rotation
 │   ├── telegram.ts          # Telegram bot notifications
-│   ├── ai-monitor.ts        # AI print monitoring (CLIP + VLM + motion)
+│   ├── ai-monitor.ts        # AI print monitoring (SigLIP + VLM + motion)
 │   ├── moonraker-compat.ts  # Moonraker API compatibility
 │   ├── moonraker-server.ts  # Moonraker standalone server (:7125)
 │   ├── octoprint-compat.ts  # OctoPrint API compatibility
@@ -304,6 +304,22 @@ Server-side toolhead zone tracking based on `gcode_move.x/y` coordinates:
 | `outside` | — | everything else | Fallback |
 
 Used to suppress false AI stall alerts and filament runout events during Canvas filament changes.
+
+## AI Print Monitoring
+
+Enable with `AI_ENABLED=true`. Three detection backends run in parallel:
+
+**SigLIP zero-shot classification** (`AI_LOCAL_ENABLED`): Runs the `Xenova/siglip-base-patch16-224` model locally via `@huggingface/transformers`. Classifies camera frames against configurable text labels (spaghetti, bed adhesion, stringing, layer shift, warping, blob, empty bed, etc.). SigLIP uses per-label sigmoid scores (each 0–1 independently), normalized to a relative distribution for threshold comparison. Labels are customizable via Settings UI or `GET/POST/DELETE /api/config/ai-labels`.
+
+**Motion-based stall detection**: Computes frame-to-frame pixel diff (160×120 grayscale via sharp). If motion drops below 0.5% for 3 consecutive frames while printing, injects a `print_stalled` issue.
+
+**VLM analysis** (`AI_VLM_ENABLED`): Sends camera snapshots to an external vision-language model (Ollama or OpenAI-compatible API). Can detect issues SigLIP cannot: `under_extrusion`, `nozzle_clog`, `print_stalled`.
+
+**Zone-aware filtering**: Analysis only runs when `sub_status === 2075` (Printing) AND `zones.current === 'print_area'`. Skipped during heating, filament changes, and when the toolhead is in the cutter/purge area.
+
+**Alert logic**: Each cycle, critical issues add +2 and warnings add +1 to a consecutive counter (OK decays by -1). When the counter reaches `AI_ALERT_THRESHOLD` (default 3), an alert fires and is sent to Telegram (if configured) with a camera snapshot. Alerts are rate-limited by `AI_ALERT_COOLDOWN` (default 300s).
+
+**Charts**: AI data is shown as 5 score groups: Print in Progress, Spaghetti/Failure, Empty Bed, Paused/Stopped, Other — plus a motion percentage line.
 
 ## Credits
 

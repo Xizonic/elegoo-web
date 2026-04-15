@@ -15,6 +15,11 @@ import {
   type ServerResponse,
 } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+
+/** WebSocket with keepalive tracking */
+interface AliveWebSocket extends WebSocket {
+  isAlive: boolean;
+}
 import { readFile as fsRead, writeFile as fsWrite, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -296,9 +301,9 @@ export class MoonrakerServer {
       log.info(`WS client connected (id: ${client.connectionId}, total: ${this.clients.size})`);
 
       // Mark alive on pong response (for server-initiated ping keepalive)
-      (ws as any).isAlive = true;
+      (ws as AliveWebSocket).isAlive = true;
       ws.on('pong', () => {
-        (ws as any).isAlive = true;
+        (ws as AliveWebSocket).isAlive = true;
       });
 
       ws.on('message', (raw) => {
@@ -323,11 +328,11 @@ export class MoonrakerServer {
     // ── WebSocket keepalive: ping every 10s, terminate unresponsive clients ──
     this.pingInterval = setInterval(() => {
       for (const [ws] of this.clients) {
-        if ((ws as any).isAlive === false) {
+        if ((ws as AliveWebSocket).isAlive === false) {
           ws.terminate();
           continue;
         }
-        (ws as any).isAlive = false;
+        (ws as AliveWebSocket).isAlive = false;
         ws.ping();
       }
     }, 10_000);

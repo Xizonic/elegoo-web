@@ -572,8 +572,9 @@ export function bindDebugPanel(): void {
           resultSpan.textContent = data.success
             ? `SDCP: ✓ ${data.videoUrl ? `VideoUrl: ${data.videoUrl}` : 'OK'}`
             : `SDCP: ✗ ${data.error || 'Failed'}`;
-      } catch (err: any) {
-        if (resultSpan) resultSpan.textContent = `SDCP: ✗ ${err.message}`;
+      } catch (err: unknown) {
+        if (resultSpan)
+          resultSpan.textContent = `SDCP: ✗ ${err instanceof Error ? err.message : String(err)}`;
       } finally {
         sdcpBtn.disabled = false;
       }
@@ -592,8 +593,9 @@ export function bindDebugPanel(): void {
           resultSpan.textContent = data.success
             ? `MQTT 1054: ✓ sent — check log for response`
             : `MQTT 1054: ✗ ${data.error || 'Failed'}`;
-      } catch (err: any) {
-        if (resultSpan) resultSpan.textContent = `MQTT 1054: ✗ ${err.message}`;
+      } catch (err: unknown) {
+        if (resultSpan)
+          resultSpan.textContent = `MQTT 1054: ✗ ${err instanceof Error ? err.message : String(err)}`;
       } finally {
         mqttBtn.disabled = false;
       }

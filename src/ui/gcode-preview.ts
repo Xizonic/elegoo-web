@@ -14,6 +14,12 @@ import type { Object3D } from 'three';
 import type { PrinterState } from '../printer-state';
 import { $, fetchTimeout } from './helpers';
 
+/** Internal fields of WebGLPreview we need to access to stop the animate loop */
+interface WebGLPreviewInternals {
+  animationFrameId?: number;
+  animate: () => void;
+}
+
 let preview: WebGLPreview | null = null;
 let loadedFile = '';
 let loading = false;
@@ -124,10 +130,11 @@ function lightRender(): void {
 /** Stop the library's internal 60fps rAF animate loop */
 function stopAnimateLoop(p: WebGLPreview): void {
   // animationFrameId is private but accessible at runtime
-  const id = (p as any).animationFrameId as number | undefined;
+  const internals = p as unknown as WebGLPreviewInternals;
+  const id = internals.animationFrameId;
   if (id != null) cancelAnimationFrame(id);
   // Override animate() so it can't restart
-  (p as any).animate = () => {};
+  internals.animate = () => {};
 }
 
 /** Render on orbit control changes (user dragging the 3D view) — throttled */

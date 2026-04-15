@@ -21,7 +21,7 @@ import { createMoonrakerRouter } from './moonraker-compat.js';
 import { MoonrakerServer } from './moonraker-server.js';
 import { TelegramIntegration } from './telegram.js';
 import { StatePersistence } from './state-persistence.js';
-import { AIMonitor } from './ai-monitor.js';
+import { AIMonitor, type AIAlert } from './ai-monitor.js';
 import { PrintReportCollector } from './print-report-collector.js';
 import { initLogger, getLogger } from './logger.js';
 
@@ -148,11 +148,11 @@ if (aiMonitor) {
     wsTransport.broadcast({ type: 'ai_analysis', ...analysis });
   });
 
-  aiMonitor.on('alert', (alert: Record<string, unknown>) => {
+  aiMonitor.on('alert', (alert: AIAlert) => {
     wsTransport.broadcast({ type: 'ai_alert', ...alert });
     // Also send to Telegram
     if (telegram) {
-      telegram.sendAIAlert(alert as any);
+      telegram.sendAIAlert(alert);
     }
   });
 

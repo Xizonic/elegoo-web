@@ -282,9 +282,10 @@ export class MqttBridge extends EventEmitter {
       let ws: WebSocket;
       try {
         ws = new WebSocket(url, { handshakeTimeout: 5000 });
-      } catch (err: any) {
-        log.warn(`[VideoStream] SDCP: failed to create WebSocket: ${err.message}`);
-        resolve({ success: false, error: err.message });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn(`[VideoStream] SDCP: failed to create WebSocket: ${msg}`);
+        resolve({ success: false, error: msg });
         return;
       }
 
