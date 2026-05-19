@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -9,10 +9,10 @@
     "ignoreUnknown": true,
     "includes": [
       "src/**",
-      "!**/dist/**",
-      "!**/data/**",
-      "!**/public/**",
-      "!**/node_modules/**",
+      "!**/dist",
+      "!**/data",
+      "!**/public",
+      "!**/node_modules",
       "!**/*.md",
       "!pnpm-lock.yaml"
     ]
