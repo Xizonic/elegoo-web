@@ -41,6 +41,7 @@ import type { MqttBridge } from './mqtt-bridge.js';
 import type { ServiceConfig } from './config.js';
 import type { FanInfo } from '../types.js';
 import { MOONRAKER_VERSION, AVAILABLE_OBJECTS, queryObjects } from './moonraker-compat.js';
+import { createOctoPrintRouter } from './octoprint-compat.js';
 import { getLogger } from './logger.js';
 import { cacheGcodeBuffer } from './rest-api.js';
 
@@ -262,6 +263,7 @@ export class MoonrakerServer {
   private statusInterval: ReturnType<typeof setInterval> | null = null;
   private procStatInterval: ReturnType<typeof setInterval> | null = null;
   private db: MoonrakerDatabase;
+  private octoPrintHandler: (req: IncomingMessage, res: ServerResponse) => boolean;
 
   constructor(
     private store: StateStore,
@@ -269,6 +271,9 @@ export class MoonrakerServer {
     private config: ServiceConfig,
   ) {
     this.db = new MoonrakerDatabase(config.dataDir);
+    // OctoPrint compat (Moonraker's octoprint_compat module). Allows OrcaSlicer,
+    // PrusaSlicer, Cura and similar slicers to connect via the OctoPrint host type.
+    this.octoPrintHandler = createOctoPrintRouter(store, bridge, config);
     // ── HTTP Server ──
     this.httpServer = createServer((req, res) => this.handleHttp(req, res));
 
@@ -1243,6 +1248,18 @@ export class MoonrakerServer {
       return;
     }
 
+    // --- OctoPrint compat (/api/*) ---
+    // Route OctoPrint-style requests through the shared OctoPrint router.
+    // The router expects a /octoprint prefix that it strips internally, so we
+    // temporarily prepend it on the request URL.
+    if (urlPath.startsWith('/api/')) {
+      const originalUrl = req.url || '';
+      req.url = '/octoprint' + originalUrl;
+      const handled = this.octoPrintHandler(req, res);
+      req.url = originalUrl;
+      if (handled) return;
+    }
+
     // --- GET /server/info ---
     if (urlPath === '/server/info' && method === 'GET') {
       jsonResult(res, {
@@ -1571,16 +1588,6 @@ export class MoonrakerServer {
       const dbKey = wc ? String(wc.name ?? id) : id;
       this.db.deleteItem('webcams', dbKey);
       jsonResult(res, { webcam: wc ?? {} });
-      return;
-    }
-
-    // --- GET /api/version ---
-    if (urlPath === '/api/version' && method === 'GET') {
-      res.writeHead(200, {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-      });
-      res.end(MOONRAKER_VERSION);
       return;
     }
 
@@ -2044,7 +2051,22 @@ export class MoonrakerServer {
     }
 
     // --- GET / (root) ---
+    // Slicers like OrcaSlicer embed the host URL in a "Device" webview tab.
+    // Redirect to the main web UI so users see the dashboard instead of a JSON blob.
+    // JSON descriptor is still available at /info for programmatic clients.
     if (urlPath === '/' && method === 'GET') {
+      const hostHeader = (req.headers.host || '').split(':')[0] || 'localhost';
+      const target = `http://${hostHeader}:${this.config.servicePort}/`;
+      res.writeHead(302, {
+        Location: target,
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end();
+      return;
+    }
+
+    // --- GET /info (Moonraker-compat descriptor) ---
+    if (urlPath === '/info' && method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
@@ -2055,6 +2077,7 @@ export class MoonrakerServer {
           moonraker_version: MOONRAKER_VERSION,
           message: 'Moonraker compatibility server for Elegoo CC2',
           websocket: `ws://HOST:${this.config.moonrakerPort}/websocket`,
+          web_ui: `http://HOST:${this.config.servicePort}/`,
         }),
       );
       return;

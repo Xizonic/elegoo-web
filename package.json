@@ -3,14 +3,8 @@
   "version": "0.2.1",
   "private": true,
   "type": "module",
-  "lint-staged": {
-    "src/**/*.{ts,js}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "src/**/*.css": [
-      "prettier --write"
-    ]
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec biome check --staged --write --no-errors-on-unmatched"
   },
   "scripts": {
     "dev": "concurrently -n svc,web -c magenta,cyan \"tsx watch src/server/index.ts\" \"vite\"",
@@ -29,33 +23,27 @@
     "release:dry": "release-it --dry-run",
     "docker:build": "docker build -t ghcr.io/runnane/elegoo-web:local .",
     "docker:push": "docker push ghcr.io/runnane/elegoo-web:local",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write src/",
-    "format:check": "prettier --check src/",
+    "lint": "biome lint src/",
+    "lint:fix": "biome lint --write src/",
+    "format": "biome format --write src/",
+    "format:check": "biome format src/",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "check": "eslint src/ --fix && prettier --write src/",
-    "prepare": "husky"
+    "check": "biome check --write src/",
+    "prepare": "simple-git-hooks || true"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@biomejs/biome": "^2.0.0",
     "@release-it/conventional-changelog": "^10.0.6",
     "@types/pdfkit": "^0.17.5",
     "@types/three": "0.178.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.4",
     "concurrently": "^9.1.0",
-    "eslint": "^10.2.0",
-    "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.5.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.8.2",
     "release-it": "^19.2.4",
+    "simple-git-hooks": "^2.11.1",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.2",
     "vite": "^8.0.8",
     "vitest": "^4.1.4"
   },
