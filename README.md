@@ -1,6 +1,6 @@
 # elegoo-web
 
-This Fork forces pnpm 9 instead of using the latest pnpm version. When using docker, this must be localy built.
+This Fork forces pnpm 9 instead of using the latest pnpm version. Docker is the only recommended way to run and must be built localy. Use the Docker Compose Example File to get started.
 
 A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers. The Node.js service maintains a single MQTT connection to the printer and exposes state to browsers via WebSocket, REST API, and Prometheus metrics.
 
@@ -54,41 +54,6 @@ Communication uses the CC2 MQTT protocol:
 
 See [CC2 Protocol Documentation](https://github.com/danielcherubini/elegoo-homeassistant/blob/main/docs/CC2_PROTOCOL.md) for the full protocol reference.
 
-## Docker
-
-### Quick Start (docker run)
-
-```bash
-docker run -d \
-  --name elegoo-web \
-  --restart unless-stopped \
-  -p 8088:8088 \
-  -p 7125:7125 \
-  -e PRINTER_IP=172.20.100.236 \
-  -v elegoo-data:/app/data \
-  ghcr.io/runnane/elegoo-web:latest
-```
-
-Web UI: `http://localhost:8088` · Moonraker API: `http://localhost:7125`
-
-To mount specific data directories as host paths instead of a named volume:
-
-```bash
-mkdir -p ./elegoo-data/{reports,gcode-cache,logs}
-docker run -d \
-  --name elegoo-web \
-  --restart unless-stopped \
-  -p 8088:8088 \
-  -p 7125:7125 \
-  -e PRINTER_IP=172.20.100.236 \
-  -v ./elegoo-data/reports:/app/data/reports \
-  -v ./elegoo-data/gcode-cache:/app/data/gcode-cache \
-  -v ./elegoo-data/logs:/app/data/logs \
-  -v ./elegoo-data/state.json:/app/data/state.json \
-  -v ./elegoo-data/moonraker-db.json:/app/data/moonraker-db.json \
-  ghcr.io/runnane/elegoo-web:latest
-```
-
 ### Docker Compose
 
 Copy the example file and edit your printer IP:
@@ -100,13 +65,6 @@ docker compose up -d
 ```
 
 See [`docker-compose.example.yml`](docker-compose.example.yml) for all available environment variables (Telegram, AI monitoring, camera, etc.).
-
-### Build Locally
-
-```bash
-docker build -t ghcr.io/runnane/elegoo-web:local .
-docker run -d -p 8088:8088 -p 7125:7125 -e PRINTER_IP=172.20.100.236 ghcr.io/runnane/elegoo-web:local
-```
 
 ### Environment Variables
 
@@ -156,51 +114,8 @@ All persistent data lives under `/app/data` inside the container:
 ## Prerequisites
 
 - Node.js 20+
-- pnpm
+- pnpm (version 9)
 - An Elegoo CC2 printer on the same network, set to **LAN-only mode**
-
-## Quick Start
-
-```bash
-pnpm install
-pnpm dev
-```
-
-This starts both the backend service and Vite dev server. Open `http://localhost:5173`.
-
-## Build
-
-```bash
-pnpm build
-```
-
-Production output goes to `dist/`. The service serves it automatically on port 8088.
-
-## Production Deployment
-
-Install as a systemd service:
-
-```bash
-pnpm build
-sudo bash contrib/install.sh
-```
-
-This creates:
-- Service user `elegooweb`
-- Installation at `/opt/elegooweb/`
-- systemd unit `elegooweb.service` (auto-start on boot)
-- Default `.env` config at `/opt/elegooweb/.env`
-
-Edit `/opt/elegooweb/.env` to configure printer IP, Telegram, AI monitoring, etc.
-
-```bash
-sudo systemctl status elegooweb       # Check status
-sudo journalctl -u elegooweb -f       # Tail logs
-sudo systemctl restart elegooweb      # Restart after config changes
-sudo bash contrib/uninstall.sh        # Uninstall
-```
-
-Web UI: `http://<host>:8088`
 
 ## Project Structure
 
