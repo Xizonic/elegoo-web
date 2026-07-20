@@ -24,7 +24,6 @@ RUN pnpm install --frozen-lockfile --prod
 # Copy built frontend + source (tsx runs .ts at runtime)
 COPY --from=build /app/dist ./dist
 COPY src ./src
-COPY data/ai-labels.json ./data/ai-labels.json
 
 ENV NODE_ENV=production
 ENV PORT=8088
