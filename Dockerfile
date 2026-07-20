@@ -1,7 +1,7 @@
 # ── Build stage ────────────────────────────────────────────
 FROM node:22-slim AS build
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
@@ -15,7 +15,7 @@ FROM node:22-slim
 
 LABEL org.opencontainers.image.source=https://github.com/runnane/elegoo-web
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
