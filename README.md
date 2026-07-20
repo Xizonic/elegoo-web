@@ -1,4 +1,4 @@
-# elegoo-web
+# elegoo-web manual build
 
 This Fork forces pnpm 9 instead of using the latest pnpm version. Docker is the only recommended way to run and must be built localy. Use the Docker Compose Example File to get started.
 
