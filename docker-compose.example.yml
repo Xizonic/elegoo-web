@@ -1,6 +1,8 @@
 services:
   elegoo-web:
-    image: ghcr.io/runnane/elegoo-web:latest
+    # image: ghcr.io/runnane/elegoo-web:latest
+    build:   # Uncomment to build locally instead of pulling
+      context: https://github.com/Xizonic/elegoo-web.git
     # build: .  # Uncomment to build locally instead of pulling
     container_name: elegoo-web
     restart: unless-stopped
