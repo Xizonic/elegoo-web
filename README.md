@@ -1,5 +1,6 @@
 # elegoo-web
 
+This Fork forces pnpm 9 instead of using the latest. When using docker, this must be localy built.
 A web frontend + backend service for Elegoo Centauri Carbon 2 (CC2) FDM printers. The Node.js service maintains a single MQTT connection to the printer and exposes state to browsers via WebSocket, REST API, and Prometheus metrics.
 
 ## Features
